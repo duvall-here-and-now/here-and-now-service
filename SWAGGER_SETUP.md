@@ -12,7 +12,7 @@ This service now includes Swagger/OpenAPI documentation for easy API testing and
 
 ### Testing Authenticated Endpoints
 1. In Swagger UI, click the **"Authorize"** button (lock icon)
-2. Enter your Auth0 JWT token in the format: `Bearer YOUR_JWT_TOKEN`
+2. Enter your Auth0 JWT token (just the token value, without the `Bearer ` prefix)
 3. Click **"Authorize"** and then **"Close"**
 4. You can now test protected endpoints like `/api/messages/protected` and `/api/messages/admin`
 
