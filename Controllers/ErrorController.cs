@@ -3,7 +3,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace App.Controllers;
 
+/// <summary>
+/// Internal error handling controller - not exposed in API documentation
+/// </summary>
 [ApiController]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class ErrorController : ControllerBase
 {
     [Route("/error")]
