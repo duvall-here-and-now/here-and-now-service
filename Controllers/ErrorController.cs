@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace App.Controllers;
 
 [ApiController]
+[ApiExplorerSettings(IgnoreApi = true)] // Exclude from Swagger/OpenAPI
 public class ErrorController : ControllerBase
 {
     [Route("/error")]
