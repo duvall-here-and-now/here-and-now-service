@@ -1,4 +1,4 @@
-namespace App.Models;
+namespace HereAndNowService.Models;
 
 /// <summary>
 /// Represents a message response from the API

@@ -1,9 +1,9 @@
-using App.Models;
-using App.Services;
+using HereAndNowService.Models;
+using HereAndNowService.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace App.Controllers;
+namespace HereAndNowService.Controllers;
 
 /// <summary>
 /// Provides endpoints for retrieving messages with various authentication levels
