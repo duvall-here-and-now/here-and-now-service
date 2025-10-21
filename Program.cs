@@ -1,5 +1,5 @@
-using App.Middlewares;
-using App.Services;
+using HereAndNowService.Middlewares;
+using HereAndNowService.Services;
 using dotenv.net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;

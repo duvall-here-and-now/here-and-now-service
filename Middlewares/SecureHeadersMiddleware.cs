@@ -1,4 +1,4 @@
-namespace App.Middlewares;
+namespace HereAndNowService.Middlewares;
 
 class SecureHeadersMiddleware
 {

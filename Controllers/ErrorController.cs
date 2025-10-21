@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
-namespace App.Controllers;
+namespace HereAndNowService.Controllers;
 
 /// <summary>
 /// Internal error handling controller - not exposed in API documentation

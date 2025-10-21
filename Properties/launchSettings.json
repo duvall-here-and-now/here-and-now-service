@@ -9,7 +9,7 @@
     }
   },
   "profiles": {
-    "api_csharp_aspnet_hello_world": {
+    "here_and_now_service": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,

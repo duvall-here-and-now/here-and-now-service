@@ -1,6 +1,6 @@
-using App.Models;
+using HereAndNowService.Models;
 
-namespace App.Services;
+namespace HereAndNowService.Services;
 
 public interface IMessageService
 {
