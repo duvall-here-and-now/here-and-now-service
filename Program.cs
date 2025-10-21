@@ -42,9 +42,6 @@ builder.Services.AddControllers();
 var auth0Domain = builder.Configuration.GetValue<string>("AUTH0_DOMAIN");
 var auth0Audience = builder.Configuration.GetValue<string>("AUTH0_AUDIENCE");
 
-Console.WriteLine($"DEBUG - AUTH0_DOMAIN: {auth0Domain}");
-Console.WriteLine($"DEBUG - AUTH0_AUDIENCE: {auth0Audience}");
-
 builder.Host.ConfigureServices((services) =>
     services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         .AddJwtBearer(options =>
