@@ -67,7 +67,7 @@ builder.Services.AddSwaggerGen(options =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        Description = "Enter your Auth0 JWT token in the format: Bearer {token}",
+        Description = "Enter your Auth0 JWT token (without Bearer prefix)",
         In = ParameterLocation.Header,
         Name = "Authorization"
     });
