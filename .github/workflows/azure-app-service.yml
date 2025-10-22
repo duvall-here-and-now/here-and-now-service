@@ -42,7 +42,7 @@ jobs:
     needs: build
     environment:
       name: 'Production'
-      url: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
       - name: Download artifact from build job
@@ -50,13 +50,10 @@ jobs:
         with:
           name: dotnet-app
 
-      - name: Create deployment package
-        run: zip -r deployment.zip .
-
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: deployment.zip
+          package: .
