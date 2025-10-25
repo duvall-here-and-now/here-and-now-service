@@ -11,7 +11,7 @@ public class MessageService : IMessageService
 
     public Message GetProtectedMessage()
     {
-        return new Message { text = "This is a protected message." };
+        return new Message { text = "This is a protected message, and Mike is cool." };
     }
 
     public Message GetPublicMessage()
