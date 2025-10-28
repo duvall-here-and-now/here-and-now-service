@@ -19,6 +19,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 // Add services to the container.
 builder.Services.AddScoped<IMessageService, MessageService>();
+builder.Services.AddScoped<IReminderInstanceService, ReminderInstanceService>();
 
 builder.Services.AddCors(options =>
 {
@@ -32,7 +33,7 @@ builder.Services.AddCors(options =>
                 HeaderNames.ContentType,
                 HeaderNames.Authorization,
             })
-            .WithMethods("GET")
+            .WithMethods("GET", "POST", "PUT", "DELETE")
             .SetPreflightMaxAge(TimeSpan.FromSeconds(86400));
     });
 });
