@@ -38,7 +38,7 @@ public class ReminderInstancesController : ControllerBase
     {
         _logger.LogInformation("GET /api/reminder-instances - Request received to get all reminders");
         var reminders = _reminderInstanceService.GetAll();
-        _logger.LogInformation("GET /api/reminder-instances - Returning {Count} reminders with status 200 OK", reminders.Count());
+        _logger.LogInformation("GET /api/reminder-instances - Returning {Count} reminders with Status 200 OK", reminders.Count());
         return Ok(reminders);
     }
 
@@ -47,7 +47,7 @@ public class ReminderInstancesController : ControllerBase
     /// </summary>
     /// <param name="id">The unique identifier of the reminder.</param>
     /// <returns>The reminder instance if found.</returns>
-    [HttpGet("{id}")]
+    [HttpGet("{Id}")]
     [ProducesResponseType(typeof(ReminderInstance), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -62,7 +62,7 @@ public class ReminderInstancesController : ControllerBase
             return NotFound(new { message = $"Reminder with ID {id} not found." });
         }
 
-        _logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Returning reminder with status 200 OK", id);
+        _logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Returning reminder with Status 200 OK", id);
         return Ok(reminder);
     }
 
@@ -79,11 +79,11 @@ public class ReminderInstancesController : ControllerBase
     {
         _logger.LogInformation("POST /api/reminder-instances - Request received to create new reminder");
         var createdReminder = _reminderInstanceService.Create(reminder);
-        _logger.LogInformation("POST /api/reminder-instances - Successfully created reminder with ID: {ReminderId}, returning 201 Created", createdReminder.id);
+        _logger.LogInformation("POST /api/reminder-instances - Successfully created reminder with ID: {ReminderId}, returning 201 Created", createdReminder.Id);
 
         return CreatedAtAction(
             nameof(GetById),
-            new { id = createdReminder.id },
+            new { id = createdReminder.Id },
             createdReminder
         );
     }
@@ -94,7 +94,7 @@ public class ReminderInstancesController : ControllerBase
     /// <param name="id">The unique identifier of the reminder to update.</param>
     /// <param name="reminder">The updated reminder data.</param>
     /// <returns>The updated reminder instance.</returns>
-    [HttpPut("{id}")]
+    [HttpPut("{Id}")]
     [ProducesResponseType(typeof(ReminderInstance), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -103,9 +103,9 @@ public class ReminderInstancesController : ControllerBase
     {
         _logger.LogInformation("PUT /api/reminder-instances/{ReminderId} - Request received to update reminder", id);
 
-        if (reminder.id != Guid.Empty && reminder.id != id)
+        if (reminder.Id != Guid.Empty && reminder.Id != id)
         {
-            _logger.LogWarning("PUT /api/reminder-instances/{ReminderId} - ID mismatch: URL ID does not match body ID {BodyId}, returning 400 Bad Request", id, reminder.id);
+            _logger.LogWarning("PUT /api/reminder-instances/{ReminderId} - ID mismatch: URL ID does not match body ID {BodyId}, returning 400 Bad Request", id, reminder.Id);
             return BadRequest(new { message = "ID in URL and body do not match." });
         }
 
@@ -126,7 +126,7 @@ public class ReminderInstancesController : ControllerBase
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to delete.</param>
     /// <returns>No content if successful.</returns>
-    [HttpDelete("{id}")]
+    [HttpDelete("{Id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

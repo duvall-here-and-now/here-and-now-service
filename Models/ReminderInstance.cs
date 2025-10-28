@@ -1,27 +1,27 @@
 namespace HereAndNowService.Models;
 
 /// <summary>
-/// Represents a reminder instance with scheduling and status tracking.
+/// Represents a reminder instance with scheduling and Status tracking.
 /// </summary>
 public class ReminderInstance
 {
     /// <summary>
     /// Unique identifier for the reminder instance.
     /// </summary>
-    public Guid id { get; set; }
+    public Guid Id { get; set; }
 
     /// <summary>
-    /// The text content of the reminder.
+    /// The Text content of the reminder.
     /// </summary>
-    public required string text { get; set; } = string.Empty;
+    public required string Text { get; set; }
 
     /// <summary>
     /// The date and time when the reminder is scheduled to occur.
     /// </summary>
-    public DateTime scheduledDateAndTime { get; set; }
+    public DateTime ScheduledDateAndTime { get; set; }
 
     /// <summary>
-    /// The current status of the reminder.
+    /// The current Status of the reminder.
     /// </summary>
-    public ReminderStatus status { get; set; }
+    public ReminderStatus Status { get; set; }
 }

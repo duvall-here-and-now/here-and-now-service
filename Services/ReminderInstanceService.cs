@@ -62,19 +62,19 @@ public class ReminderInstanceService : IReminderInstanceService
     /// <returns>The created reminder instance with a generated ID.</returns>
     public ReminderInstance Create(ReminderInstance reminder)
     {
-        _logger.LogInformation("Creating new reminder instance with text: {ReminderText}, scheduled for: {ScheduledTime}, status: {Status}",
-            reminder.text, reminder.scheduledDateAndTime, reminder.status);
+        _logger.LogInformation("Creating new reminder instance with Text: {ReminderText}, scheduled for: {ScheduledTime}, Status: {Status}",
+            reminder.Text, reminder.ScheduledDateAndTime, reminder.Status);
 
-        reminder.id = Guid.NewGuid();
-        var added = _reminders.TryAdd(reminder.id, reminder);
+        reminder.Id = Guid.NewGuid();
+        var added = _reminders.TryAdd(reminder.Id, reminder);
 
         if (added)
         {
-            _logger.LogInformation("Successfully created reminder instance with ID: {ReminderId}", reminder.id);
+            _logger.LogInformation("Successfully created reminder instance with ID: {ReminderId}", reminder.Id);
         }
         else
         {
-            _logger.LogError("Failed to add reminder instance with ID: {ReminderId} to dictionary", reminder.id);
+            _logger.LogError("Failed to add reminder instance with ID: {ReminderId} to dictionary", reminder.Id);
         }
 
         return reminder;
@@ -92,10 +92,10 @@ public class ReminderInstanceService : IReminderInstanceService
 
         if (_reminders.TryGetValue(id, out var existingReminder))
         {
-            _logger.LogInformation("Found existing reminder with ID: {ReminderId}. Old status: {OldStatus}, New status: {NewStatus}",
-                id, existingReminder.status, reminder.status);
+            _logger.LogInformation("Found existing reminder with ID: {ReminderId}. Old Status: {OldStatus}, New Status: {NewStatus}",
+                id, existingReminder.Status, reminder.Status);
 
-            reminder.id = id;
+            reminder.Id = id;
             if (_reminders.TryUpdate(id, reminder, existingReminder))
             {
                 _logger.LogInformation("Successfully updated reminder instance with ID: {ReminderId}", id);
