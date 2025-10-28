@@ -13,7 +13,7 @@ public class ReminderInstance
     /// <summary>
     /// The text content of the reminder.
     /// </summary>
-    public string text { get; set; }
+    public required string text { get; set; } = string.Empty;
 
     /// <summary>
     /// The date and time when the reminder is scheduled to occur.

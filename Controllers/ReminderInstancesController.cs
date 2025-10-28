@@ -14,14 +14,17 @@ namespace HereAndNowService.Controllers;
 public class ReminderInstancesController : ControllerBase
 {
     private readonly IReminderInstanceService _reminderInstanceService;
+    private readonly ILogger<ReminderInstancesController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ReminderInstancesController"/> class.
     /// </summary>
     /// <param name="reminderInstanceService">The reminder instance service.</param>
-    public ReminderInstancesController(IReminderInstanceService reminderInstanceService)
+    /// <param name="logger">The logger instance.</param>
+    public ReminderInstancesController(IReminderInstanceService reminderInstanceService, ILogger<ReminderInstancesController> logger)
     {
         _reminderInstanceService = reminderInstanceService;
+        _logger = logger;
     }
 
     /// <summary>
@@ -33,7 +36,9 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<IEnumerable<ReminderInstance>> GetAll()
     {
+        _logger.LogInformation("GET /api/reminder-instances - Request received to get all reminders");
         var reminders = _reminderInstanceService.GetAll();
+        _logger.LogInformation("GET /api/reminder-instances - Returning {Count} reminders with status 200 OK", reminders.Count());
         return Ok(reminders);
     }
 
@@ -48,13 +53,16 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<ReminderInstance> GetById(Guid id)
     {
+        _logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Request received", id);
         var reminder = _reminderInstanceService.GetById(id);
 
         if (reminder == null)
         {
+            _logger.LogWarning("GET /api/reminder-instances/{ReminderId} - Reminder not found, returning 404 Not Found", id);
             return NotFound(new { message = $"Reminder with ID {id} not found." });
         }
 
+        _logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Returning reminder with status 200 OK", id);
         return Ok(reminder);
     }
 
@@ -69,12 +77,9 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<ReminderInstance> Create([FromBody] ReminderInstance reminder)
     {
-        if (reminder == null)
-        {
-            return BadRequest(new { message = "Reminder data is required." });
-        }
-
+        _logger.LogInformation("POST /api/reminder-instances - Request received to create new reminder");
         var createdReminder = _reminderInstanceService.Create(reminder);
+        _logger.LogInformation("POST /api/reminder-instances - Successfully created reminder with ID: {ReminderId}, returning 201 Created", createdReminder.id);
 
         return CreatedAtAction(
             nameof(GetById),
@@ -96,18 +101,23 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<ReminderInstance> Update(Guid id, [FromBody] ReminderInstance reminder)
     {
-        if (reminder == null)
+        _logger.LogInformation("PUT /api/reminder-instances/{ReminderId} - Request received to update reminder", id);
+
+        if (reminder.id != Guid.Empty && reminder.id != id)
         {
-            return BadRequest(new { message = "Reminder data is required." });
+            _logger.LogWarning("PUT /api/reminder-instances/{ReminderId} - ID mismatch: URL ID does not match body ID {BodyId}, returning 400 Bad Request", id, reminder.id);
+            return BadRequest(new { message = "ID in URL and body do not match." });
         }
 
         var updatedReminder = _reminderInstanceService.Update(id, reminder);
 
         if (updatedReminder == null)
         {
+            _logger.LogWarning("PUT /api/reminder-instances/{ReminderId} - Reminder not found, returning 404 Not Found", id);
             return NotFound(new { message = $"Reminder with ID {id} not found." });
         }
 
+        _logger.LogInformation("PUT /api/reminder-instances/{ReminderId} - Successfully updated reminder, returning 200 OK", id);
         return Ok(updatedReminder);
     }
 
@@ -122,13 +132,16 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult Delete(Guid id)
     {
+        _logger.LogInformation("DELETE /api/reminder-instances/{ReminderId} - Request received to delete reminder", id);
         var deleted = _reminderInstanceService.Delete(id);
 
         if (!deleted)
         {
+            _logger.LogWarning("DELETE /api/reminder-instances/{ReminderId} - Reminder not found, returning 404 Not Found", id);
             return NotFound(new { message = $"Reminder with ID {id} not found." });
         }
 
+        _logger.LogInformation("DELETE /api/reminder-instances/{ReminderId} - Successfully deleted reminder, returning 204 No Content", id);
         return NoContent();
     }
 }
