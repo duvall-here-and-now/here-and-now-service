@@ -151,3 +151,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.Run();
+
+// Make Program class accessible to tests
+// See: https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests
+public partial class Program { }
