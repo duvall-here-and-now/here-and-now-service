@@ -51,11 +51,20 @@ dotnet restore
 # Run all tests
 dotnet test
 
+# Run tests with verbose output
+dotnet test --logger "console;verbosity=detailed"
+
+# Run specific test by name filter
+dotnet test --filter "FullyQualifiedName~TestMethodName"
+
 # Run tests with coverage
 dotnet test --collect:"XPlat Code Coverage"
 
 # Run specific test project
 dotnet test Web/HereAndNow.Web.Tests/HereAndNow.Web.Tests.csproj
+
+# Watch mode for continuous testing during development
+dotnet watch test --project Web/HereAndNow.Web.Tests/HereAndNow.Web.Tests.csproj
 ```
 
 ### Publishing
@@ -74,7 +83,7 @@ The application uses environment variables loaded via dotenv.net. Required varia
 
 Configuration files:
 - `.env` - Local environment variables (not committed to git)
-- `Web/HereAndNow.Web/.env` - Web project-specific env vars
+
 
 ## Authentication & Authorization Architecture
 
