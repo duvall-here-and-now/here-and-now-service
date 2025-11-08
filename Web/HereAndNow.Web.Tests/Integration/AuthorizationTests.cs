@@ -41,7 +41,7 @@ public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>
     public async Task Create_WithoutAuthentication_ShouldReturn401Unauthorized()
     {
         // Arrange
-        var content = new StringContent(
+        using var content = new StringContent(
             "{\"text\":\"Test\",\"scheduledDateAndTime\":\"2024-12-31T10:00:00Z\"}",
             System.Text.Encoding.UTF8,
             "application/json");
@@ -58,7 +58,7 @@ public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>
     {
         // Arrange
         var id = Guid.NewGuid();
-        var content = new StringContent(
+        using var content = new StringContent(
             $"{{\"id\":\"{id}\",\"text\":\"Updated\",\"scheduledDateAndTime\":\"2024-12-31T10:00:00Z\"}}",
             System.Text.Encoding.UTF8,
             "application/json");
