@@ -20,7 +20,7 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
     public async Task PreflightRequest_WithAllowedOrigin_ShouldReturnCorsHeaders()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
         request.Headers.Add(HeaderNames.Origin, AllowedOrigin);
         request.Headers.Add(HeaderNames.AccessControlRequestMethod, "GET");
 
@@ -37,7 +37,7 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
     public async Task PreflightRequest_WithDisallowedOrigin_ShouldNotReturnAllowOriginHeader()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
         request.Headers.Add(HeaderNames.Origin, DisallowedOrigin);
         request.Headers.Add(HeaderNames.AccessControlRequestMethod, "GET");
 
@@ -45,8 +45,8 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
         var response = await _client.SendAsync(request);
 
         // Assert
-        response.Headers.Should().NotContain(h => 
-            h.Key == HeaderNames.AccessControlAllowOrigin && 
+        response.Headers.Should().NotContain(h =>
+            h.Key == HeaderNames.AccessControlAllowOrigin &&
             h.Value.Contains(DisallowedOrigin));
     }
 
@@ -54,7 +54,7 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
     public async Task PreflightRequest_ShouldAllowContentTypeAndAuthorizationHeaders()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
         request.Headers.Add(HeaderNames.Origin, AllowedOrigin);
         request.Headers.Add(HeaderNames.AccessControlRequestMethod, "POST");
         request.Headers.Add(HeaderNames.AccessControlRequestHeaders, "Content-Type,Authorization");
@@ -81,7 +81,7 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
 
         foreach (var method in methods)
         {
-            var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
+            using var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
             request.Headers.Add(HeaderNames.Origin, AllowedOrigin);
             request.Headers.Add(HeaderNames.AccessControlRequestMethod, method);
 
@@ -89,7 +89,7 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
             var response = await _client.SendAsync(request);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NoContent, 
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent,
                 $"preflight for {method} should be allowed");
         }
     }
@@ -98,7 +98,7 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
     public async Task PreflightRequest_ShouldIncludeMaxAge()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/reminder-instances");
         request.Headers.Add(HeaderNames.Origin, AllowedOrigin);
         request.Headers.Add(HeaderNames.AccessControlRequestMethod, "GET");
 
@@ -118,7 +118,7 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
     public async Task ActualRequest_WithAllowedOrigin_ShouldIncludeAllowOriginHeader()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/reminder-instances");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/reminder-instances");
         request.Headers.Add(HeaderNames.Origin, AllowedOrigin);
 
         // Act
@@ -127,7 +127,7 @@ public class CorsTests : IClassFixture<TestWebApplicationFactory>
         // Assert
         // Will be 401 because we don't have auth, but should still have CORS headers
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        
+
         // CORS headers should be present even for 401 responses
         if (response.Headers.Contains(HeaderNames.AccessControlAllowOrigin))
         {
