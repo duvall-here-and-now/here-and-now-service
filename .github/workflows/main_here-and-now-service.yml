@@ -13,7 +13,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read # Required for actions/checkout
+      checks: write # Required for test result publishing
+      pull-requests: write # Required for PR comments with test results
 
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +27,25 @@ jobs:
 
       - name: Build with dotnet
         run: dotnet build HereAndNow.sln --configuration Release
+
+      - name: Run tests
+        run: dotnet test HereAndNow.sln --configuration Release --no-build --verbosity normal --logger trx --collect:"XPlat Code Coverage"
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Test Results
+          path: '**/*.trx'
+          reporter: dotnet-trx
+          fail-on-error: true
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: '**/coverage.cobertura.xml'
 
       - name: dotnet publish
         run: dotnet publish Web/HereAndNow.Web/HereAndNow.Web.csproj -c Release -o ${{env.DOTNET_ROOT}}/myapp
