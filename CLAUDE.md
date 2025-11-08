@@ -128,7 +128,10 @@ The code reviewer enforces .NET 8 best practices including proper async/await pa
 The project uses GitHub Actions for CI/CD to Azure Web Apps:
 - Workflow file: `.github/workflows/main_here-and-now-service.yml`
 - Triggers on push to `main` branch
-- Build → Publish → Deploy to Azure App Service
+- Pipeline: Build → Test → Publish → Deploy to Azure App Service
+- **Quality Gate**: Tests must pass before deployment proceeds
+- Test results published to GitHub Actions UI with detailed reports
+- Code coverage reports uploaded as workflow artifacts
 - Uses publish profile stored in GitHub secrets
 - The `clean: true` flag ensures old artifacts are removed during deployment
 

@@ -15,12 +15,14 @@ This is an ASP.NET Core API service implementing Auth0 authorization for access 
 - Use modern C# features and patterns where appropriate
 - Prefer async/await for I/O operations
 - Use dependency injection for service management
+- Make sure all IDisposable objects are properly disposed of
 
 ### Code Style
 - Keep methods focused and single-purpose
 - Add XML documentation comments for public APIs
 - Use meaningful variable and method names
 - Handle exceptions appropriately with proper error messages
+
 
 ## Project Structure
 - `/Reminders` - Business logic and domain models
