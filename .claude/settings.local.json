@@ -1,10 +1,8 @@
 {
+  "outputStyle": "Learning",
   "permissions": {
     "allow": [
-      "Bash(git checkout:*)",
-      "Bash(gh run view:*)",
-      "Bash(ls:*)"
+      "Bash(git checkout:*)"
     ]
-  },
-  "outputStyle": "Learning"
+  }
 }
