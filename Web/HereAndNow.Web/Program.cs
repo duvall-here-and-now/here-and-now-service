@@ -26,10 +26,13 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        var clientOriginUrl = builder.Configuration.GetValue<string>("CLIENT_ORIGIN_URL")
+        var clientOriginUrlConfig = builder.Configuration.GetValue<string>("CLIENT_ORIGIN_URL")
             ?? throw new InvalidOperationException("CLIENT_ORIGIN_URL is not configured");
 
-        policy.WithOrigins(clientOriginUrl)
+        var allowedOrigins = clientOriginUrlConfig
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        policy.WithOrigins(allowedOrigins)
             .WithHeaders(new string[] {
                 HeaderNames.ContentType,
                 HeaderNames.Authorization,
