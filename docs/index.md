@@ -13,6 +13,7 @@
 | **Framework** | ASP.NET Core 8.0 |
 | **Architecture Pattern** | Clean Architecture |
 | **Authentication** | Auth0 JWT Bearer |
+| **Data Storage** | Azure Cosmos DB (Primary) / In-memory (Fallback) |
 | **Deployment** | Azure App Service |
 
 ---
@@ -21,11 +22,12 @@
 
 | Aspect | Details |
 |--------|---------|
-| **Tech Stack** | ASP.NET Core 8, Auth0, Swagger/OpenAPI, xUnit |
+| **Tech Stack** | ASP.NET Core 8, Auth0, Azure Cosmos DB, Swagger/OpenAPI, xUnit |
 | **Entry Point** | `Web/HereAndNow.Web/Program.cs` |
 | **API Endpoints** | 8 endpoints (3 messages, 5 reminder CRUD) |
-| **Data Storage** | In-memory (ConcurrentDictionary) |
+| **Data Storage** | Azure Cosmos DB with `/userId` partition key |
 | **CI/CD** | GitHub Actions → Azure App Service |
+| **Test Coverage** | 18 tests (13 unit, 5 integration) |
 
 ---
 
@@ -33,19 +35,25 @@
 
 ### Architecture & Design
 
-- [Project Overview](./project-overview.md) - Executive summary and quick facts
-- [Architecture](./architecture.md) - System architecture, design decisions, and patterns
-- [Source Tree Analysis](./source-tree-analysis.md) - Project structure and critical folders
+| Document | Description |
+|----------|-------------|
+| [Project Overview](./project-overview.md) | Executive summary and quick facts |
+| [Architecture](./architecture.md) | System architecture, design decisions, data flow |
+| [Source Tree Analysis](./source-tree-analysis.md) | Project structure, namespaces, dependency flow |
 
 ### API & Data
 
-- [API Contracts](./api-contracts.md) - REST API endpoint documentation with request/response schemas
-- [Data Models](./data-models.md) - Domain models, enums, and data access patterns
+| Document | Description |
+|----------|-------------|
+| [API Contracts](./api-contracts.md) | REST API endpoints, request/response schemas, error codes |
+| [Data Models](./data-models.md) | Domain models, DTOs, persistence layer, service interfaces |
 
 ### Development & Operations
 
-- [Development Guide](./development-guide.md) - Prerequisites, setup, building, testing, troubleshooting
-- [Deployment Guide](./deployment-guide.md) - CI/CD pipeline, Azure configuration, deployment procedures
+| Document | Description |
+|----------|-------------|
+| [Development Guide](./development-guide.md) | Prerequisites, setup, building, testing, troubleshooting |
+| [Deployment Guide](./deployment-guide.md) | CI/CD pipeline, Azure Cosmos DB, deployment procedures |
 
 ---
 
@@ -98,8 +106,11 @@ Data: docs/data-models.md
 | Component | Location | Purpose |
 |-----------|----------|---------|
 | **Controllers** | `Web/HereAndNow.Web/Controllers/` | Add new API endpoints |
+| **DTOs** | `Web/HereAndNow.Web/DTOs/` | Add API response models |
+| **Mappers** | `Web/HereAndNow.Web/Mappers/` | Add Domain ↔ DTO mappings |
 | **Services** | `Reminders/HereAndNow.Reminders/Services/` | Add business logic |
 | **Models** | `Reminders/HereAndNow.Reminders/Models/` | Add domain entities |
+| **Persistence** | `Reminders/HereAndNow.Reminders/Persistence/` | Add Cosmos documents |
 | **Middleware** | `Web/HereAndNow.Web/Middlewares/` | Add cross-cutting concerns |
 | **Tests** | `Web/HereAndNow.Web.Tests/` | Add unit/integration tests |
 
@@ -110,6 +121,41 @@ Data: docs/data-models.md
 - XML documentation on public APIs
 - Service registration in `Program.cs`
 - xUnit for testing with Moq and FluentAssertions
+- Soft delete pattern (IsDeleted flag)
+- Multi-tenant isolation via partition key
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PORT` | Yes | Server port |
+| `CLIENT_ORIGIN_URL` | Yes | CORS allowed origins (comma-separated) |
+| `AUTH0_DOMAIN` | Yes | Auth0 tenant domain |
+| `AUTH0_AUDIENCE` | Yes | Auth0 API identifier |
+| `COSMOS_ENDPOINT` | No* | Cosmos DB endpoint |
+| `COSMOS_PRIMARY_KEY` | No* | Cosmos DB key |
+| `COSMOS_DATABASE_NAME` | No* | Database name |
+| `COSMOS_CONTAINER_NAME` | No* | Container name |
+
+*If Cosmos variables are not set, service uses in-memory storage
+
+---
+
+## Recent Changes
+
+### 2025-12-17 (This Scan)
+
+- **Added:** Azure Cosmos DB persistence with multi-tenant user isolation
+- **Added:** DTO layer with computed State property
+- **Added:** ReminderInstanceMapper for Domain ↔ DTO conversion
+- **Added:** ServiceUnavailableException for Cosmos transient errors
+- **Added:** SDK-level retry policy for 429 throttling
+- **Added:** Soft delete pattern with IsDeleted flag
+
+### 2025-12-12 (Initial Scan)
+
+- Initial documentation generation
+- API contracts, data models, architecture documented
 
 ---
 
@@ -117,7 +163,8 @@ Data: docs/data-models.md
 
 | Field | Value |
 |-------|-------|
-| **Generated** | 2025-12-12 |
-| **Scan Level** | Deep |
+| **Generated** | 2025-12-17 |
+| **Scan Level** | Exhaustive |
 | **Workflow** | document-project v1.2.0 |
-| **Files Generated** | 8 |
+| **Files Updated** | 8 |
+| **Source Files Scanned** | 20 |

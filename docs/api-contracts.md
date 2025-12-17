@@ -1,22 +1,37 @@
 # API Contracts
 
+> REST API endpoint documentation for Here and Now Service
+
+---
+
 ## Overview
 
-The Here and Now Service exposes a REST API for managing reminders and authentication-gated messages. All endpoints are documented using OpenAPI/Swagger and follow REST conventions.
+| Attribute | Value |
+|-----------|-------|
+| **Base URL** | `/api` |
+| **Authentication** | Auth0 JWT Bearer Token |
+| **Content Type** | `application/json` |
+| **API Documentation** | Swagger UI at `/swagger` |
+| **Total Endpoints** | 8 |
 
-**Base URL:** `http://localhost:{PORT}` (local) or `https://here-and-now-service.azurewebsites.net` (Azure)
-
-**API Documentation:** Available at `/swagger` endpoint
+---
 
 ## Authentication
 
-All protected endpoints require JWT Bearer authentication via Auth0.
+All endpoints except `/api/messages/public` require a valid JWT Bearer token:
 
-### Authentication Flow
+```http
+Authorization: Bearer <your-auth0-jwt-token>
+```
 
-1. Client obtains JWT token from Auth0
-2. Include token in `Authorization` header: `Bearer {token}`
-3. Token is validated against Auth0 authority
+The token must be issued by the configured Auth0 domain and contain the correct audience claim.
+
+### User Identification
+
+Authenticated endpoints extract the user ID from the JWT `sub` claim (or `ClaimTypes.NameIdentifier`). This user ID:
+- Serves as the partition key in Cosmos DB for efficient multi-tenant data isolation
+- Ensures users can only access their own reminders
+- Is automatically associated with created/updated reminders
 
 ### Required Environment Variables
 
@@ -24,233 +39,305 @@ All protected endpoints require JWT Bearer authentication via Auth0.
 |----------|-------------|
 | `AUTH0_DOMAIN` | Auth0 tenant domain |
 | `AUTH0_AUDIENCE` | API audience identifier |
-| `CLIENT_ORIGIN_URL` | Allowed CORS origin |
+| `CLIENT_ORIGIN_URL` | Allowed CORS origins (comma-separated) |
 | `PORT` | Server port |
 
 ---
 
-## Messages API
+## Endpoints
+
+### Messages Controller
 
 **Base Path:** `/api/messages`
-**Controller:** `MessagesController`
+**Controller:** `MessagesController.cs:13`
 
-### GET /api/messages/public
+#### GET /api/messages/public
 
-Retrieves a public message. No authentication required.
+Returns a public message accessible without authentication.
 
 | Attribute | Value |
 |-----------|-------|
-| **Method** | `GET` |
 | **Auth Required** | No |
-| **Response Type** | `Message` |
+| **Method** | GET |
 
-**Response Codes:**
-
-| Code | Description |
-|------|-------------|
-| `200 OK` | Returns the public message |
-
-**Response Schema:**
-
+**Response (200 OK):**
 ```json
 {
-  "text": "string"
+  "text": "This is a public message."
 }
 ```
 
 ---
 
-### GET /api/messages/protected
+#### GET /api/messages/protected
 
-Retrieves a protected message. Requires authentication.
-
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `GET` |
-| **Auth Required** | Yes (`[Authorize]`) |
-| **Response Type** | `Message` |
-
-**Response Codes:**
-
-| Code | Description |
-|------|-------------|
-| `200 OK` | Returns the protected message |
-| `401 Unauthorized` | Missing or invalid token |
-
----
-
-### GET /api/messages/admin
-
-Retrieves an admin message. Requires authentication.
+Returns a protected message requiring authentication.
 
 | Attribute | Value |
 |-----------|-------|
-| **Method** | `GET` |
-| **Auth Required** | Yes (`[Authorize]`) |
-| **Response Type** | `Message` |
+| **Auth Required** | Yes |
+| **Method** | GET |
 
-**Response Codes:**
+**Response (200 OK):**
+```json
+{
+  "text": "This is a protected message, and Mike is cool."
+}
+```
 
-| Code | Description |
-|------|-------------|
-| `200 OK` | Returns the admin message |
-| `401 Unauthorized` | Missing or invalid token |
+| Status Code | Description |
+|-------------|-------------|
+| 401 Unauthorized | Missing or invalid token |
 
 ---
 
-## Reminder Instances API
+#### GET /api/messages/admin
+
+Returns an admin message requiring authentication.
+
+| Attribute | Value |
+|-----------|-------|
+| **Auth Required** | Yes |
+| **Method** | GET |
+
+**Response (200 OK):**
+```json
+{
+  "text": "This is an admin message."
+}
+```
+
+| Status Code | Description |
+|-------------|-------------|
+| 401 Unauthorized | Missing or invalid token |
+
+---
+
+### Reminder Instances Controller
 
 **Base Path:** `/api/reminder-instances`
-**Controller:** `ReminderInstancesController`
-**Authorization:** All endpoints require authentication (`[Authorize]` at controller level)
+**Controller:** `ReminderInstancesController.cs:16`
+**Authorization:** All endpoints require authentication (controller-level `[Authorize]`)
 
-### GET /api/reminder-instances
+---
 
-Gets all reminder instances.
+#### GET /api/reminder-instances
+
+Returns all reminder instances for the authenticated user.
 
 | Attribute | Value |
 |-----------|-------|
-| **Method** | `GET` |
 | **Auth Required** | Yes |
-| **Response Type** | `IEnumerable<ReminderInstance>` |
+| **Method** | GET |
 
-**Response Codes:**
-
-| Code | Description |
-|------|-------------|
-| `200 OK` | Returns list of all reminders |
-| `401 Unauthorized` | Not authenticated |
-
-**Example Response:**
-
+**Response (200 OK):**
 ```json
 [
   {
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "text": "Team standup meeting",
-    "scheduledDateAndTime": "2025-12-13T09:00:00Z",
-    "status": "Scheduled"
+    "text": "Take medication",
+    "scheduledDateAndTime": "2025-12-17T10:00:00Z",
+    "isCompleted": false,
+    "isDeleted": false,
+    "shouldPlaySound": true,
+    "shouldDoVibration": false,
+    "state": "Scheduled"
   }
 ]
 ```
 
----
-
-### GET /api/reminder-instances/{id}
-
-Gets a specific reminder instance by ID.
-
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `GET` |
-| **Auth Required** | Yes |
-| **Response Type** | `ReminderInstance` |
-| **URL Parameter** | `id` (Guid) |
-
-**Response Codes:**
-
-| Code | Description |
-|------|-------------|
-| `200 OK` | Returns the reminder |
-| `401 Unauthorized` | Not authenticated |
-| `404 Not Found` | Reminder with given ID not found |
+| Status Code | Description |
+|-------------|-------------|
+| 401 Unauthorized | Missing or invalid token |
+| 503 Service Unavailable | Cosmos DB unavailable |
 
 ---
 
-### POST /api/reminder-instances
+#### GET /api/reminder-instances/{id}
 
-Creates a new reminder instance.
+Returns a specific reminder instance by ID.
 
 | Attribute | Value |
 |-----------|-------|
-| **Method** | `POST` |
 | **Auth Required** | Yes |
-| **Request Body** | `ReminderInstance` |
-| **Response Type** | `ReminderInstance` |
+| **Method** | GET |
+| **Path Parameter** | `id` (GUID) |
 
-**Request Body Schema:**
-
+**Response (200 OK):**
 ```json
 {
-  "text": "string (required)",
-  "scheduledDateAndTime": "2025-12-13T09:00:00Z",
-  "status": "Scheduled | Active | Completed"
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "Take medication",
+  "scheduledDateAndTime": "2025-12-17T10:00:00Z",
+  "isCompleted": false,
+  "isDeleted": false,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false,
+  "state": "Scheduled"
 }
 ```
 
-**Response Codes:**
-
-| Code | Description |
-|------|-------------|
-| `201 Created` | Returns created reminder with generated ID |
-| `400 Bad Request` | Invalid request body |
-| `401 Unauthorized` | Not authenticated |
-
-**Response Headers:**
-
-- `Location`: URL of the created resource
+| Status Code | Description |
+|-------------|-------------|
+| 401 Unauthorized | Missing or invalid token |
+| 404 Not Found | Reminder not found or belongs to different user |
+| 503 Service Unavailable | Cosmos DB unavailable |
 
 ---
 
-### PUT /api/reminder-instances/{id}
+#### POST /api/reminder-instances
+
+Creates a new reminder instance for the authenticated user.
+
+| Attribute | Value |
+|-----------|-------|
+| **Auth Required** | Yes |
+| **Method** | POST |
+| **Content-Type** | application/json |
+
+**Request Body:**
+```json
+{
+  "text": "Take medication",
+  "scheduledDateAndTime": "2025-12-17T10:00:00Z",
+  "isCompleted": false,
+  "isDeleted": false,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "Take medication",
+  "scheduledDateAndTime": "2025-12-17T10:00:00Z",
+  "isCompleted": false,
+  "isDeleted": false,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false,
+  "state": "Scheduled"
+}
+```
+
+| Status Code | Description |
+|-------------|-------------|
+| 400 Bad Request | Invalid request body |
+| 401 Unauthorized | Missing or invalid token |
+| 503 Service Unavailable | Cosmos DB unavailable |
+
+**Note:** The `id` field in the request is ignored; a new GUID is generated server-side.
+
+---
+
+#### PUT /api/reminder-instances/{id}
 
 Updates an existing reminder instance.
 
 | Attribute | Value |
 |-----------|-------|
-| **Method** | `PUT` |
 | **Auth Required** | Yes |
-| **URL Parameter** | `id` (Guid) |
-| **Request Body** | `ReminderInstance` |
-| **Response Type** | `ReminderInstance` |
+| **Method** | PUT |
+| **Path Parameter** | `id` (GUID) |
+| **Content-Type** | application/json |
 
-**Request Body Schema:**
-
+**Request Body:**
 ```json
 {
-  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6 (optional, must match URL)",
-  "text": "string (required)",
-  "scheduledDateAndTime": "2025-12-13T09:00:00Z",
-  "status": "Scheduled | Active | Completed"
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "Take medication (updated)",
+  "scheduledDateAndTime": "2025-12-17T11:00:00Z",
+  "isCompleted": true,
+  "isDeleted": false,
+  "shouldPlaySound": false,
+  "shouldDoVibration": true
 }
 ```
 
-**Response Codes:**
+**Response (200 OK):**
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "Take medication (updated)",
+  "scheduledDateAndTime": "2025-12-17T11:00:00Z",
+  "isCompleted": true,
+  "isDeleted": false,
+  "shouldPlaySound": false,
+  "shouldDoVibration": true,
+  "state": "Completed"
+}
+```
 
-| Code | Description |
-|------|-------------|
-| `200 OK` | Returns updated reminder |
-| `400 Bad Request` | ID mismatch between URL and body |
-| `401 Unauthorized` | Not authenticated |
-| `404 Not Found` | Reminder with given ID not found |
+| Status Code | Description |
+|-------------|-------------|
+| 400 Bad Request | ID mismatch between URL and body |
+| 401 Unauthorized | Missing or invalid token |
+| 404 Not Found | Reminder not found or belongs to different user |
+| 503 Service Unavailable | Cosmos DB unavailable |
 
 ---
 
-### DELETE /api/reminder-instances/{id}
+#### DELETE /api/reminder-instances/{id}
 
-Deletes a reminder instance.
+Soft-deletes a reminder instance (sets `isDeleted = true`).
 
 | Attribute | Value |
 |-----------|-------|
-| **Method** | `DELETE` |
 | **Auth Required** | Yes |
-| **URL Parameter** | `id` (Guid) |
+| **Method** | DELETE |
+| **Path Parameter** | `id` (GUID) |
 
-**Response Codes:**
+| Status Code | Description |
+|-------------|-------------|
+| 204 No Content | Reminder soft-deleted successfully |
+| 401 Unauthorized | Missing or invalid token |
+| 404 Not Found | Reminder not found or belongs to different user |
+| 503 Service Unavailable | Cosmos DB unavailable |
 
-| Code | Description |
-|------|-------------|
-| `204 No Content` | Successfully deleted |
-| `401 Unauthorized` | Not authenticated |
-| `404 Not Found` | Reminder with given ID not found |
+---
+
+## Response Schemas
+
+### ReminderInstanceDto
+
+```typescript
+{
+  id: string;                    // GUID
+  text: string;                  // Required
+  scheduledDateAndTime: string;  // ISO 8601 datetime
+  isCompleted: boolean;
+  isDeleted: boolean;
+  shouldPlaySound: boolean;
+  shouldDoVibration: boolean;
+  state: "Scheduled" | "Active" | "Completed" | "Deleted";  // Computed
+}
+```
+
+### ReminderState (Computed Property)
+
+The `state` field is computed based on the reminder's flags and scheduled time:
+
+| Priority | Condition | State |
+|----------|-----------|-------|
+| 1 | `isDeleted == true` | `Deleted` |
+| 2 | `isCompleted == true` | `Completed` |
+| 3 | `now >= scheduledDateAndTime` | `Active` |
+| 4 | Otherwise | `Scheduled` |
+
+### Message
+
+```typescript
+{
+  text: string | null;
+}
+```
 
 ---
 
 ## Error Responses
 
-The API uses custom error handling middleware that provides consistent error responses.
-
-### Standard Error Response Format
+### Standard Error Format
 
 ```json
 {
@@ -258,37 +345,75 @@ The API uses custom error handling middleware that provides consistent error res
 }
 ```
 
-### Common Error Messages
+### Authentication Errors (401)
 
-| Status | Scenario | Message |
-|--------|----------|---------|
-| `401` | No Authorization header | `"Requires authentication"` |
-| `401` | Invalid token | `"Bad credentials"` |
-| `404` | Resource not found | `"Not Found"` |
-| `500` | Server error | `"Internal Server Error."` |
+Without Authorization header:
+```json
+{
+  "message": "Requires authentication"
+}
+```
 
----
+With invalid token:
+```json
+{
+  "message": "Bad credentials"
+}
+```
 
-## CORS Configuration
+### Service Unavailable (503)
 
-The API accepts requests from the configured `CLIENT_ORIGIN_URL` with the following settings:
-
-- **Allowed Headers:** `Content-Type`, `Authorization`
-- **Allowed Methods:** `GET`, `POST`, `PUT`, `DELETE`
-- **Preflight Cache:** 86400 seconds (24 hours)
+Cosmos DB issues (ServiceUnavailable, RequestTimeout, GatewayTimeout, InternalServerError):
+```json
+{
+  "message": "The reminder service is temporarily unavailable. Please try again later."
+}
+```
 
 ---
 
 ## Security Headers
 
-All responses include security headers set by `SecureHeadersMiddleware`:
+All responses include security headers (via `SecureHeadersMiddleware`):
 
 | Header | Value |
 |--------|-------|
-| `X-XSS-Protection` | `0` |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
-| `X-Frame-Options` | `deny` |
-| `X-Content-Type-Options` | `nosniff` |
-| `Content-Security-Policy` | `default-src 'self'; frame-ancestors 'none';` |
-| `Cache-Control` | `no-cache, no-store, max-age=0, must-revalidate` |
-| `Pragma` | `no-cache` |
+| X-XSS-Protection | 0 |
+| Strict-Transport-Security | max-age=31536000; includeSubDomains |
+| X-Frame-Options | deny |
+| X-Content-Type-Options | nosniff |
+| Content-Security-Policy | default-src 'self'; frame-ancestors 'none'; |
+| Cache-Control | no-cache, no-store, max-age=0, must-revalidate |
+| Pragma | no-cache |
+
+---
+
+## CORS Configuration
+
+| Setting | Value |
+|---------|-------|
+| Allowed Origins | Configured via `CLIENT_ORIGIN_URL` (comma-separated) |
+| Allowed Methods | GET, POST, PUT, DELETE |
+| Allowed Headers | Content-Type, Authorization |
+| Preflight Max Age | 86400 seconds (24 hours) |
+
+---
+
+## Rate Limiting & Retry
+
+The Cosmos DB client is configured with SDK-level retry for 429 (TooManyRequests):
+
+| Setting | Value |
+|---------|-------|
+| Max Retry Attempts | 9 |
+| Max Retry Wait Time | 30 seconds |
+
+---
+
+## Documentation Metadata
+
+| Field | Value |
+|-------|-------|
+| **Generated** | 2025-12-17 |
+| **Scan Level** | Exhaustive |
+| **Source Files Analyzed** | All controllers, services, DTOs |
