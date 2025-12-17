@@ -1,0 +1,275 @@
+<story-context id="STORY-cosmos-db-migration" v="1.0">
+  <metadata>
+    <epicId>N/A</epicId>
+    <storyId>STORY-cosmos-db-migration</storyId>
+    <title>Migrate ReminderInstanceService to Azure Cosmos DB</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/STORY-cosmos-db-migration.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system operator</asA>
+    <iWant>reminder data persisted to Azure Cosmos DB instead of in-memory storage</iWant>
+    <soThat>reminders survive application restarts and the service can scale horizontally</soThat>
+    <tasks>
+      <task id="1" name="Add Cosmos DB SDK and Configuration" acs="3,7">
+        <subtask>Add Microsoft.Azure.Cosmos NuGet package to HereAndNow.Reminders project</subtask>
+        <subtask>Add Cosmos configuration environment variables: COSMOS_ENDPOINT, COSMOS_PRIMARY_KEY, COSMOS_DATABASE_NAME, COSMOS_CONTAINER_NAME</subtask>
+        <subtask>Create CosmosDbSettings configuration class</subtask>
+        <subtask>Register CosmosClient as Singleton in DI (SDK best practice)</subtask>
+      </task>
+      <task id="2" name="Update Interface and In-Memory Implementation" acs="6">
+        <subtask>Update IReminderInstanceService.GetAll() to GetAll(string userId)</subtask>
+        <subtask>Update IReminderInstanceService.GetById(Guid id) to GetById(Guid id, string userId)</subtask>
+        <subtask>Update IReminderInstanceService.Delete(Guid id) to Delete(Guid id, string userId)</subtask>
+        <subtask>Update ReminderInstanceService (in-memory) to filter by userId</subtask>
+        <subtask>Update ReminderInstancesController to extract userId from JWT sub claim and pass to service</subtask>
+        <subtask>Update existing unit tests to pass userId parameter</subtask>
+      </task>
+      <task id="3" name="Create Cosmos DB Implementation" acs="1,2">
+        <subtask>Create CosmosReminderInstanceService class implementing IReminderInstanceService</subtask>
+        <subtask>Implement GetAll(string userId) - query user's non-deleted items within partition</subtask>
+        <subtask>Implement GetById(Guid id, string userId) - point read with partition key</subtask>
+        <subtask>Implement Create(ReminderInstance) - create document (userId from model)</subtask>
+        <subtask>Implement Update(Guid, ReminderInstance) - upsert document with partition key</subtask>
+        <subtask>Implement Delete(Guid, string userId) - soft delete with partition key</subtask>
+      </task>
+      <task id="4" name="Handle Cosmos Document Model" acs="4,8">
+        <subtask>Add UserId property (string) to ReminderInstance model</subtask>
+        <subtask>Create ReminderDocument internal class with Cosmos-specific attributes (id, userId as partition key)</subtask>
+        <subtask>Implement mapping between ReminderInstance (domain) and ReminderDocument (persistence)</subtask>
+        <subtask>Create Cosmos container with partition key path /userId</subtask>
+      </task>
+      <task id="5" name="Update DI Registration" acs="7">
+        <subtask>Update Program.cs to register CosmosReminderInstanceService instead of ReminderInstanceService</subtask>
+        <subtask>Change service lifetime from Singleton to Scoped (or keep Singleton if using shared CosmosClient)</subtask>
+        <subtask>Optionally keep in-memory implementation for local development toggle</subtask>
+      </task>
+      <task id="6" name="Error Handling" acs="5">
+        <subtask>Wrap Cosmos operations with try-catch for CosmosException</subtask>
+        <subtask>Map Cosmos exceptions to appropriate HTTP responses (404, 503, etc.)</subtask>
+        <subtask>Add logging for Cosmos operations and failures</subtask>
+      </task>
+      <task id="7" name="Testing" acs="2">
+        <subtask>Update TestWebApplicationFactory to use in-memory or mock service for isolation</subtask>
+        <subtask>Add unit tests for CosmosReminderInstanceService with mocked Container</subtask>
+        <subtask>Verify existing controller tests still pass</subtask>
+        <subtask>Add integration test for Cosmos connectivity (optional, requires emulator or test instance)</subtask>
+      </task>
+      <task id="8" name="Documentation" acs="all">
+        <subtask>Update docs/architecture.md Data Architecture section</subtask>
+        <subtask>Update docs/deployment-guide.md with Cosmos configuration requirements</subtask>
+        <subtask>Add Cosmos connection string to .env.example</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">ReminderInstanceService persists reminders to Azure Cosmos DB - Verify: Create reminder via API, restart app, verify reminder still exists</criterion>
+    <criterion id="AC2">All existing CRUD operations function correctly with Cosmos backend - Verify: Existing controller tests pass</criterion>
+    <criterion id="AC3">Connection uses Primary Key authentication via configuration - Verify: Connection string with key in environment variables</criterion>
+    <criterion id="AC4">Cosmos container created with /userId partition key - Verify: Container exists with /userId partition key</criterion>
+    <criterion id="AC5">Application gracefully handles Cosmos connection failures - Verify: Returns 503 Service Unavailable on connection issues</criterion>
+    <criterion id="AC6">IReminderInstanceService interface updated with userId parameter - Verify: Methods requiring user scope accept userId parameter</criterion>
+    <criterion id="AC7">Service lifetime updated appropriately for Cosmos SDK - Verify: DI registration uses correct lifetime for CosmosClient</criterion>
+    <criterion id="AC8">ReminderInstance model includes UserId property - Verify: Model has UserId, populated from authenticated user</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Data Architecture, Scalability Considerations</section>
+        <snippet>Current in-memory ConcurrentDictionary storage. Scaling path explicitly recommends "Add Database" as first step. Clean Architecture pattern with interface-based services.</snippet>
+      </doc>
+      <doc>
+        <path>docs/data-models.md</path>
+        <title>Data Models</title>
+        <section>IReminderInstanceService, ReminderInstance</section>
+        <snippet>Defines service interface with GetAll, GetById, Create, Update, Delete. ReminderInstance model with Id, Text, ScheduledDateAndTime, IsCompleted, IsDeleted, ShouldPlaySound, ShouldDoVibration.</snippet>
+      </doc>
+      <doc>
+        <path>docs/api-contracts.md</path>
+        <title>API Contracts</title>
+        <section>Reminder Instances API</section>
+        <snippet>REST API endpoints at /api/reminder-instances. All endpoints require JWT Bearer authentication. CRUD operations return consistent JSON responses.</snippet>
+      </doc>
+      <doc>
+        <path>docs/source-tree-analysis.md</path>
+        <title>Source Tree Analysis</title>
+        <section>Critical Folders, Entry Points</section>
+        <snippet>Clean Architecture with HereAndNow.Reminders (domain) and HereAndNow.Web (infrastructure). Services in Reminders/Services/, Controllers in Web/Controllers/.</snippet>
+      </doc>
+      <doc>
+        <path>docs/development-guide.md</path>
+        <title>Development Guide</title>
+        <section>Testing, Environment Setup</section>
+        <snippet>Uses dotnet test with xUnit, Moq, FluentAssertions. Environment variables in .env file. Test commands and patterns documented.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <artifact>
+        <path>Reminders/HereAndNow.Reminders/Services/IReminderInstanceService.cs</path>
+        <kind>interface</kind>
+        <symbol>IReminderInstanceService</symbol>
+        <lines>1-44</lines>
+        <reason>Core interface to be modified with userId parameter. Defines CRUD contract: GetAll, GetById, Create, Update, Delete.</reason>
+      </artifact>
+      <artifact>
+        <path>Reminders/HereAndNow.Reminders/Services/ReminderInstanceService.cs</path>
+        <kind>service</kind>
+        <symbol>ReminderInstanceService</symbol>
+        <lines>1-156</lines>
+        <reason>In-memory implementation using ConcurrentDictionary. Must be updated to filter by userId. Cosmos implementation will follow same patterns.</reason>
+      </artifact>
+      <artifact>
+        <path>Reminders/HereAndNow.Reminders/Models/ReminderInstance.cs</path>
+        <kind>model</kind>
+        <symbol>ReminderInstance</symbol>
+        <lines>1-43</lines>
+        <reason>Domain model to gain UserId property. Has Id (Guid), Text, ScheduledDateAndTime, IsCompleted, IsDeleted, ShouldPlaySound, ShouldDoVibration.</reason>
+      </artifact>
+      <artifact>
+        <path>Web/HereAndNow.Web/Controllers/ReminderInstancesController.cs</path>
+        <kind>controller</kind>
+        <symbol>ReminderInstancesController</symbol>
+        <lines>1-153</lines>
+        <reason>Controller to extract userId from JWT sub claim. Uses DTO pattern with ReminderInstanceMapper. Has [Authorize] attribute.</reason>
+      </artifact>
+      <artifact>
+        <path>Web/HereAndNow.Web/Program.cs</path>
+        <kind>configuration</kind>
+        <symbol>DI registration</symbol>
+        <lines>22-23</lines>
+        <reason>Current DI: AddSingleton&lt;IReminderInstanceService, ReminderInstanceService&gt;. Must add CosmosClient singleton and switch service registration.</reason>
+      </artifact>
+      <artifact>
+        <path>Web/HereAndNow.Web/DTOs/ReminderInstanceDto.cs</path>
+        <kind>dto</kind>
+        <symbol>ReminderInstanceDto</symbol>
+        <lines>1-53</lines>
+        <reason>API contract DTO. May need UserId if exposed to client. Contains computed State property from domain flags.</reason>
+      </artifact>
+      <artifact>
+        <path>Web/HereAndNow.Web/Mappers/ReminderInstanceMapper.cs</path>
+        <kind>mapper</kind>
+        <symbol>ReminderInstanceMapper</symbol>
+        <lines>1-58</lines>
+        <reason>Maps between domain and DTO. Must be updated if UserId added to DTO, or for Cosmos document mapping.</reason>
+      </artifact>
+      <artifact>
+        <path>Web/HereAndNow.Web.Tests/Controllers/ReminderInstancesControllerTests.cs</path>
+        <kind>test</kind>
+        <symbol>ReminderInstancesControllerTests</symbol>
+        <lines>1-277</lines>
+        <reason>Unit tests mocking IReminderInstanceService. Must update mocks for new userId signatures. 13 existing test methods.</reason>
+      </artifact>
+      <artifact>
+        <path>Web/HereAndNow.Web.Tests/Helpers/TestWebApplicationFactory.cs</path>
+        <kind>test-helper</kind>
+        <symbol>TestWebApplicationFactory</symbol>
+        <lines>1-26</lines>
+        <reason>WebApplicationFactory for integration tests. May need to configure mock Cosmos or use in-memory service for test isolation.</reason>
+      </artifact>
+    </code>
+
+    <dependencies>
+      <dotnet>
+        <project name="HereAndNow.Reminders">
+          <package name="Microsoft.Extensions.Logging.Abstractions" version="8.0.0" />
+          <package name="Microsoft.Azure.Cosmos" version="TBD" note="TO BE ADDED - Task 1.1" />
+        </project>
+        <project name="HereAndNow.Web">
+          <package name="dotenv.net" version="3.2.1" />
+          <package name="Microsoft.AspNetCore.Authentication.JwtBearer" version="8.0.11" />
+          <package name="Swashbuckle.AspNetCore" version="6.9.0" />
+        </project>
+        <project name="HereAndNow.Web.Tests">
+          <package name="coverlet.collector" version="6.0.2" />
+          <package name="FluentAssertions" version="6.12.0" />
+          <package name="Microsoft.AspNetCore.Mvc.Testing" version="8.0.11" />
+          <package name="Microsoft.NET.Test.Sdk" version="17.12.0" />
+          <package name="Moq" version="4.20.72" />
+          <package name="xunit" version="2.9.2" />
+          <package name="xunit.runner.visualstudio" version="2.8.2" />
+        </project>
+      </dotnet>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="architecture">Clean Architecture - Domain layer (HereAndNow.Reminders) has no web dependencies. Service implementations live in domain layer.</constraint>
+    <constraint type="pattern">Interface-based services with DI registration in Program.cs. All controller dependencies injected via constructor.</constraint>
+    <constraint type="pattern">DTO pattern - Controllers use DTOs with Mappers. Domain models separate from API contracts.</constraint>
+    <constraint type="authentication">Auth0 JWT Bearer authentication. User ID available via sub claim in JWT token.</constraint>
+    <constraint type="cosmos">CosmosClient should be Singleton (one per app lifetime). Service using client can be Scoped.</constraint>
+    <constraint type="cosmos">Partition key: /userId - All queries must include partition key for optimal RU consumption.</constraint>
+    <constraint type="testing">Unit tests mock IReminderInstanceService. Integration tests use TestWebApplicationFactory.</constraint>
+    <constraint type="coding">File-scoped namespaces, nullable reference types enabled, XML documentation on public APIs.</constraint>
+    <constraint type="error-handling">Global ErrorHandlerMiddleware catches unhandled exceptions. Service layer should throw appropriate exceptions.</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>IReminderInstanceService (Current)</name>
+      <kind>C# interface</kind>
+      <signature>
+IEnumerable&lt;ReminderInstance&gt; GetAll();
+ReminderInstance? GetById(Guid id);
+ReminderInstance Create(ReminderInstance reminder);
+ReminderInstance? Update(Guid id, ReminderInstance reminder);
+bool Delete(Guid id);
+      </signature>
+      <path>Reminders/HereAndNow.Reminders/Services/IReminderInstanceService.cs</path>
+    </interface>
+    <interface>
+      <name>IReminderInstanceService (Target)</name>
+      <kind>C# interface</kind>
+      <signature>
+IEnumerable&lt;ReminderInstance&gt; GetAll(string userId);
+ReminderInstance? GetById(Guid id, string userId);
+ReminderInstance Create(ReminderInstance reminder);  // userId from model
+ReminderInstance? Update(Guid id, ReminderInstance reminder);  // userId from model
+bool Delete(Guid id, string userId);
+      </signature>
+      <path>Reminders/HereAndNow.Reminders/Services/IReminderInstanceService.cs</path>
+    </interface>
+    <interface>
+      <name>ReminderInstances REST API</name>
+      <kind>REST endpoint</kind>
+      <signature>
+GET    /api/reminder-instances          - List all user's reminders
+GET    /api/reminder-instances/{id}     - Get specific reminder
+POST   /api/reminder-instances          - Create reminder
+PUT    /api/reminder-instances/{id}     - Update reminder
+DELETE /api/reminder-instances/{id}     - Soft-delete reminder
+      </signature>
+      <path>Web/HereAndNow.Web/Controllers/ReminderInstancesController.cs</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>xUnit test framework with Moq for mocking and FluentAssertions for assertions. Unit tests mock service interfaces. Integration tests use WebApplicationFactory with in-memory configuration. File-scoped namespaces and nullable enabled in test projects. Coverage collection via coverlet.collector.</standards>
+    <locations>
+      <location>Web/HereAndNow.Web.Tests/Controllers/</location>
+      <location>Web/HereAndNow.Web.Tests/Integration/</location>
+      <location>Web/HereAndNow.Web.Tests/Helpers/</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Test CosmosReminderInstanceService.Create persists to Cosmos container (mock Container.CreateItemAsync)</idea>
+      <idea ac="AC1">Test CosmosReminderInstanceService.GetAll returns only non-deleted items for userId</idea>
+      <idea ac="AC2">Verify all 13 existing controller tests pass after interface signature change</idea>
+      <idea ac="AC3">Test CosmosClient initialization fails gracefully with invalid credentials</idea>
+      <idea ac="AC4">Test queries use partition key path /userId in QueryDefinition</idea>
+      <idea ac="AC5">Test service returns appropriate exception when Cosmos unavailable (503 mapping)</idea>
+      <idea ac="AC6">Test GetById with wrong userId returns null (partition isolation)</idea>
+      <idea ac="AC6">Test Delete with wrong userId returns false (cannot delete other user's data)</idea>
+      <idea ac="AC7">Verify CosmosClient registered as Singleton, service as Scoped</idea>
+      <idea ac="AC8">Test ReminderInstance.UserId populated from JWT sub claim in controller</idea>
+    </ideas>
+  </tests>
+</story-context>

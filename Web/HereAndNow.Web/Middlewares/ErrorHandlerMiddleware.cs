@@ -1,12 +1,16 @@
+using HereAndNowService.Exceptions;
+
 namespace HereAndNowService.Middlewares;
 
 class ErrorHandlerMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<ErrorHandlerMiddleware> _logger;
 
-    public ErrorHandlerMiddleware(RequestDelegate next)
+    public ErrorHandlerMiddleware(RequestDelegate next, ILogger<ErrorHandlerMiddleware> logger)
     {
         _next = next;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -31,15 +35,29 @@ class ErrorHandlerMiddleware
                     });
             }
         }
+        catch (ServiceUnavailableException ex)
+        {
+            _logger.LogError(ex, "Service unavailable: {ServiceName}", ex.ServiceName);
+            await HandleServiceUnavailable(context, ex);
+        }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Unhandled exception occurred");
             await HandleException(context, ex);
         }
     }
 
-    private async Task HandleException(HttpContext context, Exception ex)
+    private static async Task HandleServiceUnavailable(HttpContext context, ServiceUnavailableException ex)
     {
-        context.Response.StatusCode = 500;
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsJsonAsync(new {
+            message = ex.Message
+        });
+    }
+
+    private static async Task HandleException(HttpContext context, Exception ex)
+    {
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         await context.Response.WriteAsJsonAsync(new {
             message = "Internal Server Error."
         });

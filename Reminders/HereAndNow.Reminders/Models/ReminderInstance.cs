@@ -12,6 +12,11 @@ public class ReminderInstance
     public Guid Id { get; set; }
 
     /// <summary>
+    /// The user identifier who owns this reminder. Used as the Cosmos DB partition key.
+    /// </summary>
+    public string? UserId { get; set; }
+
+    /// <summary>
     /// The text content of the reminder.
     /// </summary>
     public required string Text { get; set; }

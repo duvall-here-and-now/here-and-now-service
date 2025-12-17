@@ -84,6 +84,23 @@ Configure these in Azure Portal → App Service → Configuration → Applicatio
 | `CLIENT_ORIGIN_URL` | Frontend URL for CORS |
 | `AUTH0_DOMAIN` | Auth0 tenant domain |
 | `AUTH0_AUDIENCE` | Auth0 API identifier |
+| `COSMOS_ENDPOINT` | Cosmos DB account endpoint URL |
+| `COSMOS_PRIMARY_KEY` | Cosmos DB primary key for authentication |
+| `COSMOS_DATABASE_NAME` | Cosmos DB database name (e.g., `HereAndNow`) |
+| `COSMOS_CONTAINER_NAME` | Cosmos DB container name (e.g., `Reminders`) |
+
+### Cosmos DB Configuration
+
+The application requires an Azure Cosmos DB account with the following setup:
+
+1. **Create Cosmos DB Account** (Serverless recommended for dev/test)
+2. **Create Database**: `HereAndNow`
+3. **Create Container**: `Reminders` with partition key `/userId`
+4. **Configure App Settings** with connection details
+
+**Important:** The Cosmos container must have `/userId` as the partition key for optimal query performance and user data isolation.
+
+**Fallback Behavior:** If `COSMOS_ENDPOINT` or `COSMOS_PRIMARY_KEY` are not configured, the service will use an in-memory implementation (data lost on restart).
 
 ### Deployment Credentials
 

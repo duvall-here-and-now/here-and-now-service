@@ -138,7 +138,40 @@ Adds security headers to all responses:
 
 ## Data Architecture
 
-### Current Implementation (In-Memory)
+### Production Implementation (Azure Cosmos DB)
+
+The service uses **Azure Cosmos DB** (Serverless) for persistent storage with the following configuration:
+
+| Aspect | Details |
+|--------|---------|
+| **Database** | HereAndNow |
+| **Container** | Reminders |
+| **Partition Key** | `/userId` - co-locates all reminders for a user |
+| **Authentication** | Primary Key via environment variables |
+| **SDK** | Microsoft.Azure.Cosmos 3.46.0 |
+
+**Architecture Pattern:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    IReminderInstanceService                  │
+│                     (Interface in Reminders)                 │
+├─────────────────────────────────────────────────────────────┤
+│  CosmosReminderInstanceService  │  ReminderInstanceService  │
+│        (Production)              │     (In-Memory/Dev)       │
+│   Uses Azure Cosmos DB           │  Uses ConcurrentDictionary│
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Implementation Details:**
+- `CosmosClient` registered as Singleton (SDK best practice)
+- Service registered as Scoped (one container reference per request)
+- All queries include partition key for optimal RU consumption
+- Soft-delete pattern (`IsDeleted` flag) preserves audit trail
+- Service returns 503 on Cosmos unavailability
+
+### Fallback Implementation (In-Memory)
+
+When Cosmos environment variables are not configured, the service falls back to an in-memory implementation:
 
 ```csharp
 private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new();
@@ -154,17 +187,21 @@ private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new()
 ```
 ReminderInstance
 ├── Id: Guid (auto-generated)
+├── UserId: string (partition key, from JWT 'sub' claim)
 ├── Text: string (required)
 ├── ScheduledDateAndTime: DateTime
-└── Status: ReminderStatus (Scheduled | Active | Completed)
+├── IsCompleted: bool
+├── IsDeleted: bool (soft-delete flag)
+├── ShouldPlaySound: bool
+└── ShouldDoVibration: bool
 ```
 
-### Future Database Path
+### Cosmos Document Model
 
-For production persistence, consider:
-1. Entity Framework Core with SQL Server/PostgreSQL
-2. Repository pattern abstraction
-3. EF Migrations for schema management
+The `ReminderDocument` class handles Cosmos-specific serialization:
+- `id` (string) - Document identifier (Guid.ToString())
+- `userId` (string) - Partition key
+- Properties use camelCase naming (CosmosSerializationOptions)
 
 ---
 

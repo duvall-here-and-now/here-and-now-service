@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using HereAndNowService.DTOs;
 using HereAndNowService.Mappers;
 using HereAndNowService.Services;
@@ -29,23 +30,36 @@ public class ReminderInstancesController : ControllerBase
     }
 
     /// <summary>
-    /// Gets all reminder instances.
+    /// Gets the authenticated user's ID from the JWT 'sub' claim.
     /// </summary>
-    /// <returns>A collection of all reminder instances.</returns>
+    /// <returns>The user ID from the token.</returns>
+    private string GetUserId()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub")
+            ?? throw new InvalidOperationException("User ID not found in token");
+        return userId;
+    }
+
+    /// <summary>
+    /// Gets all reminder instances for the authenticated user.
+    /// </summary>
+    /// <returns>A collection of the user's reminder instances.</returns>
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<ReminderInstanceDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<IEnumerable<ReminderInstanceDto>> GetAll()
     {
-        _logger.LogInformation("GET /api/reminder-instances - Request received to get all reminders");
-        var reminders = _reminderInstanceService.GetAll();
+        var userId = GetUserId();
+        _logger.LogInformation("GET /api/reminder-instances - Request received to get all reminders for user: {UserId}", userId);
+        var reminders = _reminderInstanceService.GetAll(userId);
         var dtos = ReminderInstanceMapper.ToDtos(reminders);
         _logger.LogInformation("GET /api/reminder-instances - Returning {Count} reminders with Status 200 OK", dtos.Count());
         return Ok(dtos);
     }
 
     /// <summary>
-    /// Gets a specific reminder instance by ID.
+    /// Gets a specific reminder instance by ID for the authenticated user.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder.</param>
     /// <returns>The reminder instance if found.</returns>
@@ -55,8 +69,9 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<ReminderInstanceDto> GetById(Guid id)
     {
-        _logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Request received", id);
-        var reminder = _reminderInstanceService.GetById(id);
+        var userId = GetUserId();
+        _logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Request received for user: {UserId}", id, userId);
+        var reminder = _reminderInstanceService.GetById(id, userId);
 
         if (reminder == null)
         {
@@ -69,7 +84,7 @@ public class ReminderInstancesController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new reminder instance.
+    /// Creates a new reminder instance for the authenticated user.
     /// </summary>
     /// <param name="reminderDto">The reminder instance to create.</param>
     /// <returns>The created reminder instance.</returns>
@@ -79,8 +94,10 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<ReminderInstanceDto> Create([FromBody] ReminderInstanceDto reminderDto)
     {
-        _logger.LogInformation("POST /api/reminder-instances - Request received to create new reminder");
+        var userId = GetUserId();
+        _logger.LogInformation("POST /api/reminder-instances - Request received to create new reminder for user: {UserId}", userId);
         var domain = ReminderInstanceMapper.ToDomain(reminderDto);
+        domain.UserId = userId;
         var createdReminder = _reminderInstanceService.Create(domain);
         var resultDto = ReminderInstanceMapper.ToDto(createdReminder);
         _logger.LogInformation("POST /api/reminder-instances - Successfully created reminder with ID: {ReminderId}, returning 201 Created", createdReminder.Id);
@@ -93,7 +110,7 @@ public class ReminderInstancesController : ControllerBase
     }
 
     /// <summary>
-    /// Updates an existing reminder instance.
+    /// Updates an existing reminder instance for the authenticated user.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to update.</param>
     /// <param name="reminderDto">The updated reminder data.</param>
@@ -105,7 +122,8 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<ReminderInstanceDto> Update(Guid id, [FromBody] ReminderInstanceDto reminderDto)
     {
-        _logger.LogInformation("PUT /api/reminder-instances/{ReminderId} - Request received to update reminder", id);
+        var userId = GetUserId();
+        _logger.LogInformation("PUT /api/reminder-instances/{ReminderId} - Request received to update reminder for user: {UserId}", id, userId);
 
         if (reminderDto.Id != Guid.Empty && reminderDto.Id != id)
         {
@@ -114,6 +132,7 @@ public class ReminderInstancesController : ControllerBase
         }
 
         var domain = ReminderInstanceMapper.ToDomain(reminderDto);
+        domain.UserId = userId;
         var updatedReminder = _reminderInstanceService.Update(id, domain);
 
         if (updatedReminder == null)
@@ -127,7 +146,7 @@ public class ReminderInstancesController : ControllerBase
     }
 
     /// <summary>
-    /// Soft-deletes a reminder instance.
+    /// Soft-deletes a reminder instance for the authenticated user.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to delete.</param>
     /// <returns>No content if successful.</returns>
@@ -137,8 +156,9 @@ public class ReminderInstancesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult Delete(Guid id)
     {
-        _logger.LogInformation("DELETE /api/reminder-instances/{ReminderId} - Request received to delete reminder", id);
-        var deleted = _reminderInstanceService.Delete(id);
+        var userId = GetUserId();
+        _logger.LogInformation("DELETE /api/reminder-instances/{ReminderId} - Request received to delete reminder for user: {UserId}", id, userId);
+        var deleted = _reminderInstanceService.Delete(id, userId);
 
         if (!deleted)
         {
