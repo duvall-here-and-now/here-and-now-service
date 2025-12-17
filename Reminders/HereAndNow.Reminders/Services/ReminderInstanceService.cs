@@ -62,8 +62,8 @@ public class ReminderInstanceService : IReminderInstanceService
     /// <returns>The created reminder instance with a generated ID.</returns>
     public ReminderInstance Create(ReminderInstance reminder)
     {
-        _logger.LogInformation("Creating new reminder instance with Text: {ReminderText}, scheduled for: {ScheduledTime}, Status: {Status}",
-            reminder.Text, reminder.ScheduledDateAndTime, reminder.Status);
+        _logger.LogInformation("Creating new reminder instance with Text: {ReminderText}, scheduled for: {ScheduledTime}",
+            reminder.Text, reminder.ScheduledDateAndTime);
 
         reminder.Id = Guid.NewGuid();
         var added = _reminders.TryAdd(reminder.Id, reminder);
@@ -92,8 +92,7 @@ public class ReminderInstanceService : IReminderInstanceService
 
         if (_reminders.TryGetValue(id, out var existingReminder))
         {
-            _logger.LogInformation("Found existing reminder with ID: {ReminderId}. Old Status: {OldStatus}, New Status: {NewStatus}",
-                id, existingReminder.Status, reminder.Status);
+            _logger.LogInformation("Found existing reminder with ID: {ReminderId}", id);
 
             reminder.Id = id;
             if (_reminders.TryUpdate(id, reminder, existingReminder))
@@ -115,24 +114,42 @@ public class ReminderInstanceService : IReminderInstanceService
     }
 
     /// <summary>
-    /// Deletes a reminder instance by its unique identifier.
+    /// Soft-deletes a reminder instance by setting its IsDeleted flag to true.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to delete.</param>
-    /// <returns>True if the reminder was deleted; otherwise, false.</returns>
+    /// <returns>True if the reminder was soft-deleted; otherwise, false.</returns>
     public bool Delete(Guid id)
     {
-        _logger.LogInformation("Attempting to delete reminder instance with ID: {ReminderId}", id);
-        var deleted = _reminders.TryRemove(id, out _);
+        _logger.LogInformation("Attempting to soft-delete reminder instance with ID: {ReminderId}", id);
 
-        if (deleted)
+        if (_reminders.TryGetValue(id, out var existingReminder))
         {
-            _logger.LogInformation("Successfully deleted reminder instance with ID: {ReminderId}", id);
+            var updatedReminder = new ReminderInstance
+            {
+                Id = existingReminder.Id,
+                Text = existingReminder.Text,
+                ScheduledDateAndTime = existingReminder.ScheduledDateAndTime,
+                IsCompleted = existingReminder.IsCompleted,
+                IsDeleted = true,
+                ShouldPlaySound = existingReminder.ShouldPlaySound,
+                ShouldDoVibration = existingReminder.ShouldDoVibration
+            };
+
+            if (_reminders.TryUpdate(id, updatedReminder, existingReminder))
+            {
+                _logger.LogInformation("Successfully soft-deleted reminder instance with ID: {ReminderId}", id);
+                return true;
+            }
+            else
+            {
+                _logger.LogError("Failed to soft-delete reminder instance with ID: {ReminderId} due to concurrent modification", id);
+            }
         }
         else
         {
             _logger.LogWarning("Cannot delete - reminder instance with ID: {ReminderId} not found", id);
         }
 
-        return deleted;
+        return false;
     }
 }
