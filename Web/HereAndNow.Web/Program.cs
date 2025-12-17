@@ -43,7 +43,10 @@ if (useCosmosDb)
             SerializerOptions = new CosmosSerializationOptions
             {
                 PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
-            }
+            },
+            // Retry policy for 429 (TooManyRequests) throttling
+            MaxRetryAttemptsOnRateLimitedRequests = 9,
+            MaxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds(30)
         }));
     builder.Services.AddScoped<IReminderInstanceService>(sp =>
         new CosmosReminderInstanceService(

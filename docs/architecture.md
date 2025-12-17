@@ -168,6 +168,7 @@ The service uses **Azure Cosmos DB** (Serverless) for persistent storage with th
 - All queries include partition key for optimal RU consumption
 - Soft-delete pattern (`IsDeleted` flag) preserves audit trail
 - Service returns 503 on Cosmos unavailability
+- **SDK Retry Policy**: Automatic retry on 429 throttling (9 attempts, 30s max wait)
 
 ### Fallback Implementation (In-Memory)
 
@@ -332,7 +333,8 @@ HereAndNow.Web.Tests/
 
 ### Security Recommendations
 
-- [ ] Implement rate limiting
+- [x] SDK-level retry for Cosmos DB throttling (429 responses)
+- [ ] Add API-level rate limiting (per-user request throttling)
 - [ ] Add request logging with PII masking
 - [ ] Configure Application Insights for monitoring
 - [ ] Implement refresh token rotation
