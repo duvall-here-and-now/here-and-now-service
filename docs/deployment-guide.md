@@ -78,12 +78,66 @@ steps:
 
 Configure these in Azure Portal → App Service → Configuration → Application settings:
 
-| Setting | Description |
-|---------|-------------|
-| `PORT` | Application port (usually 80 for App Service) |
-| `CLIENT_ORIGIN_URL` | Frontend URL for CORS |
-| `AUTH0_DOMAIN` | Auth0 tenant domain |
-| `AUTH0_AUDIENCE` | Auth0 API identifier |
+#### Core Settings (Required)
+
+| Setting | Description | Example |
+|---------|-------------|---------|
+| `PORT` | Application port (usually 80 for App Service) | `80` |
+| `CLIENT_ORIGIN_URL` | Frontend URL(s) for CORS (comma-separated) | `https://app.example.com` |
+| `AUTH0_DOMAIN` | Auth0 tenant domain | `your-tenant.auth0.com` |
+| `AUTH0_AUDIENCE` | Auth0 API identifier | `https://api.example.com` |
+
+#### Azure Cosmos DB Settings (Required for Production)
+
+| Setting | Description | Example |
+|---------|-------------|---------|
+| `COSMOS_ENDPOINT` | Cosmos DB account endpoint URL | `https://your-account.documents.azure.com:443/` |
+| `COSMOS_PRIMARY_KEY` | Cosmos DB primary access key | `<from Azure Portal>` |
+| `COSMOS_DATABASE_NAME` | Database name | `HereAndNow` |
+| `COSMOS_CONTAINER_NAME` | Container name for reminders | `Reminders` |
+
+**Note:** If Cosmos DB settings are not configured, the application falls back to in-memory storage (not suitable for production).
+
+### Cosmos DB Setup
+
+Before deploying, create the Cosmos DB resources in Azure:
+
+1. **Create Cosmos DB Account:**
+   ```bash
+   az cosmosdb create \
+     --name here-and-now-cosmos \
+     --resource-group <resource-group> \
+     --kind GlobalDocumentDB \
+     --default-consistency-level Session \
+     --enable-serverless
+   ```
+
+2. **Create Database:**
+   ```bash
+   az cosmosdb sql database create \
+     --account-name here-and-now-cosmos \
+     --resource-group <resource-group> \
+     --name HereAndNow
+   ```
+
+3. **Create Container with Partition Key:**
+   ```bash
+   az cosmosdb sql container create \
+     --account-name here-and-now-cosmos \
+     --resource-group <resource-group> \
+     --database-name HereAndNow \
+     --name Reminders \
+     --partition-key-path "/userId"
+   ```
+
+4. **Get Connection Details:**
+   ```bash
+   # Get endpoint
+   az cosmosdb show --name here-and-now-cosmos --resource-group <rg> --query documentEndpoint
+
+   # Get primary key
+   az cosmosdb keys list --name here-and-now-cosmos --resource-group <rg> --query primaryMasterKey
+   ```
 
 ### Deployment Credentials
 
@@ -217,6 +271,8 @@ git push origin main
 ## Security Checklist
 
 - [ ] Auth0 credentials stored in Azure App Settings (not in code)
+- [ ] Cosmos DB primary key stored in Azure App Settings (not in code)
+- [ ] Cosmos DB firewall configured to allow only App Service IP range
 - [ ] Swagger UI secured with IP restrictions
 - [ ] HTTPS enforced in Azure App Service
 - [ ] Publish profile secret rotated periodically

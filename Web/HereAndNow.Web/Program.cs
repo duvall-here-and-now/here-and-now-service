@@ -1,7 +1,9 @@
+using HereAndNowService.Configuration;
 using HereAndNowService.Middlewares;
 using HereAndNowService.Services;
 using dotenv.net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Azure.Cosmos;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 using Microsoft.OpenApi.Models;
@@ -10,7 +12,22 @@ using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.Sources.Clear();
-DotEnv.Load();
+
+// Load .env file - search in current directory, base directory, and parent directories
+var envPaths = new[]
+{
+    Path.Combine(Environment.CurrentDirectory, ".env"),
+    Path.Combine(AppContext.BaseDirectory, ".env"),
+    Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".env"),           // Debug build: bin/Debug/net8.0 -> project
+    Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".env") // Project -> solution root
+};
+
+var envPath = envPaths.FirstOrDefault(File.Exists);
+if (envPath != null)
+{
+    DotEnv.Load(options: new DotEnvOptions(envFilePaths: new[] { envPath }));
+}
+
 builder.Configuration.AddEnvironmentVariables();
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
@@ -20,7 +37,43 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 // Add services to the container.
 builder.Services.AddScoped<IMessageService, MessageService>();
-builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
+
+// Configure Cosmos DB if environment variables are present
+var cosmosEndpoint = builder.Configuration.GetValue<string>("COSMOS_ENDPOINT");
+var cosmosPrimaryKey = builder.Configuration.GetValue<string>("COSMOS_PRIMARY_KEY");
+var cosmosDatabaseName = builder.Configuration.GetValue<string>("COSMOS_DATABASE_NAME");
+var cosmosContainerName = builder.Configuration.GetValue<string>("COSMOS_CONTAINER_NAME");
+
+var useCosmosDb = !string.IsNullOrEmpty(cosmosEndpoint) &&
+                  !string.IsNullOrEmpty(cosmosPrimaryKey) &&
+                  !string.IsNullOrEmpty(cosmosDatabaseName) &&
+                  !string.IsNullOrEmpty(cosmosContainerName);
+
+if (useCosmosDb)
+{
+    // Register CosmosClient as Singleton (SDK best practice - one client per app lifetime)
+    builder.Services.AddSingleton<CosmosClient>(_ =>
+        new CosmosClient(cosmosEndpoint!, cosmosPrimaryKey!, new CosmosClientOptions
+        {
+            SerializerOptions = new CosmosSerializationOptions
+            {
+                PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
+            }
+        }));
+
+    // Register Cosmos-backed service as Scoped (gets container from singleton client)
+    builder.Services.AddScoped<IReminderInstanceService>(sp =>
+        new CosmosReminderInstanceService(
+            sp.GetRequiredService<CosmosClient>(),
+            cosmosDatabaseName!,
+            cosmosContainerName!,
+            sp.GetRequiredService<ILogger<CosmosReminderInstanceService>>()));
+}
+else
+{
+    // Fallback to in-memory implementation for local development
+    builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
+}
 
 builder.Services.AddCors(options =>
 {

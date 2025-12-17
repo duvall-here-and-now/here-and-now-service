@@ -28,15 +28,17 @@ public static class ReminderInstanceMapper
     }
 
     /// <summary>
-    /// Maps a DTO to a domain model.
+    /// Maps a DTO to a domain model with user assignment.
     /// </summary>
     /// <param name="dto">The DTO to map.</param>
-    /// <returns>The mapped domain model.</returns>
-    public static ReminderInstance ToDomain(ReminderInstanceDto dto)
+    /// <param name="userId">The user ID to assign to the reminder.</param>
+    /// <returns>The mapped domain model with user ID set.</returns>
+    public static ReminderInstance ToDomain(ReminderInstanceDto dto, string userId)
     {
         return new ReminderInstance
         {
             Id = dto.Id,
+            UserId = userId,
             Text = dto.Text,
             ScheduledDateAndTime = dto.ScheduledDateAndTime,
             IsCompleted = dto.IsCompleted,

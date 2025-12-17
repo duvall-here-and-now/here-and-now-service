@@ -22,37 +22,45 @@ public class ReminderInstanceService : IReminderInstanceService
     }
 
     /// <summary>
-    /// Gets all reminder instances.
+    /// Gets all reminder instances for a specific user.
     /// </summary>
-    /// <returns>A collection of all reminder instances.</returns>
-    public IEnumerable<ReminderInstance> GetAll()
+    /// <param name="userId">The unique identifier of the user.</param>
+    /// <returns>A collection of reminder instances belonging to the user.</returns>
+    public IEnumerable<ReminderInstance> GetAll(string userId)
     {
-        _logger.LogInformation("Retrieving all reminder instances");
-        var reminders = _reminders.Values.ToList();
-        _logger.LogInformation("Retrieved {Count} reminder instances", reminders.Count);
+        _logger.LogInformation("Retrieving all reminder instances for user: {UserId}", userId);
+        var reminders = _reminders.Values.Where(r => r.UserId == userId).ToList();
+        _logger.LogInformation("Retrieved {Count} reminder instances for user: {UserId}", reminders.Count, userId);
         return reminders;
     }
 
     /// <summary>
-    /// Gets a reminder instance by its unique identifier.
+    /// Gets a reminder instance by its unique identifier for a specific user.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder.</param>
-    /// <returns>The reminder instance if found; otherwise, null.</returns>
-    public ReminderInstance? GetById(Guid id)
+    /// <param name="userId">The unique identifier of the user.</param>
+    /// <returns>The reminder instance if found and belongs to the user; otherwise, null.</returns>
+    public ReminderInstance? GetById(Guid id, string userId)
     {
-        _logger.LogInformation("Retrieving reminder instance with ID: {ReminderId}", id);
+        _logger.LogInformation("Retrieving reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
         var found = _reminders.TryGetValue(id, out var reminder);
+
+        if (found && reminder!.UserId == userId)
+        {
+            _logger.LogInformation("Successfully retrieved reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
+            return reminder;
+        }
 
         if (found)
         {
-            _logger.LogInformation("Successfully retrieved reminder instance with ID: {ReminderId}", id);
+            _logger.LogWarning("Reminder instance with ID: {ReminderId} exists but belongs to a different user", id);
         }
         else
         {
             _logger.LogWarning("Reminder instance with ID: {ReminderId} not found", id);
         }
 
-        return reminder;
+        return null;
     }
 
     /// <summary>
@@ -82,16 +90,23 @@ public class ReminderInstanceService : IReminderInstanceService
 
     /// <summary>
     /// Updates an existing reminder instance.
+    /// The userId from the reminder model is used to validate ownership.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to update.</param>
-    /// <param name="reminder">The updated reminder data.</param>
-    /// <returns>The updated reminder instance if found; otherwise, null.</returns>
+    /// <param name="reminder">The updated reminder data (must include UserId).</param>
+    /// <returns>The updated reminder instance if found and belongs to the user; otherwise, null.</returns>
     public ReminderInstance? Update(Guid id, ReminderInstance reminder)
     {
-        _logger.LogInformation("Attempting to update reminder instance with ID: {ReminderId}", id);
+        _logger.LogInformation("Attempting to update reminder instance with ID: {ReminderId} for user: {UserId}", id, reminder.UserId);
 
         if (_reminders.TryGetValue(id, out var existingReminder))
         {
+            if (existingReminder.UserId != reminder.UserId)
+            {
+                _logger.LogWarning("Cannot update - reminder instance with ID: {ReminderId} belongs to a different user", id);
+                return null;
+            }
+
             _logger.LogInformation("Found existing reminder with ID: {ReminderId}", id);
 
             reminder.Id = id;
@@ -117,16 +132,24 @@ public class ReminderInstanceService : IReminderInstanceService
     /// Soft-deletes a reminder instance by setting its IsDeleted flag to true.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to delete.</param>
+    /// <param name="userId">The unique identifier of the user.</param>
     /// <returns>True if the reminder was soft-deleted; otherwise, false.</returns>
-    public bool Delete(Guid id)
+    public bool Delete(Guid id, string userId)
     {
-        _logger.LogInformation("Attempting to soft-delete reminder instance with ID: {ReminderId}", id);
+        _logger.LogInformation("Attempting to soft-delete reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
 
         if (_reminders.TryGetValue(id, out var existingReminder))
         {
+            if (existingReminder.UserId != userId)
+            {
+                _logger.LogWarning("Cannot delete - reminder instance with ID: {ReminderId} belongs to a different user", id);
+                return false;
+            }
+
             var updatedReminder = new ReminderInstance
             {
                 Id = existingReminder.Id,
+                UserId = existingReminder.UserId,
                 Text = existingReminder.Text,
                 ScheduledDateAndTime = existingReminder.ScheduledDateAndTime,
                 IsCompleted = existingReminder.IsCompleted,
@@ -137,7 +160,7 @@ public class ReminderInstanceService : IReminderInstanceService
 
             if (_reminders.TryUpdate(id, updatedReminder, existingReminder))
             {
-                _logger.LogInformation("Successfully soft-deleted reminder instance with ID: {ReminderId}", id);
+                _logger.LogInformation("Successfully soft-deleted reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
                 return true;
             }
             else

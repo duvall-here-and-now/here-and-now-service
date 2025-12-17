@@ -138,7 +138,48 @@ Adds security headers to all responses:
 
 ## Data Architecture
 
-### Current Implementation (In-Memory)
+### Storage Options
+
+The application supports two storage implementations, selected automatically based on configuration:
+
+#### 1. Azure Cosmos DB (Production)
+
+When Cosmos DB environment variables are configured, the application uses `CosmosReminderInstanceService`:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Azure Cosmos DB                              │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │              Database: HereAndNow                          │ │
+│  │  ┌──────────────────────────────────────────────────────┐  │ │
+│  │  │          Container: Reminders                        │  │ │
+│  │  │          Partition Key: /userId                      │  │ │
+│  │  │                                                      │  │ │
+│  │  │  Document Structure:                                 │  │ │
+│  │  │  {                                                   │  │ │
+│  │  │    "id": "guid",                                     │  │ │
+│  │  │    "userId": "auth0|user123",  ← Partition Key       │  │ │
+│  │  │    "text": "...",                                    │  │ │
+│  │  │    "scheduledDateAndTime": "...",                    │  │ │
+│  │  │    "isCompleted": false,                             │  │ │
+│  │  │    "isDeleted": false,                               │  │ │
+│  │  │    "shouldPlaySound": true,                          │  │ │
+│  │  │    "shouldDoVibration": false                        │  │ │
+│  │  │  }                                                   │  │ │
+│  │  └──────────────────────────────────────────────────────┘  │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+- **Partition Key**: `/userId` ensures all user data is co-located for efficient queries
+- **Soft Delete**: `isDeleted` flag preserves audit history while hiding deleted items
+- **CosmosClient as Singleton**: SDK best practice for connection pooling
+- **Service as Scoped**: New service instance per request, uses singleton client
+
+#### 2. In-Memory Storage (Development)
+
+When Cosmos DB is not configured, falls back to `ReminderInstanceService`:
 
 ```csharp
 private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new();
@@ -147,24 +188,28 @@ private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new()
 **Characteristics:**
 - Thread-safe concurrent access
 - Data persists only for application lifetime
-- Suitable for development/demo purposes
+- Suitable for local development without cloud dependencies
 
 ### Domain Model
 
 ```
 ReminderInstance
 ├── Id: Guid (auto-generated)
+├── UserId: string (from JWT sub claim)
 ├── Text: string (required)
 ├── ScheduledDateAndTime: DateTime
-└── Status: ReminderStatus (Scheduled | Active | Completed)
+├── IsCompleted: bool
+├── IsDeleted: bool (soft delete flag)
+├── ShouldPlaySound: bool
+└── ShouldDoVibration: bool
 ```
 
-### Future Database Path
+### User Data Isolation
 
-For production persistence, consider:
-1. Entity Framework Core with SQL Server/PostgreSQL
-2. Repository pattern abstraction
-3. EF Migrations for schema management
+All reminder operations are scoped to the authenticated user:
+- User ID is extracted from the JWT `sub` (subject) claim
+- Queries filter by `userId` partition key
+- Users cannot access other users' reminders
 
 ---
 
