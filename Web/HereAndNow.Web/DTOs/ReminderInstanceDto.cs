@@ -1,10 +1,9 @@
-namespace HereAndNowService.Models;
+namespace HereAndNowService.DTOs;
 
 /// <summary>
-/// Represents a reminder instance with scheduling and completion tracking.
-/// This model maps directly to the Cosmos DB storage schema.
+/// Data transfer object for reminder instances exposed through the API.
 /// </summary>
-public class ReminderInstance
+public class ReminderInstanceDto
 {
     /// <summary>
     /// Unique identifier for the reminder instance.
@@ -40,4 +39,15 @@ public class ReminderInstance
     /// Indicates whether the reminder should vibrate the device when triggered.
     /// </summary>
     public bool ShouldDoVibration { get; set; }
+
+    /// <summary>
+    /// The computed state of the reminder based on its flags and scheduled time.
+    /// </summary>
+    public ReminderState State => this switch
+    {
+        { IsDeleted: true } => ReminderState.Deleted,
+        { IsCompleted: true } => ReminderState.Completed,
+        _ when DateTime.UtcNow >= ScheduledDateAndTime => ReminderState.Active,
+        _ => ReminderState.Scheduled
+    };
 }
