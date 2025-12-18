@@ -22,37 +22,39 @@ public class ReminderInstanceService : IReminderInstanceService
     }
 
     /// <summary>
-    /// Gets all reminder instances.
+    /// Gets all reminder instances for a specific user.
     /// </summary>
-    /// <returns>A collection of all reminder instances.</returns>
-    public IEnumerable<ReminderInstance> GetAll()
+    /// <param name="userId">The user identifier to filter by.</param>
+    /// <returns>A collection of reminder instances belonging to the user.</returns>
+    public IEnumerable<ReminderInstance> GetAll(string userId)
     {
-        _logger.LogInformation("Retrieving all reminder instances");
-        var reminders = _reminders.Values.ToList();
-        _logger.LogInformation("Retrieved {Count} reminder instances", reminders.Count);
+        _logger.LogInformation("Retrieving all reminder instances for user: {UserId}", userId);
+        var reminders = _reminders.Values
+            .Where(r => r.UserId == userId && !r.IsDeleted)
+            .ToList();
+        _logger.LogInformation("Retrieved {Count} reminder instances for user: {UserId}", reminders.Count, userId);
         return reminders;
     }
 
     /// <summary>
-    /// Gets a reminder instance by its unique identifier.
+    /// Gets a reminder instance by its unique identifier for a specific user.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder.</param>
-    /// <returns>The reminder instance if found; otherwise, null.</returns>
-    public ReminderInstance? GetById(Guid id)
+    /// <param name="userId">The user identifier for partition key lookup.</param>
+    /// <returns>The reminder instance if found and belongs to user; otherwise, null.</returns>
+    public ReminderInstance? GetById(Guid id, string userId)
     {
-        _logger.LogInformation("Retrieving reminder instance with ID: {ReminderId}", id);
+        _logger.LogInformation("Retrieving reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
         var found = _reminders.TryGetValue(id, out var reminder);
 
-        if (found)
+        if (found && reminder?.UserId == userId && !reminder.IsDeleted)
         {
             _logger.LogInformation("Successfully retrieved reminder instance with ID: {ReminderId}", id);
-        }
-        else
-        {
-            _logger.LogWarning("Reminder instance with ID: {ReminderId} not found", id);
+            return reminder;
         }
 
-        return reminder;
+        _logger.LogWarning("Reminder instance with ID: {ReminderId} not found for user: {UserId}", id, userId);
+        return null;
     }
 
     /// <summary>
@@ -117,16 +119,18 @@ public class ReminderInstanceService : IReminderInstanceService
     /// Soft-deletes a reminder instance by setting its IsDeleted flag to true.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to delete.</param>
+    /// <param name="userId">The user identifier for partition key lookup.</param>
     /// <returns>True if the reminder was soft-deleted; otherwise, false.</returns>
-    public bool Delete(Guid id)
+    public bool Delete(Guid id, string userId)
     {
-        _logger.LogInformation("Attempting to soft-delete reminder instance with ID: {ReminderId}", id);
+        _logger.LogInformation("Attempting to soft-delete reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
 
-        if (_reminders.TryGetValue(id, out var existingReminder))
+        if (_reminders.TryGetValue(id, out var existingReminder) && existingReminder.UserId == userId)
         {
             var updatedReminder = new ReminderInstance
             {
                 Id = existingReminder.Id,
+                UserId = existingReminder.UserId,
                 Text = existingReminder.Text,
                 ScheduledDateAndTime = existingReminder.ScheduledDateAndTime,
                 IsCompleted = existingReminder.IsCompleted,
@@ -147,7 +151,7 @@ public class ReminderInstanceService : IReminderInstanceService
         }
         else
         {
-            _logger.LogWarning("Cannot delete - reminder instance with ID: {ReminderId} not found", id);
+            _logger.LogWarning("Cannot delete - reminder instance with ID: {ReminderId} not found for user: {UserId}", id, userId);
         }
 
         return false;

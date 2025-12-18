@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using FluentAssertions;
 using HereAndNowService.Controllers;
 using HereAndNowService.DTOs;
 using HereAndNowService.Models;
 using HereAndNowService.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -14,12 +16,27 @@ public class ReminderInstancesControllerTests
     private readonly Mock<IReminderInstanceService> _mockService;
     private readonly Mock<ILogger<ReminderInstancesController>> _mockLogger;
     private readonly ReminderInstancesController _controller;
+    private const string TestUserId = "auth0|test-user-123";
 
     public ReminderInstancesControllerTests()
     {
         _mockService = new Mock<IReminderInstanceService>();
         _mockLogger = new Mock<ILogger<ReminderInstancesController>>();
         _controller = new ReminderInstancesController(_mockService.Object, _mockLogger.Object);
+
+        // Set up user context with claims
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, TestUserId),
+            new Claim("sub", TestUserId)
+        };
+        var identity = new ClaimsIdentity(claims, "TestAuth");
+        var claimsPrincipal = new ClaimsPrincipal(identity);
+
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = claimsPrincipal }
+        };
     }
 
     [Fact]
@@ -28,10 +45,10 @@ public class ReminderInstancesControllerTests
         // Arrange
         var reminders = new List<ReminderInstance>
         {
-            new ReminderInstance { Id = Guid.NewGuid(), Text = "Test 1", ScheduledDateAndTime = DateTime.UtcNow },
-            new ReminderInstance { Id = Guid.NewGuid(), Text = "Test 2", ScheduledDateAndTime = DateTime.UtcNow }
+            new ReminderInstance { Id = Guid.NewGuid(), UserId = TestUserId, Text = "Test 1", ScheduledDateAndTime = DateTime.UtcNow },
+            new ReminderInstance { Id = Guid.NewGuid(), UserId = TestUserId, Text = "Test 2", ScheduledDateAndTime = DateTime.UtcNow }
         };
-        _mockService.Setup(s => s.GetAll()).Returns(reminders);
+        _mockService.Setup(s => s.GetAll(TestUserId)).Returns(reminders);
 
         // Act
         var result = _controller.GetAll();
@@ -47,8 +64,8 @@ public class ReminderInstancesControllerTests
     {
         // Arrange
         var id = Guid.NewGuid();
-        var reminder = new ReminderInstance { Id = id, Text = "Test", ScheduledDateAndTime = DateTime.UtcNow };
-        _mockService.Setup(s => s.GetById(id)).Returns(reminder);
+        var reminder = new ReminderInstance { Id = id, UserId = TestUserId, Text = "Test", ScheduledDateAndTime = DateTime.UtcNow };
+        _mockService.Setup(s => s.GetById(id, TestUserId)).Returns(reminder);
 
         // Act
         var result = _controller.GetById(id);
@@ -64,7 +81,7 @@ public class ReminderInstancesControllerTests
     {
         // Arrange
         var id = Guid.NewGuid();
-        _mockService.Setup(s => s.GetById(id)).Returns((ReminderInstance?)null);
+        _mockService.Setup(s => s.GetById(id, TestUserId)).Returns((ReminderInstance?)null);
 
         // Act
         var result = _controller.GetById(id);
@@ -81,10 +98,12 @@ public class ReminderInstancesControllerTests
         var createdReminder = new ReminderInstance
         {
             Id = Guid.NewGuid(),
+            UserId = TestUserId,
             Text = reminderDto.Text,
             ScheduledDateAndTime = reminderDto.ScheduledDateAndTime
         };
-        _mockService.Setup(s => s.Create(It.IsAny<ReminderInstance>())).Returns(createdReminder);
+        _mockService.Setup(s => s.Create(It.Is<ReminderInstance>(r => r.UserId == TestUserId)))
+            .Returns(createdReminder);
 
         // Act
         var result = _controller.Create(reminderDto);
@@ -105,10 +124,12 @@ public class ReminderInstancesControllerTests
         var updatedReminder = new ReminderInstance
         {
             Id = id,
+            UserId = TestUserId,
             Text = "Updated",
             ScheduledDateAndTime = reminderDto.ScheduledDateAndTime
         };
-        _mockService.Setup(s => s.Update(id, It.IsAny<ReminderInstance>())).Returns(updatedReminder);
+        _mockService.Setup(s => s.Update(id, It.Is<ReminderInstance>(r => r.UserId == TestUserId)))
+            .Returns(updatedReminder);
 
         // Act
         var result = _controller.Update(id, reminderDto);
@@ -140,7 +161,8 @@ public class ReminderInstancesControllerTests
         // Arrange
         var id = Guid.NewGuid();
         var reminderDto = new ReminderInstanceDto { Id = id, Text = "Test", ScheduledDateAndTime = DateTime.UtcNow };
-        _mockService.Setup(s => s.Update(id, It.IsAny<ReminderInstance>())).Returns((ReminderInstance?)null);
+        _mockService.Setup(s => s.Update(id, It.Is<ReminderInstance>(r => r.UserId == TestUserId)))
+            .Returns((ReminderInstance?)null);
 
         // Act
         var result = _controller.Update(id, reminderDto);
@@ -154,7 +176,7 @@ public class ReminderInstancesControllerTests
     {
         // Arrange
         var id = Guid.NewGuid();
-        _mockService.Setup(s => s.Delete(id)).Returns(true);
+        _mockService.Setup(s => s.Delete(id, TestUserId)).Returns(true);
 
         // Act
         var result = _controller.Delete(id);
@@ -168,7 +190,7 @@ public class ReminderInstancesControllerTests
     {
         // Arrange
         var id = Guid.NewGuid();
-        _mockService.Setup(s => s.Delete(id)).Returns(false);
+        _mockService.Setup(s => s.Delete(id, TestUserId)).Returns(false);
 
         // Act
         var result = _controller.Delete(id);
@@ -186,12 +208,13 @@ public class ReminderInstancesControllerTests
         var reminder = new ReminderInstance
         {
             Id = id,
+            UserId = TestUserId,
             Text = "Future Reminder",
             ScheduledDateAndTime = futureTime,
             IsCompleted = false,
             IsDeleted = false
         };
-        _mockService.Setup(s => s.GetById(id)).Returns(reminder);
+        _mockService.Setup(s => s.GetById(id, TestUserId)).Returns(reminder);
 
         // Act
         var result = _controller.GetById(id);
@@ -211,12 +234,13 @@ public class ReminderInstancesControllerTests
         var reminder = new ReminderInstance
         {
             Id = id,
+            UserId = TestUserId,
             Text = "Past Reminder",
             ScheduledDateAndTime = pastTime,
             IsCompleted = false,
             IsDeleted = false
         };
-        _mockService.Setup(s => s.GetById(id)).Returns(reminder);
+        _mockService.Setup(s => s.GetById(id, TestUserId)).Returns(reminder);
 
         // Act
         var result = _controller.GetById(id);
@@ -235,12 +259,13 @@ public class ReminderInstancesControllerTests
         var reminder = new ReminderInstance
         {
             Id = id,
+            UserId = TestUserId,
             Text = "Completed Reminder",
             ScheduledDateAndTime = DateTime.UtcNow,
             IsCompleted = true,
             IsDeleted = false
         };
-        _mockService.Setup(s => s.GetById(id)).Returns(reminder);
+        _mockService.Setup(s => s.GetById(id, TestUserId)).Returns(reminder);
 
         // Act
         var result = _controller.GetById(id);
@@ -259,12 +284,13 @@ public class ReminderInstancesControllerTests
         var reminder = new ReminderInstance
         {
             Id = id,
+            UserId = TestUserId,
             Text = "Deleted Reminder",
             ScheduledDateAndTime = DateTime.UtcNow,
             IsCompleted = false,
             IsDeleted = true
         };
-        _mockService.Setup(s => s.GetById(id)).Returns(reminder);
+        _mockService.Setup(s => s.GetById(id, TestUserId)).Returns(reminder);
 
         // Act
         var result = _controller.GetById(id);

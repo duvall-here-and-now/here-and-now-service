@@ -2,8 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(git checkout:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(if not exist \"D:\\workspace\\here-and-now\\here-and-now-service\\docs\" mkdir \"D:\\workspace\\here-and-now\\here-and-now-service\\docs\")",
+      "Bash(mkdir:*)",
+      "Bash(cat:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)"
     ]
   },
-  "outputStyle": "Learning"
+  "outputStyle": "Explanatory"
 }

@@ -1,11 +1,41 @@
 # Data Models
 
+> Domain models, DTOs, and persistence layer documentation
+
+---
+
 ## Overview
 
-The Here and Now Service uses domain models defined in the `HereAndNow.Reminders` assembly. Currently, data is stored in-memory using thread-safe collections, making it suitable for development and demo purposes.
+| Attribute | Value |
+|-----------|-------|
+| **Primary Storage** | Azure Cosmos DB (NoSQL) |
+| **Fallback Storage** | In-memory (ConcurrentDictionary) |
+| **Partition Strategy** | User ID (multi-tenant isolation) |
+| **Delete Strategy** | Soft delete (`isDeleted` flag) |
 
-**Storage:** In-memory (`ConcurrentDictionary<Guid, ReminderInstance>`)
-**Persistence:** None (data lost on application restart)
+---
+
+## Storage Architecture
+
+```
+┌─────────────────┐     ┌───────────────────────────┐
+│   Controller    │────▶│ IReminderInstanceService  │
+│  (API Layer)    │     │       (Interface)         │
+└─────────────────┘     └───────────────────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+        ┌───────────────────────┐     ┌───────────────────────────┐
+        │ CosmosReminderService │     │ ReminderInstanceService   │
+        │    (Production)       │     │    (Development/Test)     │
+        └───────────────────────┘     └───────────────────────────┘
+                    │                               │
+                    ▼                               ▼
+        ┌───────────────────────┐     ┌───────────────────────────┐
+        │   Azure Cosmos DB     │     │   ConcurrentDictionary    │
+        │  (Partition: userId)  │     │     (In-Memory)           │
+        └───────────────────────┘     └───────────────────────────┘
+```
 
 ---
 
@@ -14,16 +44,20 @@ The Here and Now Service uses domain models defined in the `HereAndNow.Reminders
 ### ReminderInstance
 
 **Namespace:** `HereAndNowService.Models`
-**Location:** `Reminders/HereAndNow.Reminders/Models/ReminderInstance.cs`
+**Location:** `Reminders/HereAndNow.Reminders/Models/ReminderInstance.cs:7`
 
-Represents a reminder with scheduling and status tracking.
+Core domain model representing a reminder with scheduling and completion tracking.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `Id` | `Guid` | Auto-generated | Unique identifier for the reminder |
-| `Text` | `string` | Yes (`required`) | The text content of the reminder |
-| `ScheduledDateAndTime` | `DateTime` | No | When the reminder is scheduled |
-| `Status` | `ReminderStatus` | No | Current status (defaults to first enum value) |
+| `Id` | `Guid` | Auto-generated | Unique identifier |
+| `UserId` | `string?` | Yes (runtime) | Owner's Auth0 user ID (partition key) |
+| `Text` | `string` | Yes (`required`) | Reminder content |
+| `ScheduledDateAndTime` | `DateTime` | No | When the reminder triggers |
+| `IsCompleted` | `bool` | No | Completion status |
+| `IsDeleted` | `bool` | No | Soft delete flag |
+| `ShouldPlaySound` | `bool` | No | Audio notification setting |
+| `ShouldDoVibration` | `bool` | No | Haptic notification setting |
 
 **C# Definition:**
 
@@ -31,66 +65,28 @@ Represents a reminder with scheduling and status tracking.
 public class ReminderInstance
 {
     public Guid Id { get; set; }
+    public string? UserId { get; set; }
     public required string Text { get; set; }
     public DateTime ScheduledDateAndTime { get; set; }
-    public ReminderStatus Status { get; set; }
+    public bool IsCompleted { get; set; }
+    public bool IsDeleted { get; set; }
+    public bool ShouldPlaySound { get; set; }
+    public bool ShouldDoVibration { get; set; }
 }
 ```
-
-**JSON Serialization Example:**
-
-```json
-{
-  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "text": "Review quarterly reports",
-  "scheduledDateAndTime": "2025-12-15T14:30:00Z",
-  "status": "Scheduled"
-}
-```
-
----
-
-### ReminderStatus
-
-**Namespace:** `HereAndNowService.Models`
-**Location:** `Reminders/HereAndNow.Reminders/Models/ReminderStatus.cs`
-**Type:** `enum`
-
-Represents the lifecycle status of a reminder instance.
-
-| Value | Description |
-|-------|-------------|
-| `Scheduled` | Reminder is scheduled for future |
-| `Active` | Reminder is currently active |
-| `Completed` | Reminder has been completed |
-
-**C# Definition:**
-
-```csharp
-public enum ReminderStatus
-{
-    Scheduled,
-    Active,
-    Completed
-}
-```
-
-**JSON Serialization:** Serialized as string (configured via `JsonStringEnumConverter`)
 
 ---
 
 ### Message
 
 **Namespace:** `HereAndNowService.Models`
-**Location:** `Reminders/HereAndNow.Reminders/Models/Message.cs`
+**Location:** `Reminders/HereAndNow.Reminders/Models/Message.cs:6`
 
-Represents a simple message response from the API.
+Simple message response model for the Messages API.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `text` | `string?` | No | The text content of the message |
-
-**C# Definition:**
+| `text` | `string?` | No | Message content |
 
 ```csharp
 public class Message
@@ -99,99 +95,242 @@ public class Message
 }
 ```
 
-**JSON Example:**
+---
 
-```json
+## DTOs (Data Transfer Objects)
+
+### ReminderInstanceDto
+
+**Namespace:** `HereAndNowService.DTOs`
+**Location:** `Web/HereAndNow.Web/DTOs/ReminderInstanceDto.cs:6`
+
+API transfer object with computed `State` property. Note: `UserId` is intentionally excluded from the DTO to prevent exposure in API responses.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Id` | `Guid` | Reminder identifier |
+| `Text` | `string` | Reminder content |
+| `ScheduledDateAndTime` | `DateTime` | Scheduled time |
+| `IsCompleted` | `bool` | Completion status |
+| `IsDeleted` | `bool` | Soft delete flag |
+| `ShouldPlaySound` | `bool` | Audio notification |
+| `ShouldDoVibration` | `bool` | Haptic notification |
+| `State` | `ReminderState` | **Computed** - Current state |
+
+**State Computation Logic:**
+
+```csharp
+public ReminderState State => this switch
 {
-  "text": "This is a protected message."
+    { IsDeleted: true } => ReminderState.Deleted,
+    { IsCompleted: true } => ReminderState.Completed,
+    _ when DateTime.UtcNow >= ScheduledDateAndTime => ReminderState.Active,
+    _ => ReminderState.Scheduled
+};
+```
+
+---
+
+### ReminderState (Enum)
+
+**Namespace:** `HereAndNowService.DTOs`
+**Location:** `Web/HereAndNow.Web/DTOs/ReminderState.cs:6`
+
+Computed state enum representing the reminder lifecycle.
+
+| Value | Description |
+|-------|-------------|
+| `Scheduled` | Reminder is scheduled for a future time |
+| `Active` | Reminder time has arrived/passed, awaiting action |
+| `Completed` | Reminder marked as completed |
+| `Deleted` | Reminder has been soft-deleted |
+
+**JSON Serialization:** Serialized as string via `JsonStringEnumConverter`
+
+---
+
+## Persistence Layer
+
+### ReminderDocument
+
+**Namespace:** `HereAndNowService.Persistence`
+**Location:** `Reminders/HereAndNow.Reminders/Persistence/ReminderDocument.cs:9`
+**Visibility:** `internal`
+
+Cosmos DB document representation with string-based ID for Cosmos compatibility.
+
+| Property | Type | Cosmos Role |
+|----------|------|-------------|
+| `Id` | `string` | Document ID (GUID as string) |
+| `UserId` | `string` | **Partition Key** (`/userId`) |
+| `Text` | `string` | - |
+| `ScheduledDateAndTime` | `DateTime` | - |
+| `IsCompleted` | `bool` | - |
+| `IsDeleted` | `bool` | Used for soft delete queries |
+| `ShouldPlaySound` | `bool` | - |
+| `ShouldDoVibration` | `bool` | - |
+
+**Mapping Methods:**
+
+```csharp
+// Domain → Document
+public static ReminderDocument FromDomain(ReminderInstance domain);
+
+// Document → Domain
+public ReminderInstance ToDomain();
+```
+
+---
+
+### CosmosDbSettings
+
+**Namespace:** `HereAndNowService.Configuration`
+**Location:** `Web/HereAndNow.Web/Configuration/CosmosDbSettings.cs:6`
+
+Configuration class for Cosmos DB connection.
+
+| Property | Type | Environment Variable |
+|----------|------|---------------------|
+| `Endpoint` | `string` | `COSMOS_ENDPOINT` |
+| `PrimaryKey` | `string` | `COSMOS_PRIMARY_KEY` |
+| `DatabaseName` | `string` | `COSMOS_DATABASE_NAME` |
+| `ContainerName` | `string` | `COSMOS_CONTAINER_NAME` |
+
+---
+
+## Service Layer
+
+### IReminderInstanceService
+
+**Namespace:** `HereAndNowService.Services`
+**Location:** `Reminders/HereAndNow.Reminders/Services/IReminderInstanceService.cs:8`
+
+Service interface with user-scoped operations for multi-tenant isolation.
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `GetAll(userId)` | `IEnumerable<ReminderInstance>` | Get user's non-deleted reminders |
+| `GetById(id, userId)` | `ReminderInstance?` | Get single reminder (null if not found/deleted) |
+| `Create(reminder)` | `ReminderInstance` | Create with auto-generated ID |
+| `Update(id, reminder)` | `ReminderInstance?` | Update (null if not found) |
+| `Delete(id, userId)` | `bool` | Soft delete (returns success) |
+
+---
+
+### ReminderInstanceService (In-Memory)
+
+**Namespace:** `HereAndNowService.Services`
+**Location:** `Reminders/HereAndNow.Reminders/Services/ReminderInstanceService.cs:10`
+**DI Lifetime:** Singleton (when Cosmos not configured)
+
+Thread-safe in-memory implementation for development/testing.
+
+**Key Features:**
+- `ConcurrentDictionary<Guid, ReminderInstance>` storage
+- Optimistic concurrency via `TryUpdate`
+- Comprehensive structured logging
+- User isolation via `userId` filtering
+
+---
+
+### CosmosReminderInstanceService
+
+**Namespace:** `HereAndNowService.Services`
+**Location:** `Reminders/HereAndNow.Reminders/Services/CosmosReminderInstanceService.cs:13`
+**DI Lifetime:** Scoped (when Cosmos configured)
+
+Production Cosmos DB implementation with resilience patterns.
+
+**Key Features:**
+
+1. **Partition Key Strategy**: `userId` for efficient multi-tenant queries
+2. **Soft Delete Queries**: `WHERE c.isDeleted = false`
+3. **Error Handling**: Wraps transient errors in `ServiceUnavailableException`
+4. **SDK Retry Policy**: 9 retries, 30s max wait for 429 throttling
+
+**Transient Error Detection:**
+
+```csharp
+private static bool IsServiceUnavailable(CosmosException ex)
+{
+    return ex.StatusCode == HttpStatusCode.ServiceUnavailable
+        || ex.StatusCode == HttpStatusCode.RequestTimeout
+        || ex.StatusCode == HttpStatusCode.GatewayTimeout
+        || ex.StatusCode == HttpStatusCode.InternalServerError;
 }
 ```
 
 ---
 
-## Data Access Layer
+## Mapper
 
-### IReminderInstanceService
+### ReminderInstanceMapper
 
-**Namespace:** `HereAndNowService.Services`
-**Location:** `Reminders/HereAndNow.Reminders/Services/IReminderInstanceService.cs`
+**Namespace:** `HereAndNowService.Mappers`
+**Location:** `Web/HereAndNow.Web/Mappers/ReminderInstanceMapper.cs:9`
 
-Service interface defining CRUD operations for reminders.
+Static mapper class for Domain ↔ DTO conversions.
 
-| Method | Return Type | Description |
-|--------|-------------|-------------|
-| `GetAll()` | `IEnumerable<ReminderInstance>` | Retrieves all reminders |
-| `GetById(Guid id)` | `ReminderInstance?` | Retrieves a single reminder |
-| `Create(ReminderInstance)` | `ReminderInstance` | Creates a new reminder |
-| `Update(Guid id, ReminderInstance)` | `ReminderInstance?` | Updates existing reminder |
-| `Delete(Guid id)` | `bool` | Deletes a reminder |
+| Method | Description |
+|--------|-------------|
+| `ToDto(ReminderInstance)` | Domain → DTO |
+| `ToDomain(ReminderInstanceDto)` | DTO → Domain |
+| `ToDtos(IEnumerable<ReminderInstance>)` | Batch Domain → DTO |
 
 ---
 
-### ReminderInstanceService
+## Exceptions
 
-**Namespace:** `HereAndNowService.Services`
-**Location:** `Reminders/HereAndNow.Reminders/Services/ReminderInstanceService.cs`
-**Lifetime:** Singleton (registered in DI container)
+### ServiceUnavailableException
 
-In-memory implementation using `ConcurrentDictionary` for thread safety.
+**Namespace:** `HereAndNowService.Exceptions`
+**Location:** `Reminders/HereAndNow.Reminders/Exceptions/ServiceUnavailableException.cs:6`
 
-**Key Implementation Details:**
+Custom exception for external service failures.
 
-1. **Thread Safety:** Uses `ConcurrentDictionary` for safe concurrent access
-2. **ID Generation:** Auto-generates `Guid.NewGuid()` on create
-3. **Optimistic Concurrency:** Uses `TryUpdate` to handle concurrent modifications
-4. **Logging:** Comprehensive structured logging for all operations
+| Property | Type | Description |
+|----------|------|-------------|
+| `ServiceName` | `string` | Name of unavailable service ("CosmosDB") |
 
-**Storage Strategy:**
-
-```csharp
-private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new();
-```
+**Usage:** Thrown by `CosmosReminderInstanceService` on transient Cosmos failures, caught by `ErrorHandlerMiddleware` and returned as 503 response.
 
 ---
 
-## Data Flow
+## Cosmos DB Schema
 
+### Container Configuration
+
+| Setting | Value |
+|---------|-------|
+| **Partition Key** | `/userId` |
+| **Indexing** | Default (all properties) |
+| **Consistency** | Session (default) |
+
+### Sample Document
+
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "userId": "auth0|abc123",
+  "text": "Take medication",
+  "scheduledDateAndTime": "2025-12-17T10:00:00Z",
+  "isCompleted": false,
+  "isDeleted": false,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false
+}
 ```
-┌─────────────────┐     ┌───────────────────────────┐     ┌─────────────────────────┐
-│   Controller    │────▶│ IReminderInstanceService  │────▶│  ConcurrentDictionary   │
-│  (API Layer)    │     │       (Interface)         │     │   (In-Memory Store)     │
-└─────────────────┘     └───────────────────────────┘     └─────────────────────────┘
-         │                          │
-         │                          │
-    HTTP Request              Business Logic
-    Validation                ID Generation
-    Authentication            Concurrency Control
-```
 
----
+### Query Patterns
 
-## Future Considerations
-
-### Database Migration Path
-
-To add persistent storage, consider:
-
-1. **Entity Framework Core** - Add EF Core packages and DbContext
-2. **Repository Pattern** - Create `IReminderRepository` interface
-3. **SQL Server / PostgreSQL** - Azure SQL or PostgreSQL for Azure
-4. **Migration Strategy** - EF Migrations for schema management
-
-### Suggested Schema (SQL)
-
+**Get all for user:**
 ```sql
-CREATE TABLE ReminderInstances (
-    Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-    Text NVARCHAR(500) NOT NULL,
-    ScheduledDateAndTime DATETIME2 NOT NULL,
-    Status INT NOT NULL DEFAULT 0,
-    CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
-    UpdatedAt DATETIME2 NULL
-);
+SELECT * FROM c WHERE c.userId = @userId AND c.isDeleted = false
+```
 
-CREATE INDEX IX_ReminderInstances_Status ON ReminderInstances(Status);
-CREATE INDEX IX_ReminderInstances_ScheduledDateAndTime ON ReminderInstances(ScheduledDateAndTime);
+**Point read (by ID + partition key):**
+```csharp
+container.ReadItemAsync<ReminderDocument>(id.ToString(), new PartitionKey(userId))
 ```
 
 ---
@@ -200,3 +339,15 @@ CREATE INDEX IX_ReminderInstances_ScheduledDateAndTime ON ReminderInstances(Sche
 
 - [API Contracts](./api-contracts.md) - REST API endpoint documentation
 - [Architecture](./architecture.md) - System architecture overview
+- [Development Guide](./development-guide.md) - Local setup instructions
+
+---
+
+## Documentation Metadata
+
+| Field | Value |
+|-------|-------|
+| **Generated** | 2025-12-17 |
+| **Scan Level** | Exhaustive |
+| **Models Documented** | 7 (2 domain, 2 DTO, 1 persistence, 1 config, 1 exception) |
+| **Services Documented** | 4 (2 interfaces, 2 implementations) |

@@ -1,7 +1,9 @@
+using HereAndNowService.Configuration;
 using HereAndNowService.Middlewares;
 using HereAndNowService.Services;
 using dotenv.net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Azure.Cosmos;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 using Microsoft.OpenApi.Models;
@@ -20,7 +22,44 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 // Add services to the container.
 builder.Services.AddScoped<IMessageService, MessageService>();
-builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
+
+// Configure Cosmos DB
+var cosmosSettings = new CosmosDbSettings
+{
+    Endpoint = builder.Configuration.GetValue<string>("COSMOS_ENDPOINT") ?? "",
+    PrimaryKey = builder.Configuration.GetValue<string>("COSMOS_PRIMARY_KEY") ?? "",
+    DatabaseName = builder.Configuration.GetValue<string>("COSMOS_DATABASE_NAME") ?? "",
+    ContainerName = builder.Configuration.GetValue<string>("COSMOS_CONTAINER_NAME") ?? ""
+};
+
+var useCosmosDb = !string.IsNullOrEmpty(cosmosSettings.Endpoint) && !string.IsNullOrEmpty(cosmosSettings.PrimaryKey);
+
+if (useCosmosDb)
+{
+    builder.Services.AddSingleton(cosmosSettings);
+    builder.Services.AddSingleton<CosmosClient>(sp =>
+        new CosmosClient(cosmosSettings.Endpoint, cosmosSettings.PrimaryKey, new CosmosClientOptions
+        {
+            SerializerOptions = new CosmosSerializationOptions
+            {
+                PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
+            },
+            // Retry policy for 429 (TooManyRequests) throttling
+            MaxRetryAttemptsOnRateLimitedRequests = 9,
+            MaxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds(30)
+        }));
+    builder.Services.AddScoped<IReminderInstanceService>(sp =>
+        new CosmosReminderInstanceService(
+            sp.GetRequiredService<CosmosClient>(),
+            cosmosSettings.DatabaseName,
+            cosmosSettings.ContainerName,
+            sp.GetRequiredService<ILogger<CosmosReminderInstanceService>>()));
+}
+else
+{
+    // Fall back to in-memory implementation for local development without Cosmos
+    builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
+}
 
 builder.Services.AddCors(options =>
 {
