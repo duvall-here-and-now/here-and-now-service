@@ -12,7 +12,7 @@
 | **Authentication** | Auth0 JWT Bearer Token |
 | **Content Type** | `application/json` |
 | **API Documentation** | Swagger UI at `/swagger` |
-| **Total Endpoints** | 8 |
+| **Total Endpoints** | 9 |
 
 ---
 
@@ -136,11 +136,14 @@ Returns all reminder instances for the authenticated user.
   {
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "text": "Take medication",
-    "scheduledDateAndTime": "2025-12-17T10:00:00Z",
+    "scheduledDateAndTime": "2025-12-18T10:00:00Z",
     "isCompleted": false,
     "isDeleted": false,
     "shouldPlaySound": true,
     "shouldDoVibration": false,
+    "createdDateAndTime": "2025-12-18T09:30:00Z",
+    "completedDateAndTime": null,
+    "deletedDateAndTime": null,
     "state": "Scheduled"
   }
 ]
@@ -168,11 +171,14 @@ Returns a specific reminder instance by ID.
 {
   "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "text": "Take medication",
-  "scheduledDateAndTime": "2025-12-17T10:00:00Z",
+  "scheduledDateAndTime": "2025-12-18T10:00:00Z",
   "isCompleted": false,
   "isDeleted": false,
   "shouldPlaySound": true,
   "shouldDoVibration": false,
+  "createdDateAndTime": "2025-12-18T09:30:00Z",
+  "completedDateAndTime": null,
+  "deletedDateAndTime": null,
   "state": "Scheduled"
 }
 ```
@@ -194,14 +200,13 @@ Creates a new reminder instance for the authenticated user.
 | **Auth Required** | Yes |
 | **Method** | POST |
 | **Content-Type** | application/json |
+| **Request DTO** | `CreateReminderRequest` |
 
 **Request Body:**
 ```json
 {
   "text": "Take medication",
-  "scheduledDateAndTime": "2025-12-17T10:00:00Z",
-  "isCompleted": false,
-  "isDeleted": false,
+  "scheduledDateAndTime": "2025-12-18T10:00:00Z",
   "shouldPlaySound": true,
   "shouldDoVibration": false
 }
@@ -212,46 +217,51 @@ Creates a new reminder instance for the authenticated user.
 {
   "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "text": "Take medication",
-  "scheduledDateAndTime": "2025-12-17T10:00:00Z",
+  "scheduledDateAndTime": "2025-12-18T10:00:00Z",
   "isCompleted": false,
   "isDeleted": false,
   "shouldPlaySound": true,
   "shouldDoVibration": false,
+  "createdDateAndTime": "2025-12-18T09:30:00Z",
+  "completedDateAndTime": null,
+  "deletedDateAndTime": null,
   "state": "Scheduled"
 }
 ```
 
 | Status Code | Description |
 |-------------|-------------|
-| 400 Bad Request | Invalid request body |
+| 400 Bad Request | Invalid request body (missing text, etc.) |
 | 401 Unauthorized | Missing or invalid token |
 | 503 Service Unavailable | Cosmos DB unavailable |
 
-**Note:** The `id` field in the request is ignored; a new GUID is generated server-side.
+**Server-Controlled Fields:** The following fields are set by the server and cannot be provided in the request:
+- `id` — Generated as new GUID
+- `isCompleted` — Always `false` on creation
+- `isDeleted` — Always `false` on creation
+- `createdDateAndTime` — Set to current UTC time
+- `completedDateAndTime` — Always `null` on creation
+- `deletedDateAndTime` — Always `null` on creation
 
 ---
 
-#### PUT /api/reminder-instances/{id}
+#### PATCH /api/reminder-instances/{id}
 
-Updates an existing reminder instance.
+Partially updates an existing reminder instance. Only provided fields will be updated.
 
 | Attribute | Value |
 |-----------|-------|
 | **Auth Required** | Yes |
-| **Method** | PUT |
+| **Method** | PATCH |
 | **Path Parameter** | `id` (GUID) |
 | **Content-Type** | application/json |
+| **Request DTO** | `UpdateReminderRequest` |
 
-**Request Body:**
+**Request Body (all fields optional):**
 ```json
 {
-  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "text": "Take medication (updated)",
-  "scheduledDateAndTime": "2025-12-17T11:00:00Z",
-  "isCompleted": true,
-  "isDeleted": false,
-  "shouldPlaySound": false,
-  "shouldDoVibration": true
+  "text": "Take medication with food",
+  "scheduledDateAndTime": "2025-12-18T12:00:00Z"
 }
 ```
 
@@ -259,28 +269,76 @@ Updates an existing reminder instance.
 ```json
 {
   "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "text": "Take medication (updated)",
-  "scheduledDateAndTime": "2025-12-17T11:00:00Z",
+  "text": "Take medication with food",
+  "scheduledDateAndTime": "2025-12-18T12:00:00Z",
+  "isCompleted": false,
+  "isDeleted": false,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false,
+  "createdDateAndTime": "2025-12-18T09:30:00Z",
+  "completedDateAndTime": null,
+  "deletedDateAndTime": null,
+  "state": "Scheduled"
+}
+```
+
+| Status Code | Description |
+|-------------|-------------|
+| 400 Bad Request | Invalid field value (empty text, etc.) |
+| 401 Unauthorized | Missing or invalid token |
+| 404 Not Found | Reminder not found, deleted, or belongs to different user |
+| 503 Service Unavailable | Cosmos DB unavailable |
+
+**Partial Update Semantics:**
+- Only fields included in the request are updated
+- Fields set to `null` or omitted retain their current values
+- State flags (`isCompleted`, `isDeleted`) cannot be modified via this endpoint — use Complete or Delete endpoints instead
+
+---
+
+#### POST /api/reminder-instances/{id}/complete
+
+Marks a reminder as completed and records the completion timestamp.
+
+| Attribute | Value |
+|-----------|-------|
+| **Auth Required** | Yes |
+| **Method** | POST |
+| **Path Parameter** | `id` (GUID) |
+
+**Request Body:** None required
+
+**Response (200 OK):**
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "Take medication",
+  "scheduledDateAndTime": "2025-12-18T10:00:00Z",
   "isCompleted": true,
   "isDeleted": false,
-  "shouldPlaySound": false,
-  "shouldDoVibration": true,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false,
+  "createdDateAndTime": "2025-12-18T09:30:00Z",
+  "completedDateAndTime": "2025-12-18T10:15:00Z",
+  "deletedDateAndTime": null,
   "state": "Completed"
 }
 ```
 
 | Status Code | Description |
 |-------------|-------------|
-| 400 Bad Request | ID mismatch between URL and body |
 | 401 Unauthorized | Missing or invalid token |
 | 404 Not Found | Reminder not found or belongs to different user |
+| 409 Conflict | Reminder is deleted (cannot complete a deleted reminder) |
 | 503 Service Unavailable | Cosmos DB unavailable |
+
+**Idempotency:** This operation is idempotent. Calling complete on an already-completed reminder returns 200 OK with the current state.
 
 ---
 
 #### DELETE /api/reminder-instances/{id}
 
-Soft-deletes a reminder instance (sets `isDeleted = true`).
+Soft-deletes a reminder instance by setting `isDeleted = true` and recording the deletion timestamp.
 
 | Attribute | Value |
 |-----------|-------|
@@ -295,6 +353,44 @@ Soft-deletes a reminder instance (sets `isDeleted = true`).
 | 404 Not Found | Reminder not found or belongs to different user |
 | 503 Service Unavailable | Cosmos DB unavailable |
 
+**Server Actions:**
+- Sets `isDeleted = true`
+- Sets `deletedDateAndTime` to current UTC time
+
+**Idempotency:** This operation is idempotent. Deleting an already-deleted reminder returns 204 No Content.
+
+---
+
+## Request Schemas
+
+### CreateReminderRequest
+
+Used by: `POST /api/reminder-instances`
+
+```typescript
+{
+  text: string;                    // Required, 1-1000 characters
+  scheduledDateAndTime: string;    // Required, ISO 8601 datetime
+  shouldPlaySound: boolean;        // Optional, defaults to false
+  shouldDoVibration: boolean;      // Optional, defaults to false
+}
+```
+
+### UpdateReminderRequest
+
+Used by: `PATCH /api/reminder-instances/{id}`
+
+```typescript
+{
+  text?: string;                    // Optional, 1-1000 characters if provided
+  scheduledDateAndTime?: string;    // Optional, ISO 8601 datetime
+  shouldPlaySound?: boolean;        // Optional
+  shouldDoVibration?: boolean;      // Optional
+}
+```
+
+**Note:** All fields are nullable. Only non-null fields are updated; omitted fields retain their current values.
+
 ---
 
 ## Response Schemas
@@ -303,13 +399,16 @@ Soft-deletes a reminder instance (sets `isDeleted = true`).
 
 ```typescript
 {
-  id: string;                    // GUID
-  text: string;                  // Required
-  scheduledDateAndTime: string;  // ISO 8601 datetime
+  id: string;                         // GUID
+  text: string;                       // Required
+  scheduledDateAndTime: string;       // ISO 8601 datetime
   isCompleted: boolean;
   isDeleted: boolean;
   shouldPlaySound: boolean;
   shouldDoVibration: boolean;
+  createdDateAndTime: string;         // ISO 8601 datetime, set on creation
+  completedDateAndTime: string | null; // ISO 8601 datetime, set when completed
+  deletedDateAndTime: string | null;   // ISO 8601 datetime, set when deleted
   state: "Scheduled" | "Active" | "Completed" | "Deleted";  // Computed
 }
 ```
@@ -393,7 +492,7 @@ All responses include security headers (via `SecureHeadersMiddleware`):
 | Setting | Value |
 |---------|-------|
 | Allowed Origins | Configured via `CLIENT_ORIGIN_URL` (comma-separated) |
-| Allowed Methods | GET, POST, PUT, DELETE |
+| Allowed Methods | GET, POST, PATCH, DELETE |
 | Allowed Headers | Content-Type, Authorization |
 | Preflight Max Age | 86400 seconds (24 hours) |
 
@@ -414,6 +513,6 @@ The Cosmos DB client is configured with SDK-level retry for 429 (TooManyRequests
 
 | Field | Value |
 |-------|-------|
-| **Generated** | 2025-12-17 |
+| **Generated** | 2025-12-18 |
 | **Scan Level** | Exhaustive |
 | **Source Files Analyzed** | All controllers, services, DTOs |
