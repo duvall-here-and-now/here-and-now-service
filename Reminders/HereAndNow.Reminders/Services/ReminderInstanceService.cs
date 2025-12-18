@@ -58,16 +58,33 @@ public class ReminderInstanceService : IReminderInstanceService
     }
 
     /// <summary>
-    /// Creates a new reminder instance.
+    /// Creates a new reminder instance with server-controlled fields.
     /// </summary>
-    /// <param name="reminder">The reminder instance to create.</param>
-    /// <returns>The created reminder instance with a generated ID.</returns>
-    public ReminderInstance Create(ReminderInstance reminder)
+    public ReminderInstance Create(
+        string userId,
+        string text,
+        DateTime scheduledDateAndTime,
+        bool shouldPlaySound,
+        bool shouldDoVibration)
     {
         _logger.LogInformation("Creating new reminder instance with Text: {ReminderText}, scheduled for: {ScheduledTime}",
-            reminder.Text, reminder.ScheduledDateAndTime);
+            text, scheduledDateAndTime);
 
-        reminder.Id = Guid.NewGuid();
+        var reminder = new ReminderInstance
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Text = text,
+            ScheduledDateAndTime = scheduledDateAndTime,
+            ShouldPlaySound = shouldPlaySound,
+            ShouldDoVibration = shouldDoVibration,
+            IsCompleted = false,
+            IsDeleted = false,
+            CreatedDateAndTime = DateTime.UtcNow,
+            CompletedDateAndTime = null,
+            DeletedDateAndTime = null
+        };
+
         var added = _reminders.TryAdd(reminder.Id, reminder);
 
         if (added)
@@ -83,35 +100,117 @@ public class ReminderInstanceService : IReminderInstanceService
     }
 
     /// <summary>
-    /// Updates an existing reminder instance.
+    /// Partially updates an existing reminder instance.
     /// </summary>
-    /// <param name="id">The unique identifier of the reminder to update.</param>
-    /// <param name="reminder">The updated reminder data.</param>
-    /// <returns>The updated reminder instance if found; otherwise, null.</returns>
-    public ReminderInstance? Update(Guid id, ReminderInstance reminder)
+    public ReminderInstance? Update(
+        Guid id,
+        string userId,
+        string? text = null,
+        DateTime? scheduledDateAndTime = null,
+        bool? shouldPlaySound = null,
+        bool? shouldDoVibration = null)
     {
         _logger.LogInformation("Attempting to update reminder instance with ID: {ReminderId}", id);
 
-        if (_reminders.TryGetValue(id, out var existingReminder))
-        {
-            _logger.LogInformation("Found existing reminder with ID: {ReminderId}", id);
-
-            reminder.Id = id;
-            if (_reminders.TryUpdate(id, reminder, existingReminder))
-            {
-                _logger.LogInformation("Successfully updated reminder instance with ID: {ReminderId}", id);
-                return reminder;
-            }
-            else
-            {
-                _logger.LogError("Failed to update reminder instance with ID: {ReminderId} due to concurrent modification", id);
-            }
-        }
-        else
+        if (!_reminders.TryGetValue(id, out var existingReminder))
         {
             _logger.LogWarning("Cannot update - reminder instance with ID: {ReminderId} not found", id);
+            return null;
         }
 
+        if (existingReminder.UserId != userId)
+        {
+            _logger.LogWarning("Cannot update - reminder instance with ID: {ReminderId} belongs to different user", id);
+            return null;
+        }
+
+        if (existingReminder.IsDeleted)
+        {
+            _logger.LogWarning("Cannot update - reminder instance with ID: {ReminderId} is deleted", id);
+            return null;
+        }
+
+        _logger.LogInformation("Found existing reminder with ID: {ReminderId}", id);
+
+        var updatedReminder = new ReminderInstance
+        {
+            Id = existingReminder.Id,
+            UserId = existingReminder.UserId,
+            Text = text ?? existingReminder.Text,
+            ScheduledDateAndTime = scheduledDateAndTime ?? existingReminder.ScheduledDateAndTime,
+            ShouldPlaySound = shouldPlaySound ?? existingReminder.ShouldPlaySound,
+            ShouldDoVibration = shouldDoVibration ?? existingReminder.ShouldDoVibration,
+            IsCompleted = existingReminder.IsCompleted,
+            IsDeleted = existingReminder.IsDeleted,
+            CreatedDateAndTime = existingReminder.CreatedDateAndTime,
+            CompletedDateAndTime = existingReminder.CompletedDateAndTime,
+            DeletedDateAndTime = existingReminder.DeletedDateAndTime
+        };
+
+        if (_reminders.TryUpdate(id, updatedReminder, existingReminder))
+        {
+            _logger.LogInformation("Successfully updated reminder instance with ID: {ReminderId}", id);
+            return updatedReminder;
+        }
+
+        _logger.LogError("Failed to update reminder instance with ID: {ReminderId} due to concurrent modification", id);
+        return null;
+    }
+
+    /// <summary>
+    /// Marks a reminder as completed and sets the completion timestamp.
+    /// </summary>
+    public ReminderInstance? Complete(Guid id, string userId)
+    {
+        _logger.LogInformation("Attempting to complete reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
+
+        if (!_reminders.TryGetValue(id, out var existingReminder))
+        {
+            _logger.LogWarning("Cannot complete - reminder instance with ID: {ReminderId} not found", id);
+            return null;
+        }
+
+        if (existingReminder.UserId != userId)
+        {
+            _logger.LogWarning("Cannot complete - reminder instance with ID: {ReminderId} belongs to different user", id);
+            return null;
+        }
+
+        if (existingReminder.IsDeleted)
+        {
+            _logger.LogWarning("Cannot complete - reminder instance with ID: {ReminderId} is deleted", id);
+            throw new InvalidOperationException("Cannot complete a deleted reminder.");
+        }
+
+        // Idempotent: if already completed, return current state
+        if (existingReminder.IsCompleted)
+        {
+            _logger.LogInformation("Reminder instance with ID: {ReminderId} is already completed", id);
+            return existingReminder;
+        }
+
+        var completedReminder = new ReminderInstance
+        {
+            Id = existingReminder.Id,
+            UserId = existingReminder.UserId,
+            Text = existingReminder.Text,
+            ScheduledDateAndTime = existingReminder.ScheduledDateAndTime,
+            ShouldPlaySound = existingReminder.ShouldPlaySound,
+            ShouldDoVibration = existingReminder.ShouldDoVibration,
+            IsCompleted = true,
+            IsDeleted = existingReminder.IsDeleted,
+            CreatedDateAndTime = existingReminder.CreatedDateAndTime,
+            CompletedDateAndTime = DateTime.UtcNow,
+            DeletedDateAndTime = existingReminder.DeletedDateAndTime
+        };
+
+        if (_reminders.TryUpdate(id, completedReminder, existingReminder))
+        {
+            _logger.LogInformation("Successfully completed reminder instance with ID: {ReminderId}", id);
+            return completedReminder;
+        }
+
+        _logger.LogError("Failed to complete reminder instance with ID: {ReminderId} due to concurrent modification", id);
         return null;
     }
 
@@ -125,35 +224,47 @@ public class ReminderInstanceService : IReminderInstanceService
     {
         _logger.LogInformation("Attempting to soft-delete reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
 
-        if (_reminders.TryGetValue(id, out var existingReminder) && existingReminder.UserId == userId)
-        {
-            var updatedReminder = new ReminderInstance
-            {
-                Id = existingReminder.Id,
-                UserId = existingReminder.UserId,
-                Text = existingReminder.Text,
-                ScheduledDateAndTime = existingReminder.ScheduledDateAndTime,
-                IsCompleted = existingReminder.IsCompleted,
-                IsDeleted = true,
-                ShouldPlaySound = existingReminder.ShouldPlaySound,
-                ShouldDoVibration = existingReminder.ShouldDoVibration
-            };
-
-            if (_reminders.TryUpdate(id, updatedReminder, existingReminder))
-            {
-                _logger.LogInformation("Successfully soft-deleted reminder instance with ID: {ReminderId}", id);
-                return true;
-            }
-            else
-            {
-                _logger.LogError("Failed to soft-delete reminder instance with ID: {ReminderId} due to concurrent modification", id);
-            }
-        }
-        else
+        if (!_reminders.TryGetValue(id, out var existingReminder))
         {
             _logger.LogWarning("Cannot delete - reminder instance with ID: {ReminderId} not found for user: {UserId}", id, userId);
+            return false;
         }
 
+        if (existingReminder.UserId != userId)
+        {
+            _logger.LogWarning("Cannot delete - reminder instance with ID: {ReminderId} belongs to different user", id);
+            return false;
+        }
+
+        // Idempotent: if already deleted, return success
+        if (existingReminder.IsDeleted)
+        {
+            _logger.LogInformation("Reminder instance with ID: {ReminderId} is already deleted", id);
+            return true;
+        }
+
+        var deletedReminder = new ReminderInstance
+        {
+            Id = existingReminder.Id,
+            UserId = existingReminder.UserId,
+            Text = existingReminder.Text,
+            ScheduledDateAndTime = existingReminder.ScheduledDateAndTime,
+            IsCompleted = existingReminder.IsCompleted,
+            IsDeleted = true,
+            ShouldPlaySound = existingReminder.ShouldPlaySound,
+            ShouldDoVibration = existingReminder.ShouldDoVibration,
+            CreatedDateAndTime = existingReminder.CreatedDateAndTime,
+            CompletedDateAndTime = existingReminder.CompletedDateAndTime,
+            DeletedDateAndTime = DateTime.UtcNow
+        };
+
+        if (_reminders.TryUpdate(id, deletedReminder, existingReminder))
+        {
+            _logger.LogInformation("Successfully soft-deleted reminder instance with ID: {ReminderId}", id);
+            return true;
+        }
+
+        _logger.LogError("Failed to soft-delete reminder instance with ID: {ReminderId} due to concurrent modification", id);
         return false;
     }
 }

@@ -59,12 +59,29 @@ public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>
         // Arrange
         var id = Guid.NewGuid();
         using var content = new StringContent(
-            $"{{\"id\":\"{id}\",\"text\":\"Updated\",\"scheduledDateAndTime\":\"2024-12-31T10:00:00Z\"}}",
+            "{\"text\":\"Updated\"}",
             System.Text.Encoding.UTF8,
             "application/json");
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/reminder-instances/{id}")
+        {
+            Content = content
+        };
 
         // Act
-        var response = await _client.PutAsync($"/api/reminder-instances/{id}", content);
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Complete_WithoutAuthentication_ShouldReturn401Unauthorized()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+
+        // Act
+        var response = await _client.PostAsync($"/api/reminder-instances/{id}/complete", null);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

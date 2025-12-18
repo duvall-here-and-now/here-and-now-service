@@ -85,20 +85,26 @@ public class ReminderInstancesController : ControllerBase
 
     /// <summary>
     /// Creates a new reminder instance for the authenticated user.
+    /// Server controls: Id, UserId, IsCompleted, IsDeleted, timestamps.
     /// </summary>
-    /// <param name="reminderDto">The reminder instance to create.</param>
+    /// <param name="request">The reminder creation request.</param>
     /// <returns>The created reminder instance.</returns>
     [HttpPost]
     [ProducesResponseType(typeof(ReminderInstanceDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public ActionResult<ReminderInstanceDto> Create([FromBody] ReminderInstanceDto reminderDto)
+    public ActionResult<ReminderInstanceDto> Create([FromBody] CreateReminderRequest request)
     {
         var userId = GetUserId();
         _logger.LogInformation("POST /api/reminder-instances - Request received to create new reminder for user: {UserId}", userId);
-        var domain = ReminderInstanceMapper.ToDomain(reminderDto);
-        domain.UserId = userId;
-        var createdReminder = _reminderInstanceService.Create(domain);
+
+        var createdReminder = _reminderInstanceService.Create(
+            userId,
+            request.Text,
+            request.ScheduledDateAndTime,
+            request.ShouldPlaySound,
+            request.ShouldDoVibration);
+
         var resultDto = ReminderInstanceMapper.ToDto(createdReminder);
         _logger.LogInformation("POST /api/reminder-instances - Successfully created reminder with ID: {ReminderId}, returning 201 Created", createdReminder.Id);
 
@@ -110,43 +116,81 @@ public class ReminderInstancesController : ControllerBase
     }
 
     /// <summary>
-    /// Updates an existing reminder instance for the authenticated user.
+    /// Partially updates an existing reminder instance for the authenticated user.
+    /// Only provided fields will be updated. Cannot modify state flags or timestamps.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to update.</param>
-    /// <param name="reminderDto">The updated reminder data.</param>
+    /// <param name="request">The partial update request.</param>
     /// <returns>The updated reminder instance.</returns>
-    [HttpPut("{id}")]
+    [HttpPatch("{id}")]
     [ProducesResponseType(typeof(ReminderInstanceDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<ReminderInstanceDto> Update(Guid id, [FromBody] ReminderInstanceDto reminderDto)
+    public ActionResult<ReminderInstanceDto> Update(Guid id, [FromBody] UpdateReminderRequest request)
     {
         var userId = GetUserId();
-        _logger.LogInformation("PUT /api/reminder-instances/{ReminderId} - Request received to update reminder for user: {UserId}", id, userId);
+        _logger.LogInformation("PATCH /api/reminder-instances/{ReminderId} - Request received to update reminder for user: {UserId}", id, userId);
 
-        if (reminderDto.Id != Guid.Empty && reminderDto.Id != id)
-        {
-            _logger.LogWarning("PUT /api/reminder-instances/{ReminderId} - ID mismatch: URL ID does not match body ID {BodyId}, returning 400 Bad Request", id, reminderDto.Id);
-            return BadRequest(new { message = "ID in URL and body do not match." });
-        }
-
-        var domain = ReminderInstanceMapper.ToDomain(reminderDto);
-        domain.UserId = userId;
-        var updatedReminder = _reminderInstanceService.Update(id, domain);
+        var updatedReminder = _reminderInstanceService.Update(
+            id,
+            userId,
+            request.Text,
+            request.ScheduledDateAndTime,
+            request.ShouldPlaySound,
+            request.ShouldDoVibration);
 
         if (updatedReminder == null)
         {
-            _logger.LogWarning("PUT /api/reminder-instances/{ReminderId} - Reminder not found, returning 404 Not Found", id);
+            _logger.LogWarning("PATCH /api/reminder-instances/{ReminderId} - Reminder not found, returning 404 Not Found", id);
             return NotFound(new { message = $"Reminder with ID {id} not found." });
         }
 
-        _logger.LogInformation("PUT /api/reminder-instances/{ReminderId} - Successfully updated reminder, returning 200 OK", id);
+        _logger.LogInformation("PATCH /api/reminder-instances/{ReminderId} - Successfully updated reminder, returning 200 OK", id);
         return Ok(ReminderInstanceMapper.ToDto(updatedReminder));
     }
 
     /// <summary>
+    /// Marks a reminder as completed for the authenticated user.
+    /// Sets IsCompleted to true and records the completion timestamp.
+    /// This operation is idempotent - completing an already completed reminder succeeds.
+    /// </summary>
+    /// <param name="id">The unique identifier of the reminder to complete.</param>
+    /// <returns>The completed reminder instance.</returns>
+    [HttpPost("{id}/complete")]
+    [ProducesResponseType(typeof(ReminderInstanceDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public ActionResult<ReminderInstanceDto> Complete(Guid id)
+    {
+        var userId = GetUserId();
+        _logger.LogInformation("POST /api/reminder-instances/{ReminderId}/complete - Request received for user: {UserId}", id, userId);
+
+        try
+        {
+            var completedReminder = _reminderInstanceService.Complete(id, userId);
+
+            if (completedReminder == null)
+            {
+                _logger.LogWarning("POST /api/reminder-instances/{ReminderId}/complete - Reminder not found, returning 404 Not Found", id);
+                return NotFound(new { message = $"Reminder with ID {id} not found." });
+            }
+
+            _logger.LogInformation("POST /api/reminder-instances/{ReminderId}/complete - Successfully completed reminder, returning 200 OK", id);
+            return Ok(ReminderInstanceMapper.ToDto(completedReminder));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("POST /api/reminder-instances/{ReminderId}/complete - Cannot complete deleted reminder, returning 409 Conflict", id);
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Soft-deletes a reminder instance for the authenticated user.
+    /// Sets IsDeleted to true and records the deletion timestamp.
+    /// This operation is idempotent - deleting an already deleted reminder succeeds.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to delete.</param>
     /// <returns>No content if successful.</returns>

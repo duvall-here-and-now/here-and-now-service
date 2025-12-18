@@ -9,7 +9,7 @@ namespace HereAndNowService.Mappers;
 public static class ReminderInstanceMapper
 {
     /// <summary>
-    /// Maps a domain model to a DTO.
+    /// Maps a domain model to a response DTO.
     /// </summary>
     /// <param name="domain">The domain model to map.</param>
     /// <returns>The mapped DTO.</returns>
@@ -23,26 +23,10 @@ public static class ReminderInstanceMapper
             IsCompleted = domain.IsCompleted,
             IsDeleted = domain.IsDeleted,
             ShouldPlaySound = domain.ShouldPlaySound,
-            ShouldDoVibration = domain.ShouldDoVibration
-        };
-    }
-
-    /// <summary>
-    /// Maps a DTO to a domain model.
-    /// </summary>
-    /// <param name="dto">The DTO to map.</param>
-    /// <returns>The mapped domain model.</returns>
-    public static ReminderInstance ToDomain(ReminderInstanceDto dto)
-    {
-        return new ReminderInstance
-        {
-            Id = dto.Id,
-            Text = dto.Text,
-            ScheduledDateAndTime = dto.ScheduledDateAndTime,
-            IsCompleted = dto.IsCompleted,
-            IsDeleted = dto.IsDeleted,
-            ShouldPlaySound = dto.ShouldPlaySound,
-            ShouldDoVibration = dto.ShouldDoVibration
+            ShouldDoVibration = domain.ShouldDoVibration,
+            CreatedDateAndTime = domain.CreatedDateAndTime,
+            CompletedDateAndTime = domain.CompletedDateAndTime,
+            DeletedDateAndTime = domain.DeletedDateAndTime
         };
     }
 

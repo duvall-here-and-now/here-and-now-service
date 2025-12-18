@@ -113,17 +113,34 @@ public class CosmosReminderInstanceService : IReminderInstanceService
     }
 
     /// <summary>
-    /// Creates a new reminder instance. UserId should be set on the reminder model.
+    /// Creates a new reminder instance with server-controlled fields.
     /// </summary>
-    /// <param name="reminder">The reminder instance to create (must have UserId set).</param>
-    /// <returns>The created reminder instance with a generated ID.</returns>
-    public ReminderInstance Create(ReminderInstance reminder)
+    public ReminderInstance Create(
+        string userId,
+        string text,
+        DateTime scheduledDateAndTime,
+        bool shouldPlaySound,
+        bool shouldDoVibration)
     {
-        _logger.LogInformation("Creating new reminder instance for user: {UserId}", reminder.UserId);
+        _logger.LogInformation("Creating new reminder instance for user: {UserId}", userId);
 
         try
         {
-            reminder.Id = Guid.NewGuid();
+            var reminder = new ReminderInstance
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Text = text,
+                ScheduledDateAndTime = scheduledDateAndTime,
+                ShouldPlaySound = shouldPlaySound,
+                ShouldDoVibration = shouldDoVibration,
+                IsCompleted = false,
+                IsDeleted = false,
+                CreatedDateAndTime = DateTime.UtcNow,
+                CompletedDateAndTime = null,
+                DeletedDateAndTime = null
+            };
+
             var document = ReminderDocument.FromDomain(reminder);
 
             var response = _container.CreateItemAsync(
@@ -136,41 +153,49 @@ public class CosmosReminderInstanceService : IReminderInstanceService
         }
         catch (CosmosException ex) when (IsServiceUnavailable(ex))
         {
-            _logger.LogError(ex, "Cosmos DB service unavailable while creating reminder for user: {UserId}", reminder.UserId);
+            _logger.LogError(ex, "Cosmos DB service unavailable while creating reminder for user: {UserId}", userId);
             throw new ServiceUnavailableException("CosmosDB", "The reminder service is temporarily unavailable. Please try again later.", ex);
         }
     }
 
     /// <summary>
-    /// Updates an existing reminder instance. UserId should be set on the reminder model.
+    /// Partially updates an existing reminder instance.
     /// </summary>
-    /// <param name="id">The unique identifier of the reminder to update.</param>
-    /// <param name="reminder">The updated reminder data (must have UserId set).</param>
-    /// <returns>The updated reminder instance if found; otherwise, null.</returns>
-    public ReminderInstance? Update(Guid id, ReminderInstance reminder)
+    public ReminderInstance? Update(
+        Guid id,
+        string userId,
+        string? text = null,
+        DateTime? scheduledDateAndTime = null,
+        bool? shouldPlaySound = null,
+        bool? shouldDoVibration = null)
     {
-        _logger.LogInformation("Updating reminder instance with ID: {ReminderId} for user: {UserId}", id, reminder.UserId);
+        _logger.LogInformation("Updating reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
 
         try
         {
             // First, verify the document exists and belongs to the user
             var existingResponse = _container.ReadItemAsync<ReminderDocument>(
                 id.ToString(),
-                new PartitionKey(reminder.UserId!))
+                new PartitionKey(userId))
                 .GetAwaiter().GetResult();
 
-            if (existingResponse.Resource.IsDeleted)
+            var existingDoc = existingResponse.Resource;
+
+            if (existingDoc.IsDeleted)
             {
                 _logger.LogWarning("Cannot update - reminder instance with ID: {ReminderId} is deleted", id);
                 return null;
             }
 
-            reminder.Id = id;
-            var document = ReminderDocument.FromDomain(reminder);
+            // Apply partial updates
+            if (text != null) existingDoc.Text = text;
+            if (scheduledDateAndTime.HasValue) existingDoc.ScheduledDateAndTime = scheduledDateAndTime.Value;
+            if (shouldPlaySound.HasValue) existingDoc.ShouldPlaySound = shouldPlaySound.Value;
+            if (shouldDoVibration.HasValue) existingDoc.ShouldDoVibration = shouldDoVibration.Value;
 
             var response = _container.UpsertItemAsync(
-                document,
-                new PartitionKey(document.UserId))
+                existingDoc,
+                new PartitionKey(existingDoc.UserId))
                 .GetAwaiter().GetResult();
 
             _logger.LogInformation("Successfully updated reminder instance with ID: {ReminderId}", id);
@@ -178,12 +203,64 @@ public class CosmosReminderInstanceService : IReminderInstanceService
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger.LogWarning("Cannot update - reminder instance with ID: {ReminderId} not found for user: {UserId}", id, reminder.UserId);
+            _logger.LogWarning("Cannot update - reminder instance with ID: {ReminderId} not found for user: {UserId}", id, userId);
             return null;
         }
         catch (CosmosException ex) when (IsServiceUnavailable(ex))
         {
-            _logger.LogError(ex, "Cosmos DB service unavailable while updating reminder {ReminderId} for user: {UserId}", id, reminder.UserId);
+            _logger.LogError(ex, "Cosmos DB service unavailable while updating reminder {ReminderId} for user: {UserId}", id, userId);
+            throw new ServiceUnavailableException("CosmosDB", "The reminder service is temporarily unavailable. Please try again later.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Marks a reminder as completed and sets the completion timestamp.
+    /// </summary>
+    public ReminderInstance? Complete(Guid id, string userId)
+    {
+        _logger.LogInformation("Attempting to complete reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
+
+        try
+        {
+            var existingResponse = _container.ReadItemAsync<ReminderDocument>(
+                id.ToString(),
+                new PartitionKey(userId))
+                .GetAwaiter().GetResult();
+
+            var document = existingResponse.Resource;
+
+            if (document.IsDeleted)
+            {
+                _logger.LogWarning("Cannot complete - reminder instance with ID: {ReminderId} is deleted", id);
+                throw new InvalidOperationException("Cannot complete a deleted reminder.");
+            }
+
+            // Idempotent: if already completed, return current state
+            if (document.IsCompleted)
+            {
+                _logger.LogInformation("Reminder instance with ID: {ReminderId} is already completed", id);
+                return document.ToDomain();
+            }
+
+            document.IsCompleted = true;
+            document.CompletedDateAndTime = DateTime.UtcNow;
+
+            var response = _container.UpsertItemAsync(
+                document,
+                new PartitionKey(userId))
+                .GetAwaiter().GetResult();
+
+            _logger.LogInformation("Successfully completed reminder instance with ID: {ReminderId}", id);
+            return response.Resource.ToDomain();
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning("Cannot complete - reminder instance with ID: {ReminderId} not found for user: {UserId}", id, userId);
+            return null;
+        }
+        catch (CosmosException ex) when (IsServiceUnavailable(ex))
+        {
+            _logger.LogError(ex, "Cosmos DB service unavailable while completing reminder {ReminderId} for user: {UserId}", id, userId);
             throw new ServiceUnavailableException("CosmosDB", "The reminder service is temporarily unavailable. Please try again later.", ex);
         }
     }
@@ -207,13 +284,15 @@ public class CosmosReminderInstanceService : IReminderInstanceService
 
             var document = existingResponse.Resource;
 
+            // Idempotent: if already deleted, return success
             if (document.IsDeleted)
             {
-                _logger.LogWarning("Reminder instance with ID: {ReminderId} is already deleted", id);
-                return false;
+                _logger.LogInformation("Reminder instance with ID: {ReminderId} is already deleted", id);
+                return true;
             }
 
             document.IsDeleted = true;
+            document.DeletedDateAndTime = DateTime.UtcNow;
 
             _container.UpsertItemAsync(
                 document,
