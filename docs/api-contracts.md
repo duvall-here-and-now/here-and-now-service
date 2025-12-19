@@ -513,6 +513,7 @@ The Cosmos DB client is configured with SDK-level retry for 429 (TooManyRequests
 
 | Field | Value |
 |-------|-------|
-| **Generated** | 2025-12-18 |
+| **Generated** | 2025-12-19 |
 | **Scan Level** | Exhaustive |
+| **Workflow** | document-project v1.2.0 |
 | **Source Files Analyzed** | All controllers, services, DTOs |

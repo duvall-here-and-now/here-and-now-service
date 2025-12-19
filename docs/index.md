@@ -27,7 +27,7 @@
 | **API Endpoints** | 8 endpoints (3 messages, 5 reminder CRUD) |
 | **Data Storage** | Azure Cosmos DB with `/userId` partition key |
 | **CI/CD** | GitHub Actions → Azure App Service |
-| **Test Coverage** | 18 tests (13 unit, 5 integration) |
+| **Test Coverage** | 23 tests (16 unit, 7 integration) |
 
 ---
 
@@ -143,7 +143,14 @@ Data: docs/data-models.md
 
 ## Recent Changes
 
-### 2025-12-17 (This Scan)
+### 2025-12-19 (This Scan)
+
+- **Updated:** Documentation refreshed with exhaustive scan
+- **Verified:** All source files scanned (22 files, ~1,900 LOC)
+- **Verified:** Test coverage increased to 23 tests (16 unit, 7 integration)
+- **Verified:** Command-based API pattern with audit timestamps in place
+
+### 2025-12-17 (Previous Scan)
 
 - **Added:** Azure Cosmos DB persistence with multi-tenant user isolation
 - **Added:** DTO layer with computed State property
@@ -163,8 +170,8 @@ Data: docs/data-models.md
 
 | Field | Value |
 |-------|-------|
-| **Generated** | 2025-12-17 |
+| **Generated** | 2025-12-19 |
 | **Scan Level** | Exhaustive |
 | **Workflow** | document-project v1.2.0 |
 | **Files Updated** | 8 |
-| **Source Files Scanned** | 20 |
+| **Source Files Scanned** | 22 |

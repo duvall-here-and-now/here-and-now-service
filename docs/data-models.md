@@ -347,7 +347,8 @@ container.ReadItemAsync<ReminderDocument>(id.ToString(), new PartitionKey(userId
 
 | Field | Value |
 |-------|-------|
-| **Generated** | 2025-12-17 |
+| **Generated** | 2025-12-19 |
 | **Scan Level** | Exhaustive |
-| **Models Documented** | 7 (2 domain, 2 DTO, 1 persistence, 1 config, 1 exception) |
+| **Workflow** | document-project v1.2.0 |
+| **Models Documented** | 8 (2 domain, 4 DTO, 1 persistence, 1 exception) |
 | **Services Documented** | 4 (2 interfaces, 2 implementations) |
