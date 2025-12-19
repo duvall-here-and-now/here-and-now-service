@@ -49,6 +49,21 @@ internal class ReminderDocument
     public bool ShouldDoVibration { get; set; }
 
     /// <summary>
+    /// The date and time when the reminder was created.
+    /// </summary>
+    public DateTime CreatedDateAndTime { get; set; }
+
+    /// <summary>
+    /// The date and time when the reminder was completed. Null if not completed.
+    /// </summary>
+    public DateTime? CompletedDateAndTime { get; set; }
+
+    /// <summary>
+    /// The date and time when the reminder was deleted. Null if not deleted.
+    /// </summary>
+    public DateTime? DeletedDateAndTime { get; set; }
+
+    /// <summary>
     /// Converts a domain model to a Cosmos document.
     /// </summary>
     public static ReminderDocument FromDomain(ReminderInstance domain)
@@ -62,7 +77,10 @@ internal class ReminderDocument
             IsCompleted = domain.IsCompleted,
             IsDeleted = domain.IsDeleted,
             ShouldPlaySound = domain.ShouldPlaySound,
-            ShouldDoVibration = domain.ShouldDoVibration
+            ShouldDoVibration = domain.ShouldDoVibration,
+            CreatedDateAndTime = domain.CreatedDateAndTime,
+            CompletedDateAndTime = domain.CompletedDateAndTime,
+            DeletedDateAndTime = domain.DeletedDateAndTime
         };
     }
 
@@ -80,7 +98,10 @@ internal class ReminderDocument
             IsCompleted = IsCompleted,
             IsDeleted = IsDeleted,
             ShouldPlaySound = ShouldPlaySound,
-            ShouldDoVibration = ShouldDoVibration
+            ShouldDoVibration = ShouldDoVibration,
+            CreatedDateAndTime = CreatedDateAndTime,
+            CompletedDateAndTime = CompletedDateAndTime,
+            DeletedDateAndTime = DeletedDateAndTime
         };
     }
 }

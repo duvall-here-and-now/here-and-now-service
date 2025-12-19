@@ -76,7 +76,7 @@ builder.Services.AddCors(options =>
                 HeaderNames.ContentType,
                 HeaderNames.Authorization,
             })
-            .WithMethods("GET", "POST", "PUT", "DELETE")
+            .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE")
             .SetPreflightMaxAge(TimeSpan.FromSeconds(86400));
     });
 });

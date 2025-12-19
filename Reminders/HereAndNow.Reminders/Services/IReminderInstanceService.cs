@@ -23,25 +23,59 @@ public interface IReminderInstanceService
     ReminderInstance? GetById(Guid id, string userId);
 
     /// <summary>
-    /// Creates a new reminder instance. UserId should be set on the reminder model.
+    /// Creates a new reminder instance with server-controlled fields.
     /// </summary>
-    /// <param name="reminder">The reminder instance to create (must have UserId set).</param>
-    /// <returns>The created reminder instance with a generated ID.</returns>
-    ReminderInstance Create(ReminderInstance reminder);
+    /// <param name="userId">The user identifier (from JWT token).</param>
+    /// <param name="text">The reminder text content.</param>
+    /// <param name="scheduledDateAndTime">When the reminder should trigger.</param>
+    /// <param name="shouldPlaySound">Whether to play a sound when triggered.</param>
+    /// <param name="shouldDoVibration">Whether to vibrate when triggered.</param>
+    /// <returns>The created reminder instance with generated ID and timestamps.</returns>
+    ReminderInstance Create(
+        string userId,
+        string text,
+        DateTime scheduledDateAndTime,
+        bool shouldPlaySound,
+        bool shouldDoVibration);
 
     /// <summary>
-    /// Updates an existing reminder instance. UserId should be set on the reminder model.
+    /// Partially updates an existing reminder instance.
+    /// Only non-null parameters will be updated.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to update.</param>
-    /// <param name="reminder">The updated reminder data (must have UserId set).</param>
+    /// <param name="userId">The user identifier for partition key lookup.</param>
+    /// <param name="text">New text value, or null to keep existing.</param>
+    /// <param name="scheduledDateAndTime">New scheduled time, or null to keep existing.</param>
+    /// <param name="shouldPlaySound">New sound setting, or null to keep existing.</param>
+    /// <param name="shouldDoVibration">New vibration setting, or null to keep existing.</param>
     /// <returns>The updated reminder instance if found; otherwise, null.</returns>
-    ReminderInstance? Update(Guid id, ReminderInstance reminder);
+    ReminderInstance? Update(
+        Guid id,
+        string userId,
+        string? text = null,
+        DateTime? scheduledDateAndTime = null,
+        bool? shouldPlaySound = null,
+        bool? shouldDoVibration = null);
 
     /// <summary>
-    /// Soft-deletes a reminder instance by its unique identifier.
+    /// Marks a reminder as completed and sets the completion timestamp.
+    /// This operation is idempotent - completing an already completed reminder succeeds.
+    /// </summary>
+    /// <param name="id">The unique identifier of the reminder to complete.</param>
+    /// <param name="userId">The user identifier for partition key lookup.</param>
+    /// <returns>
+    /// The completed reminder instance if found and not deleted;
+    /// null if the reminder was not found or belongs to a different user.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">Thrown if the reminder is deleted.</exception>
+    ReminderInstance? Complete(Guid id, string userId);
+
+    /// <summary>
+    /// Soft-deletes a reminder instance by setting IsDeleted flag and timestamp.
+    /// This operation is idempotent - deleting an already deleted reminder succeeds.
     /// </summary>
     /// <param name="id">The unique identifier of the reminder to delete.</param>
     /// <param name="userId">The user identifier for partition key lookup.</param>
-    /// <returns>True if the reminder was deleted; otherwise, false.</returns>
+    /// <returns>True if the reminder was found (deleted or already deleted); otherwise, false.</returns>
     bool Delete(Guid id, string userId);
 }

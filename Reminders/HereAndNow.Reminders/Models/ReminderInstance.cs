@@ -45,4 +45,19 @@ public class ReminderInstance
     /// Indicates whether the reminder should vibrate the device when triggered.
     /// </summary>
     public bool ShouldDoVibration { get; set; }
+
+    /// <summary>
+    /// The date and time when the reminder was created.
+    /// </summary>
+    public DateTime CreatedDateAndTime { get; set; }
+
+    /// <summary>
+    /// The date and time when the reminder was completed. Null if not completed.
+    /// </summary>
+    public DateTime? CompletedDateAndTime { get; set; }
+
+    /// <summary>
+    /// The date and time when the reminder was deleted. Null if not deleted.
+    /// </summary>
+    public DateTime? DeletedDateAndTime { get; set; }
 }
