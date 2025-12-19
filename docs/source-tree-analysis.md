@@ -55,8 +55,10 @@ here-and-now-service/
 │   │   │   ├── MessagesController.cs # Message endpoints (63 LOC)
 │   │   │   └── ReminderInstancesController.cs  # CRUD endpoints (172 LOC)
 │   │   ├── DTOs/                     # Data transfer objects
-│   │   │   ├── ReminderInstanceDto.cs  # API DTO with computed State (53 LOC)
-│   │   │   └── ReminderState.cs      # State enum (27 LOC)
+│   │   │   ├── CreateReminderRequest.cs  # Create DTO with validation (33 LOC)
+│   │   │   ├── UpdateReminderRequest.cs  # Partial update DTO (32 LOC)
+│   │   │   ├── ReminderInstanceDto.cs    # Response DTO with computed State (68 LOC)
+│   │   │   └── ReminderState.cs          # State enum (27 LOC)
 │   │   ├── Mappers/                  # DTO mapping
 │   │   │   └── ReminderInstanceMapper.cs  # Domain ↔ DTO mapper (58 LOC)
 │   │   ├── Middlewares/              # Custom middleware
@@ -277,13 +279,13 @@ Custom `WebApplicationFactory<Program>` that:
 
 | Metric | Count |
 |--------|-------|
-| **Total Source Files** | 20 |
-| **Lines of Code (approx)** | ~1,700 |
+| **Total Source Files** | 22 |
+| **Lines of Code (approx)** | ~1,900 |
 | **Controllers** | 3 |
-| **Services** | 4 (2 interfaces, 2 implementations) |
-| **Models** | 5 (2 domain, 2 DTO, 1 persistence) |
-| **Unit Tests** | 13 |
-| **Integration Tests** | 5 |
+| **Services** | 4 (2 interfaces, 2 implementations with Cosmos + in-memory) |
+| **Models** | 7 (2 domain, 4 DTOs, 1 persistence) |
+| **Unit Tests** | 16 |
+| **Integration Tests** | 7 |
 
 ---
 
@@ -300,5 +302,6 @@ Custom `WebApplicationFactory<Program>` that:
 
 | Field | Value |
 |-------|-------|
-| **Generated** | 2025-12-17 |
+| **Generated** | 2025-12-19 |
 | **Scan Level** | Exhaustive |
+| **Workflow** | document-project v1.2.0 |
