@@ -4,10 +4,18 @@ namespace HereAndNowService.DTOs;
 
 /// <summary>
 /// Request DTO for creating a new reminder.
-/// Server will set: Id, UserId, CreatedDateAndTime, IsCompleted=false, IsDeleted=false
+/// Client must provide the Id (UUID) for idempotent create operations.
+/// Server will set: UserId, CreatedDateAndTime, IsCompleted=false, IsDeleted=false
 /// </summary>
 public record CreateReminderRequest
 {
+    /// <summary>
+    /// The unique identifier for the reminder. Must be a valid UUID provided by the client.
+    /// This enables idempotent retry logic and offline-first patterns.
+    /// </summary>
+    [Required]
+    public Guid Id { get; init; }
+
     /// <summary>
     /// The reminder text content.
     /// </summary>

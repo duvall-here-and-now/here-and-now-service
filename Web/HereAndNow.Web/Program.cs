@@ -23,43 +23,52 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 // Add services to the container.
 builder.Services.AddScoped<IMessageService, MessageService>();
 
-// Configure Cosmos DB
-var cosmosSettings = new CosmosDbSettings
+// Configure Cosmos DB with factory pattern for test compatibility
+builder.Services.AddSingleton<CosmosDbSettings>(sp =>
 {
-    Endpoint = builder.Configuration.GetValue<string>("COSMOS_ENDPOINT") ?? "",
-    PrimaryKey = builder.Configuration.GetValue<string>("COSMOS_PRIMARY_KEY") ?? "",
-    DatabaseName = builder.Configuration.GetValue<string>("COSMOS_DATABASE_NAME") ?? "",
-    ContainerName = builder.Configuration.GetValue<string>("COSMOS_CONTAINER_NAME") ?? ""
-};
+    var config = sp.GetRequiredService<IConfiguration>();
+    var settings = new CosmosDbSettings
+    {
+        Endpoint = config.GetValue<string>("COSMOS_ENDPOINT") ?? "",
+        PrimaryKey = config.GetValue<string>("COSMOS_PRIMARY_KEY") ?? "",
+        DatabaseName = config.GetValue<string>("COSMOS_DATABASE_NAME") ?? "",
+        ContainerName = config.GetValue<string>("COSMOS_CONTAINER_NAME") ?? ""
+    };
 
-var useCosmosDb = !string.IsNullOrEmpty(cosmosSettings.Endpoint) && !string.IsNullOrEmpty(cosmosSettings.PrimaryKey);
+    // Validate Cosmos DB configuration is present
+    if (string.IsNullOrEmpty(settings.Endpoint) || string.IsNullOrEmpty(settings.PrimaryKey))
+    {
+        throw new InvalidOperationException(
+            "Cosmos DB configuration is required. Set COSMOS_ENDPOINT and COSMOS_PRIMARY_KEY.");
+    }
 
-if (useCosmosDb)
+    return settings;
+});
+
+builder.Services.AddSingleton<CosmosClient>(sp =>
 {
-    builder.Services.AddSingleton(cosmosSettings);
-    builder.Services.AddSingleton<CosmosClient>(sp =>
-        new CosmosClient(cosmosSettings.Endpoint, cosmosSettings.PrimaryKey, new CosmosClientOptions
+    var settings = sp.GetRequiredService<CosmosDbSettings>();
+    return new CosmosClient(settings.Endpoint, settings.PrimaryKey, new CosmosClientOptions
+    {
+        SerializerOptions = new CosmosSerializationOptions
         {
-            SerializerOptions = new CosmosSerializationOptions
-            {
-                PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
-            },
-            // Retry policy for 429 (TooManyRequests) throttling
-            MaxRetryAttemptsOnRateLimitedRequests = 9,
-            MaxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds(30)
-        }));
-    builder.Services.AddScoped<IReminderInstanceService>(sp =>
-        new CosmosReminderInstanceService(
-            sp.GetRequiredService<CosmosClient>(),
-            cosmosSettings.DatabaseName,
-            cosmosSettings.ContainerName,
-            sp.GetRequiredService<ILogger<CosmosReminderInstanceService>>()));
-}
-else
+            PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
+        },
+        // Retry policy for 429 (TooManyRequests) throttling
+        MaxRetryAttemptsOnRateLimitedRequests = 9,
+        MaxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds(30)
+    });
+});
+
+builder.Services.AddScoped<IReminderInstanceService>(sp =>
 {
-    // Fall back to in-memory implementation for local development without Cosmos
-    builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
-}
+    var settings = sp.GetRequiredService<CosmosDbSettings>();
+    return new CosmosReminderInstanceService(
+        sp.GetRequiredService<CosmosClient>(),
+        settings.DatabaseName,
+        settings.ContainerName,
+        sp.GetRequiredService<ILogger<CosmosReminderInstanceService>>());
+});
 
 builder.Services.AddCors(options =>
 {

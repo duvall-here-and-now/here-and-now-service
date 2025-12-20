@@ -13,6 +13,7 @@
 | **Content Type** | `application/json` |
 | **API Documentation** | Swagger UI at `/swagger` |
 | **Total Endpoints** | 9 |
+| **Data Storage** | Azure Cosmos DB (Required) |
 
 ---
 
@@ -41,6 +42,12 @@ Authenticated endpoints extract the user ID from the JWT `sub` claim (or `ClaimT
 | `AUTH0_AUDIENCE` | API audience identifier |
 | `CLIENT_ORIGIN_URL` | Allowed CORS origins (comma-separated) |
 | `PORT` | Server port |
+| `COSMOS_ENDPOINT` | Azure Cosmos DB endpoint URL (Required) |
+| `COSMOS_PRIMARY_KEY` | Azure Cosmos DB primary key (Required) |
+| `COSMOS_DATABASE_NAME` | Database name |
+| `COSMOS_CONTAINER_NAME` | Container name |
+
+> **Note:** As of Story 1.3, Cosmos DB is required. The application throws `InvalidOperationException` at startup if `COSMOS_ENDPOINT` or `COSMOS_PRIMARY_KEY` are missing.
 
 ---
 
@@ -193,7 +200,7 @@ Returns a specific reminder instance by ID.
 
 #### POST /api/reminder-instances
 
-Creates a new reminder instance for the authenticated user.
+Creates a new reminder instance for the authenticated user. Client must provide the reminder ID (UUID) for idempotent operations.
 
 | Attribute | Value |
 |-----------|-------|
@@ -205,6 +212,7 @@ Creates a new reminder instance for the authenticated user.
 **Request Body:**
 ```json
 {
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "text": "Take medication",
   "scheduledDateAndTime": "2025-12-18T10:00:00Z",
   "shouldPlaySound": true,
@@ -231,12 +239,17 @@ Creates a new reminder instance for the authenticated user.
 
 | Status Code | Description |
 |-------------|-------------|
-| 400 Bad Request | Invalid request body (missing text, etc.) |
+| 400 Bad Request | Invalid request body (missing id or text, etc.) |
 | 401 Unauthorized | Missing or invalid token |
+| 409 Conflict | Reminder with provided ID already exists |
 | 503 Service Unavailable | Cosmos DB unavailable |
 
+**Client-Provided ID:** The `id` field is required and must be a valid UUID provided by the client. This enables:
+- Idempotent create operations (safe to retry)
+- Offline-first patterns (pre-generate IDs)
+- Client-server correlation before confirmation
+
 **Server-Controlled Fields:** The following fields are set by the server and cannot be provided in the request:
-- `id` — Generated as new GUID
 - `isCompleted` — Always `false` on creation
 - `isDeleted` — Always `false` on creation
 - `createdDateAndTime` — Set to current UTC time
@@ -284,7 +297,7 @@ Partially updates an existing reminder instance. Only provided fields will be up
 
 | Status Code | Description |
 |-------------|-------------|
-| 400 Bad Request | Invalid field value (empty text, etc.) |
+| 400 Bad Request | Invalid field value (empty text) OR attempting to update `scheduledDateAndTime` on non-Scheduled reminder |
 | 401 Unauthorized | Missing or invalid token |
 | 404 Not Found | Reminder not found, deleted, or belongs to different user |
 | 503 Service Unavailable | Cosmos DB unavailable |
@@ -293,6 +306,18 @@ Partially updates an existing reminder instance. Only provided fields will be up
 - Only fields included in the request are updated
 - Fields set to `null` or omitted retain their current values
 - State flags (`isCompleted`, `isDeleted`) cannot be modified via this endpoint — use Complete or Delete endpoints instead
+
+**State Validation for ScheduledDateAndTime:**
+The `scheduledDateAndTime` field can only be updated when the reminder is in the **Scheduled** state:
+
+| Current State | Can Update Time? | Error Message |
+|---------------|------------------|---------------|
+| Scheduled | ✅ Yes | — |
+| Active | ❌ No | "Cannot update scheduled time. Reminder is in 'Active' state." |
+| Completed | ❌ No | "Cannot update scheduled time. Reminder is in 'Completed' state." |
+| Deleted | ❌ No | Returns 404 Not Found |
+
+Other fields (`text`, `shouldPlaySound`, `shouldDoVibration`) can be updated in any non-deleted state.
 
 ---
 
@@ -369,12 +394,15 @@ Used by: `POST /api/reminder-instances`
 
 ```typescript
 {
+  id: string;                      // Required, UUID (client-provided for idempotency)
   text: string;                    // Required, 1-1000 characters
   scheduledDateAndTime: string;    // Required, ISO 8601 datetime
   shouldPlaySound: boolean;        // Optional, defaults to false
   shouldDoVibration: boolean;      // Optional, defaults to false
 }
 ```
+
+> **Breaking Change (Story 1.1):** The `id` field is now required. Clients must generate their own UUID before creating reminders.
 
 ### UpdateReminderRequest
 
@@ -390,6 +418,8 @@ Used by: `PATCH /api/reminder-instances/{id}`
 ```
 
 **Note:** All fields are nullable. Only non-null fields are updated; omitted fields retain their current values.
+
+> **Behavior Change (Story 1.2):** The `scheduledDateAndTime` field can only be updated when the reminder is in the "Scheduled" state. Attempting to update it on Active or Completed reminders returns 400 Bad Request.
 
 ---
 
@@ -509,11 +539,32 @@ The Cosmos DB client is configured with SDK-level retry for 429 (TooManyRequests
 
 ---
 
+## Recent API Changes
+
+### Story 1.3 (2025-12-19) - Cosmos DB Required
+
+- **Breaking:** In-memory fallback removed; Cosmos DB is now required
+- **Breaking:** `COSMOS_ENDPOINT` and `COSMOS_PRIMARY_KEY` environment variables are required
+- Application throws `InvalidOperationException` at startup if Cosmos DB is not configured
+
+### Story 1.2 (2025-12-19) - ScheduledDateAndTime State Validation
+
+- **Behavior Change:** PATCH endpoint returns 400 Bad Request when updating `scheduledDateAndTime` on non-Scheduled reminders
+- State validation: Only reminders in "Scheduled" state can have their time changed
+
+### Story 1.1 (2025-12-19) - Client-Provided UUID
+
+- **Breaking:** `id` field is now required in `CreateReminderRequest`
+- POST endpoint returns 409 Conflict when a reminder with the provided ID already exists
+- Enables idempotent create operations and offline-first patterns
+
+---
+
 ## Documentation Metadata
 
 | Field | Value |
 |-------|-------|
-| **Generated** | 2025-12-19 |
+| **Last Updated** | 2025-12-19 |
 | **Scan Level** | Exhaustive |
 | **Workflow** | document-project v1.2.0 |
 | **Source Files Analyzed** | All controllers, services, DTOs |
