@@ -113,22 +113,24 @@ public class CosmosReminderInstanceService : IReminderInstanceService
     }
 
     /// <summary>
-    /// Creates a new reminder instance with server-controlled fields.
+    /// Creates a new reminder instance with client-provided ID.
     /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown if a reminder with the same ID already exists for the user.</exception>
     public ReminderInstance Create(
+        Guid id,
         string userId,
         string text,
         DateTime scheduledDateAndTime,
         bool shouldPlaySound,
         bool shouldDoVibration)
     {
-        _logger.LogInformation("Creating new reminder instance for user: {UserId}", userId);
+        _logger.LogInformation("Creating new reminder instance with ID: {ReminderId} for user: {UserId}", id, userId);
 
         try
         {
             var reminder = new ReminderInstance
             {
-                Id = Guid.NewGuid(),
+                Id = id,
                 UserId = userId,
                 Text = text,
                 ScheduledDateAndTime = scheduledDateAndTime,
@@ -150,6 +152,11 @@ public class CosmosReminderInstanceService : IReminderInstanceService
 
             _logger.LogInformation("Successfully created reminder instance with ID: {ReminderId}", reminder.Id);
             return response.Resource.ToDomain();
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        {
+            _logger.LogWarning("Cannot create reminder - a reminder with ID: {ReminderId} already exists for user: {UserId}", id, userId);
+            throw new InvalidOperationException($"A reminder with ID {id} already exists.");
         }
         catch (CosmosException ex) when (IsServiceUnavailable(ex))
         {
@@ -185,6 +192,23 @@ public class CosmosReminderInstanceService : IReminderInstanceService
             {
                 _logger.LogWarning("Cannot update - reminder instance with ID: {ReminderId} is deleted", id);
                 return null;
+            }
+
+            // Validate state before allowing scheduledDateAndTime update
+            if (scheduledDateAndTime.HasValue)
+            {
+                // Compute current state: Completed > Active > Scheduled
+                if (existingDoc.IsCompleted)
+                {
+                    _logger.LogWarning("Cannot update scheduled time - reminder instance with ID: {ReminderId} is in 'Completed' state", id);
+                    throw new InvalidOperationException("Cannot update scheduled time. Reminder is in 'Completed' state.");
+                }
+
+                if (DateTime.UtcNow >= existingDoc.ScheduledDateAndTime)
+                {
+                    _logger.LogWarning("Cannot update scheduled time - reminder instance with ID: {ReminderId} is in 'Active' state", id);
+                    throw new InvalidOperationException("Cannot update scheduled time. Reminder is in 'Active' state.");
+                }
             }
 
             // Apply partial updates

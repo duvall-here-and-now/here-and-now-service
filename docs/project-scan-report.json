@@ -2,7 +2,7 @@
   "workflow_version": "1.2.0",
   "timestamps": {
     "started": "2025-12-19T00:00:00Z",
-    "last_updated": "2025-12-19T00:20:00Z",
+    "last_updated": "2025-12-19T20:45:00Z",
     "completed": "2025-12-19T00:20:00Z"
   },
   "mode": "full_rescan",
@@ -67,7 +67,7 @@
       "framework": "ASP.NET Core 8.0",
       "language": "C# 12",
       "authentication": "Auth0 JWT Bearer",
-      "persistence": "Azure Cosmos DB (with in-memory fallback)",
+      "persistence": "Azure Cosmos DB (Required)",
       "testing": "xUnit + Moq + FluentAssertions",
       "deployment": "Azure App Service via GitHub Actions",
       "architecture_pattern": "Clean Architecture"
@@ -85,10 +85,19 @@
       "services": 4
     },
     "source_code_stats": {
-      "total_source_files": 22,
-      "lines_of_code_approx": 1900,
-      "unit_tests": 16,
-      "integration_tests": 7
+      "total_source_files": 21,
+      "lines_of_code_approx": 1600,
+      "unit_tests": 24,
+      "integration_tests": 12
+    },
+    "recent_changes": {
+      "story_1_3": {
+        "description": "Remove In-Memory Service",
+        "files_deleted": ["Reminders/HereAndNow.Reminders/Services/ReminderInstanceService.cs"],
+        "files_modified": ["Web/HereAndNow.Web/Program.cs", "Web/HereAndNow.Web.Tests/Helpers/TestWebApplicationFactory.cs"],
+        "lines_removed": 287,
+        "breaking_changes": ["Cosmos DB now required", "COSMOS_ENDPOINT and COSMOS_PRIMARY_KEY required"]
+      }
     }
   },
   "project_types": [

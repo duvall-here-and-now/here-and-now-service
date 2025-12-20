@@ -94,8 +94,10 @@ public class ReminderInstancesControllerTests
     public void Create_ShouldReturnCreatedAtAction()
     {
         // Arrange
+        var reminderId = Guid.NewGuid();
         var request = new CreateReminderRequest
         {
+            Id = reminderId,
             Text = "New Reminder",
             ScheduledDateAndTime = DateTime.UtcNow.AddHours(1),
             ShouldPlaySound = true,
@@ -103,7 +105,7 @@ public class ReminderInstancesControllerTests
         };
         var createdReminder = new ReminderInstance
         {
-            Id = Guid.NewGuid(),
+            Id = reminderId,
             UserId = TestUserId,
             Text = request.Text,
             ScheduledDateAndTime = request.ScheduledDateAndTime,
@@ -114,6 +116,7 @@ public class ReminderInstancesControllerTests
             CreatedDateAndTime = DateTime.UtcNow
         };
         _mockService.Setup(s => s.Create(
+            reminderId,
             TestUserId,
             request.Text,
             request.ScheduledDateAndTime,
@@ -128,7 +131,7 @@ public class ReminderInstancesControllerTests
         var createdResult = result.Result.Should().BeOfType<CreatedAtActionResult>().Subject;
         createdResult.ActionName.Should().Be(nameof(ReminderInstancesController.GetById));
         var returnedReminder = createdResult.Value.Should().BeOfType<ReminderInstanceDto>().Subject;
-        returnedReminder.Id.Should().Be(createdReminder.Id);
+        returnedReminder.Id.Should().Be(reminderId);
         returnedReminder.Text.Should().Be(request.Text);
     }
 
@@ -383,8 +386,10 @@ public class ReminderInstancesControllerTests
     public void Create_ShouldSetServerControlledFields()
     {
         // Arrange
+        var reminderId = Guid.NewGuid();
         var request = new CreateReminderRequest
         {
+            Id = reminderId,
             Text = "Test",
             ScheduledDateAndTime = DateTime.UtcNow.AddHours(1),
             ShouldPlaySound = false,
@@ -392,7 +397,7 @@ public class ReminderInstancesControllerTests
         };
         var createdReminder = new ReminderInstance
         {
-            Id = Guid.NewGuid(),
+            Id = reminderId,
             UserId = TestUserId,
             Text = request.Text,
             ScheduledDateAndTime = request.ScheduledDateAndTime,
@@ -405,6 +410,7 @@ public class ReminderInstancesControllerTests
             DeletedDateAndTime = null
         };
         _mockService.Setup(s => s.Create(
+            reminderId,
             TestUserId,
             request.Text,
             request.ScheduledDateAndTime,
@@ -419,13 +425,87 @@ public class ReminderInstancesControllerTests
         var createdResult = result.Result.Should().BeOfType<CreatedAtActionResult>().Subject;
         var returnedReminder = createdResult.Value.Should().BeOfType<ReminderInstanceDto>().Subject;
 
+        // Client-provided ID should be used
+        returnedReminder.Id.Should().Be(reminderId);
         // Server-controlled fields should be set correctly
-        returnedReminder.Id.Should().NotBe(Guid.Empty);
         returnedReminder.IsCompleted.Should().BeFalse();
         returnedReminder.IsDeleted.Should().BeFalse();
         returnedReminder.CreatedDateAndTime.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
         returnedReminder.CompletedDateAndTime.Should().BeNull();
         returnedReminder.DeletedDateAndTime.Should().BeNull();
+    }
+
+    [Fact]
+    public void Create_WithDuplicateId_ShouldReturn409Conflict()
+    {
+        // Arrange
+        var existingId = Guid.NewGuid();
+        var request = new CreateReminderRequest
+        {
+            Id = existingId,
+            Text = "Duplicate Reminder",
+            ScheduledDateAndTime = DateTime.UtcNow.AddHours(1),
+            ShouldPlaySound = true,
+            ShouldDoVibration = false
+        };
+        _mockService.Setup(s => s.Create(
+            existingId,
+            TestUserId,
+            request.Text,
+            request.ScheduledDateAndTime,
+            request.ShouldPlaySound,
+            request.ShouldDoVibration))
+            .Throws(new InvalidOperationException($"A reminder with ID {existingId} already exists."));
+
+        // Act
+        var result = _controller.Create(request);
+
+        // Assert
+        var conflictResult = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflictResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    [Fact]
+    public void Create_WithClientProvidedId_ShouldReturnSameIdInResponse()
+    {
+        // Arrange
+        var clientProvidedId = Guid.NewGuid();
+        var request = new CreateReminderRequest
+        {
+            Id = clientProvidedId,
+            Text = "Test Reminder",
+            ScheduledDateAndTime = DateTime.UtcNow.AddHours(1),
+            ShouldPlaySound = true,
+            ShouldDoVibration = false
+        };
+        var createdReminder = new ReminderInstance
+        {
+            Id = clientProvidedId,
+            UserId = TestUserId,
+            Text = request.Text,
+            ScheduledDateAndTime = request.ScheduledDateAndTime,
+            ShouldPlaySound = request.ShouldPlaySound,
+            ShouldDoVibration = request.ShouldDoVibration,
+            IsCompleted = false,
+            IsDeleted = false,
+            CreatedDateAndTime = DateTime.UtcNow
+        };
+        _mockService.Setup(s => s.Create(
+            clientProvidedId,
+            TestUserId,
+            request.Text,
+            request.ScheduledDateAndTime,
+            request.ShouldPlaySound,
+            request.ShouldDoVibration))
+            .Returns(createdReminder);
+
+        // Act
+        var result = _controller.Create(request);
+
+        // Assert
+        var createdResult = result.Result.Should().BeOfType<CreatedAtActionResult>().Subject;
+        var returnedReminder = createdResult.Value.Should().BeOfType<ReminderInstanceDto>().Subject;
+        returnedReminder.Id.Should().Be(clientProvidedId, "the returned ID should match the client-provided ID");
     }
 
     [Fact]
@@ -467,4 +547,177 @@ public class ReminderInstancesControllerTests
         returnedReminder.Text.Should().Be("Only text updated");
         returnedReminder.ScheduledDateAndTime.Should().Be(originalScheduledTime);
     }
+
+    #region State Validation Tests (Story 1.2)
+
+    [Fact]
+    public void Update_ScheduledTimeOnScheduledReminder_Returns200Ok()
+    {
+        // Arrange - Reminder is in Scheduled state (future time, not completed, not deleted)
+        var id = Guid.NewGuid();
+        var futureTime = DateTime.UtcNow.AddHours(2);
+        var newScheduledTime = DateTime.UtcNow.AddHours(3);
+        var request = new UpdateReminderRequest
+        {
+            ScheduledDateAndTime = newScheduledTime
+        };
+        var updatedReminder = new ReminderInstance
+        {
+            Id = id,
+            UserId = TestUserId,
+            Text = "Test",
+            ScheduledDateAndTime = newScheduledTime,
+            IsCompleted = false,
+            IsDeleted = false,
+            CreatedDateAndTime = DateTime.UtcNow.AddDays(-1)
+        };
+        _mockService.Setup(s => s.Update(
+            id,
+            TestUserId,
+            null,
+            newScheduledTime,
+            null,
+            null))
+            .Returns(updatedReminder);
+
+        // Act
+        var result = _controller.Update(id, request);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var returnedReminder = okResult.Value.Should().BeOfType<ReminderInstanceDto>().Subject;
+        returnedReminder.ScheduledDateAndTime.Should().Be(newScheduledTime);
+    }
+
+    [Fact]
+    public void Update_ScheduledTimeOnActiveReminder_Returns400BadRequest()
+    {
+        // Arrange - Reminder is in Active state (past time, not completed, not deleted)
+        var id = Guid.NewGuid();
+        var newScheduledTime = DateTime.UtcNow.AddHours(1);
+        var request = new UpdateReminderRequest
+        {
+            ScheduledDateAndTime = newScheduledTime
+        };
+        _mockService.Setup(s => s.Update(
+            id,
+            TestUserId,
+            null,
+            newScheduledTime,
+            null,
+            null))
+            .Throws(new InvalidOperationException("Cannot update scheduled time. Reminder is in 'Active' state."));
+
+        // Act
+        var result = _controller.Update(id, request);
+
+        // Assert
+        var badRequestResult = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [Fact]
+    public void Update_ScheduledTimeOnCompletedReminder_Returns400BadRequest()
+    {
+        // Arrange - Reminder is in Completed state
+        var id = Guid.NewGuid();
+        var newScheduledTime = DateTime.UtcNow.AddHours(1);
+        var request = new UpdateReminderRequest
+        {
+            ScheduledDateAndTime = newScheduledTime
+        };
+        _mockService.Setup(s => s.Update(
+            id,
+            TestUserId,
+            null,
+            newScheduledTime,
+            null,
+            null))
+            .Throws(new InvalidOperationException("Cannot update scheduled time. Reminder is in 'Completed' state."));
+
+        // Act
+        var result = _controller.Update(id, request);
+
+        // Assert
+        var badRequestResult = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [Fact]
+    public void Update_TextOnActiveReminder_Returns200Ok()
+    {
+        // Arrange - Reminder is in Active state but updating text (not scheduledDateAndTime)
+        var id = Guid.NewGuid();
+        var pastTime = DateTime.UtcNow.AddHours(-1);
+        var request = new UpdateReminderRequest
+        {
+            Text = "Updated text on active reminder"
+        };
+        var updatedReminder = new ReminderInstance
+        {
+            Id = id,
+            UserId = TestUserId,
+            Text = "Updated text on active reminder",
+            ScheduledDateAndTime = pastTime,
+            IsCompleted = false,
+            IsDeleted = false,
+            CreatedDateAndTime = DateTime.UtcNow.AddDays(-1)
+        };
+        _mockService.Setup(s => s.Update(
+            id,
+            TestUserId,
+            request.Text,
+            null,
+            null,
+            null))
+            .Returns(updatedReminder);
+
+        // Act
+        var result = _controller.Update(id, request);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var returnedReminder = okResult.Value.Should().BeOfType<ReminderInstanceDto>().Subject;
+        returnedReminder.Text.Should().Be("Updated text on active reminder");
+    }
+
+    [Fact]
+    public void Update_TextOnCompletedReminder_Returns200Ok()
+    {
+        // Arrange - Reminder is in Completed state but updating text (not scheduledDateAndTime)
+        var id = Guid.NewGuid();
+        var request = new UpdateReminderRequest
+        {
+            Text = "Updated text on completed reminder"
+        };
+        var updatedReminder = new ReminderInstance
+        {
+            Id = id,
+            UserId = TestUserId,
+            Text = "Updated text on completed reminder",
+            ScheduledDateAndTime = DateTime.UtcNow.AddHours(-1),
+            IsCompleted = true,
+            IsDeleted = false,
+            CreatedDateAndTime = DateTime.UtcNow.AddDays(-1),
+            CompletedDateAndTime = DateTime.UtcNow
+        };
+        _mockService.Setup(s => s.Update(
+            id,
+            TestUserId,
+            request.Text,
+            null,
+            null,
+            null))
+            .Returns(updatedReminder);
+
+        // Act
+        var result = _controller.Update(id, request);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var returnedReminder = okResult.Value.Should().BeOfType<ReminderInstanceDto>().Subject;
+        returnedReminder.Text.Should().Be("Updated text on completed reminder");
+    }
+
+    #endregion
 }

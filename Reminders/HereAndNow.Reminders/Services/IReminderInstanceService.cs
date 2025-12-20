@@ -23,15 +23,18 @@ public interface IReminderInstanceService
     ReminderInstance? GetById(Guid id, string userId);
 
     /// <summary>
-    /// Creates a new reminder instance with server-controlled fields.
+    /// Creates a new reminder instance with client-provided ID.
     /// </summary>
+    /// <param name="id">The unique identifier provided by the client.</param>
     /// <param name="userId">The user identifier (from JWT token).</param>
     /// <param name="text">The reminder text content.</param>
     /// <param name="scheduledDateAndTime">When the reminder should trigger.</param>
     /// <param name="shouldPlaySound">Whether to play a sound when triggered.</param>
     /// <param name="shouldDoVibration">Whether to vibrate when triggered.</param>
-    /// <returns>The created reminder instance with generated ID and timestamps.</returns>
+    /// <returns>The created reminder instance with timestamps.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if a reminder with the same ID already exists for the user.</exception>
     ReminderInstance Create(
+        Guid id,
         string userId,
         string text,
         DateTime scheduledDateAndTime,

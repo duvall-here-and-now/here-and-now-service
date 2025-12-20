@@ -85,34 +85,44 @@ public class ReminderInstancesController : ControllerBase
 
     /// <summary>
     /// Creates a new reminder instance for the authenticated user.
-    /// Server controls: Id, UserId, IsCompleted, IsDeleted, timestamps.
+    /// Client must provide the Id (UUID). Server controls: UserId, IsCompleted, IsDeleted, timestamps.
     /// </summary>
-    /// <param name="request">The reminder creation request.</param>
+    /// <param name="request">The reminder creation request including client-provided ID.</param>
     /// <returns>The created reminder instance.</returns>
     [HttpPost]
     [ProducesResponseType(typeof(ReminderInstanceDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public ActionResult<ReminderInstanceDto> Create([FromBody] CreateReminderRequest request)
     {
         var userId = GetUserId();
-        _logger.LogInformation("POST /api/reminder-instances - Request received to create new reminder for user: {UserId}", userId);
+        _logger.LogInformation("POST /api/reminder-instances - Request received to create reminder with ID: {ReminderId} for user: {UserId}", request.Id, userId);
 
-        var createdReminder = _reminderInstanceService.Create(
-            userId,
-            request.Text,
-            request.ScheduledDateAndTime,
-            request.ShouldPlaySound,
-            request.ShouldDoVibration);
+        try
+        {
+            var createdReminder = _reminderInstanceService.Create(
+                request.Id,
+                userId,
+                request.Text,
+                request.ScheduledDateAndTime,
+                request.ShouldPlaySound,
+                request.ShouldDoVibration);
 
-        var resultDto = ReminderInstanceMapper.ToDto(createdReminder);
-        _logger.LogInformation("POST /api/reminder-instances - Successfully created reminder with ID: {ReminderId}, returning 201 Created", createdReminder.Id);
+            var resultDto = ReminderInstanceMapper.ToDto(createdReminder);
+            _logger.LogInformation("POST /api/reminder-instances - Successfully created reminder with ID: {ReminderId}, returning 201 Created", createdReminder.Id);
 
-        return CreatedAtAction(
-            nameof(GetById),
-            new { id = resultDto.Id },
-            resultDto
-        );
+            return CreatedAtAction(
+                nameof(GetById),
+                new { id = resultDto.Id },
+                resultDto
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("POST /api/reminder-instances - Cannot create reminder with ID: {ReminderId} - already exists, returning 409 Conflict", request.Id);
+            return Conflict(new { message = ex.Message });
+        }
     }
 
     /// <summary>
@@ -132,22 +142,30 @@ public class ReminderInstancesController : ControllerBase
         var userId = GetUserId();
         _logger.LogInformation("PATCH /api/reminder-instances/{ReminderId} - Request received to update reminder for user: {UserId}", id, userId);
 
-        var updatedReminder = _reminderInstanceService.Update(
-            id,
-            userId,
-            request.Text,
-            request.ScheduledDateAndTime,
-            request.ShouldPlaySound,
-            request.ShouldDoVibration);
-
-        if (updatedReminder == null)
+        try
         {
-            _logger.LogWarning("PATCH /api/reminder-instances/{ReminderId} - Reminder not found, returning 404 Not Found", id);
-            return NotFound(new { message = $"Reminder with ID {id} not found." });
-        }
+            var updatedReminder = _reminderInstanceService.Update(
+                id,
+                userId,
+                request.Text,
+                request.ScheduledDateAndTime,
+                request.ShouldPlaySound,
+                request.ShouldDoVibration);
 
-        _logger.LogInformation("PATCH /api/reminder-instances/{ReminderId} - Successfully updated reminder, returning 200 OK", id);
-        return Ok(ReminderInstanceMapper.ToDto(updatedReminder));
+            if (updatedReminder == null)
+            {
+                _logger.LogWarning("PATCH /api/reminder-instances/{ReminderId} - Reminder not found, returning 404 Not Found", id);
+                return NotFound(new { message = $"Reminder with ID {id} not found." });
+            }
+
+            _logger.LogInformation("PATCH /api/reminder-instances/{ReminderId} - Successfully updated reminder, returning 200 OK", id);
+            return Ok(ReminderInstanceMapper.ToDto(updatedReminder));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("PATCH /api/reminder-instances/{ReminderId} - Cannot update reminder: {Reason}, returning 400 Bad Request", id, ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>

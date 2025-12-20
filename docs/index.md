@@ -13,7 +13,7 @@
 | **Framework** | ASP.NET Core 8.0 |
 | **Architecture Pattern** | Clean Architecture |
 | **Authentication** | Auth0 JWT Bearer |
-| **Data Storage** | Azure Cosmos DB (Primary) / In-memory (Fallback) |
+| **Data Storage** | Azure Cosmos DB (Required) |
 | **Deployment** | Azure App Service |
 
 ---
@@ -132,23 +132,35 @@ Data: docs/data-models.md
 | `CLIENT_ORIGIN_URL` | Yes | CORS allowed origins (comma-separated) |
 | `AUTH0_DOMAIN` | Yes | Auth0 tenant domain |
 | `AUTH0_AUDIENCE` | Yes | Auth0 API identifier |
-| `COSMOS_ENDPOINT` | No* | Cosmos DB endpoint |
-| `COSMOS_PRIMARY_KEY` | No* | Cosmos DB key |
-| `COSMOS_DATABASE_NAME` | No* | Database name |
-| `COSMOS_CONTAINER_NAME` | No* | Container name |
+| `COSMOS_ENDPOINT` | Yes | Cosmos DB endpoint |
+| `COSMOS_PRIMARY_KEY` | Yes | Cosmos DB key |
+| `COSMOS_DATABASE_NAME` | Yes | Database name |
+| `COSMOS_CONTAINER_NAME` | Yes | Container name |
 
-*If Cosmos variables are not set, service uses in-memory storage
+> **Note (Story 1.3):** Cosmos DB is now required. The application throws `InvalidOperationException` at startup if `COSMOS_ENDPOINT` or `COSMOS_PRIMARY_KEY` are missing.
 
 ---
 
 ## Recent Changes
 
-### 2025-12-19 (This Scan)
+### 2025-12-19 (Story 1.3 - Remove In-Memory Service)
 
-- **Updated:** Documentation refreshed with exhaustive scan
-- **Verified:** All source files scanned (22 files, ~1,900 LOC)
-- **Verified:** Test coverage increased to 23 tests (16 unit, 7 integration)
-- **Verified:** Command-based API pattern with audit timestamps in place
+- **Breaking:** Removed in-memory `ReminderInstanceService` implementation
+- **Breaking:** Cosmos DB is now **required** (no fallback)
+- **Changed:** `Program.cs` uses factory-based DI for deferred configuration validation
+- **Changed:** `TestWebApplicationFactory` uses mocked `IReminderInstanceService` for tests
+- **Result:** ~287 lines of code removed, simplified codebase
+
+### 2025-12-19 (Story 1.2 - State Validation)
+
+- **Changed:** PATCH endpoint validates state before updating `scheduledDateAndTime`
+- **Changed:** Returns 400 Bad Request for Active/Completed reminders
+
+### 2025-12-19 (Story 1.1 - Client-Provided UUID)
+
+- **Breaking:** `CreateReminderRequest` now requires `id` field (client-provided UUID)
+- **Changed:** POST returns 409 Conflict for duplicate IDs
+- **Benefit:** Enables idempotent create operations and offline-first patterns
 
 ### 2025-12-17 (Previous Scan)
 
