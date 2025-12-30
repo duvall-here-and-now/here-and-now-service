@@ -1,123 +1,133 @@
 # Here and Now Service - Documentation Index
 
-> **Primary AI Retrieval Source** - This index serves as the entry point for AI-assisted development workflows.
-
----
+**Type:** Monolith Backend API
+**Primary Language:** C# (.NET 8.0)
+**Architecture:** Clean Architecture with DTO Pattern
+**Last Updated:** 2025-12-29
 
 ## Project Overview
 
-| Attribute | Value |
-|-----------|-------|
-| **Type** | Backend API Service (Monolith) |
-| **Primary Language** | C# 12 |
-| **Framework** | ASP.NET Core 8.0 |
-| **Architecture Pattern** | Clean Architecture |
-| **Authentication** | Auth0 JWT Bearer |
-| **Deployment** | Azure App Service |
-
----
+Here and Now Service is an ASP.NET Core 8.0 REST API providing reminder management with Auth0 authentication. Users can create, read, update, and soft-delete reminder instances with scheduling and notification preferences.
 
 ## Quick Reference
 
-| Aspect | Details |
-|--------|---------|
-| **Tech Stack** | ASP.NET Core 8, Auth0, Swagger/OpenAPI, xUnit |
-| **Entry Point** | `Web/HereAndNow.Web/Program.cs` |
-| **API Endpoints** | 8 endpoints (3 messages, 5 reminder CRUD) |
-| **Data Storage** | In-memory (ConcurrentDictionary) |
-| **CI/CD** | GitHub Actions → Azure App Service |
+- **Tech Stack:** ASP.NET Core 8.0, Auth0 JWT, Swagger
+- **Entry Point:** `Web/HereAndNow.Web/Program.cs`
+- **Architecture Pattern:** Clean Architecture (Reminders → Web layers)
+- **Database:** In-memory (ConcurrentDictionary) - Cosmos DB planned
+- **Deployment:** Azure Web Apps via GitHub Actions
 
----
+### Key Commands
+
+| Command | Description |
+|---------|-------------|
+| `dotnet build HereAndNow.sln` | Build the solution |
+| `dotnet test` | Run all tests |
+| `dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj` | Start the API |
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| PORT | Yes | Server port |
+| CLIENT_ORIGIN_URL | Yes | CORS origins (comma-separated) |
+| AUTH0_DOMAIN | Yes | Auth0 tenant domain |
+| AUTH0_AUDIENCE | Yes | Auth0 API identifier |
 
 ## Generated Documentation
 
-### Architecture & Design
+### Core Documentation
 
-- [Project Overview](./project-overview.md) - Executive summary and quick facts
-- [Architecture](./architecture.md) - System architecture, design decisions, and patterns
-- [Source Tree Analysis](./source-tree-analysis.md) - Project structure and critical folders
+- [Project Overview](./project-overview.md) - Executive summary and high-level architecture
+- [Source Tree Analysis](./source-tree-analysis.md) - Annotated directory structure
 
-### API & Data
+### Technical Documentation
 
-- [API Contracts](./api-contracts.md) - REST API endpoint documentation with request/response schemas
-- [Data Models](./data-models.md) - Domain models, enums, and data access patterns
+- [Architecture](./architecture.md) - Detailed technical architecture, patterns, and design decisions
+- [API Contracts](./api-contracts.md) - Complete REST API documentation with endpoints and schemas
+- [Data Models](./data-models.md) - Domain models, DTOs, and data relationships
 
-### Development & Operations
+### Operational Documentation
 
-- [Development Guide](./development-guide.md) - Prerequisites, setup, building, testing, troubleshooting
-- [Deployment Guide](./deployment-guide.md) - CI/CD pipeline, Azure configuration, deployment procedures
-
----
+- [Development Guide](./development-guide.md) - Local setup, building, testing, and coding conventions
+- [Deployment Guide](./deployment-guide.md) - CI/CD pipeline, Azure deployment, and operations
 
 ## Existing Documentation
 
-These documents were found in the repository:
-
-| Document | Location | Description |
-|----------|----------|-------------|
-| [README.md](../README.md) | Project root | Auth0 integration overview |
-| [CLAUDE.md](../CLAUDE.md) | Project root | Claude Code development instructions |
-| [SWAGGER_SETUP.md](../Web/HereAndNow.Web/SWAGGER_SETUP.md) | Web project | Swagger UI configuration and Azure IP restrictions |
-| [dotnet-code-reviewer.md](../.github/agents/dotnet-code-reviewer.md) | .github/agents | AI code review agent guidelines |
-| [copilot-instructions.md](../.github/copilot-instructions.md) | .github | GitHub Copilot configuration |
-
----
+| Document | Description |
+|----------|-------------|
+| [README.md](../README.md) | Project readme (Auth0 sample overview) |
+| [CLAUDE.md](../CLAUDE.md) | Claude Code AI assistant instructions |
+| [SWAGGER_SETUP.md](../Web/HereAndNow.Web/SWAGGER_SETUP.md) | Swagger configuration details |
 
 ## Getting Started
 
-### For New Developers
+### Prerequisites
 
-1. Read [Development Guide](./development-guide.md) for setup instructions
-2. Review [Architecture](./architecture.md) for system understanding
-3. Explore [API Contracts](./api-contracts.md) for endpoint documentation
-4. Access Swagger UI at `/swagger` when running locally
+- .NET 8.0 SDK
+- Auth0 account
 
-### For AI-Assisted Development
+### Quick Start
 
-When planning new features, reference:
+```bash
+# 1. Clone and navigate
+cd here-and-now-service
 
-1. **For API changes:** [API Contracts](./api-contracts.md) + [Data Models](./data-models.md)
-2. **For architectural decisions:** [Architecture](./architecture.md)
-3. **For code patterns:** [Source Tree Analysis](./source-tree-analysis.md)
+# 2. Create .env file with required variables
+echo "PORT=6060" > .env
+echo "CLIENT_ORIGIN_URL=http://localhost:3000" >> .env
+echo "AUTH0_DOMAIN=your-domain.auth0.com" >> .env
+echo "AUTH0_AUDIENCE=https://your-api" >> .env
 
----
+# 3. Build and run
+dotnet build
+dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj
 
-## Brownfield PRD Reference
-
-When creating a PRD for new features on this codebase, provide this index as context:
-
-```
-Context: docs/index.md
-Architecture: docs/architecture.md
-API: docs/api-contracts.md
-Data: docs/data-models.md
+# 4. Access Swagger UI
+# Open http://localhost:6060/swagger
 ```
 
-### Key Integration Points
+### Run Tests
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| **Controllers** | `Web/HereAndNow.Web/Controllers/` | Add new API endpoints |
-| **Services** | `Reminders/HereAndNow.Reminders/Services/` | Add business logic |
-| **Models** | `Reminders/HereAndNow.Reminders/Models/` | Add domain entities |
-| **Middleware** | `Web/HereAndNow.Web/Middlewares/` | Add cross-cutting concerns |
-| **Tests** | `Web/HereAndNow.Web.Tests/` | Add unit/integration tests |
+```bash
+dotnet test
+```
+
+## For AI-Assisted Development
+
+This documentation was generated specifically to enable AI agents to understand and extend this codebase.
+
+### When Planning New Features:
+
+**API/Backend features:**
+→ Reference: `architecture.md`, `api-contracts.md`, `data-models.md`
+
+**Adding new endpoints:**
+→ Follow patterns in `development-guide.md` → "Adding a New Endpoint"
+
+**Deployment changes:**
+→ Reference: `deployment-guide.md`
+
+**Understanding codebase structure:**
+→ Reference: `source-tree-analysis.md`
+
+### Key Patterns to Follow
+
+1. **Domain models** go in `Reminders/HereAndNow.Reminders/Models/`
+2. **Service interfaces** go in `Reminders/HereAndNow.Reminders/Services/`
+3. **DTOs** go in `Web/HereAndNow.Web/DTOs/`
+4. **Mappers** go in `Web/HereAndNow.Web/Mappers/`
+5. **Controllers** go in `Web/HereAndNow.Web/Controllers/`
+6. **Tests** go in `Web/HereAndNow.Web.Tests/`
 
 ### Code Conventions
 
 - File-scoped namespaces
 - Nullable reference types enabled
-- XML documentation on public APIs
-- Service registration in `Program.cs`
-- xUnit for testing with Moq and FluentAssertions
+- XML documentation for public APIs
+- Structured logging with ILogger
 
 ---
 
-## Documentation Metadata
-
-| Field | Value |
-|-------|-------|
-| **Generated** | 2025-12-12 |
-| **Scan Level** | Deep |
-| **Workflow** | document-project v1.2.0 |
-| **Files Generated** | 8 |
+_Documentation generated by BMAD Method `document-project` workflow_
+_Scan Level: Exhaustive | Mode: Initial Scan_

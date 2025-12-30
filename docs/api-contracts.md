@@ -1,159 +1,155 @@
-# API Contracts
+# Here and Now Service - API Contracts
+
+**Date:** 2025-12-29
+**Base URL:** `http://localhost:{PORT}`
+**Authentication:** Auth0 JWT Bearer Token
 
 ## Overview
 
-The Here and Now Service exposes a REST API for managing reminders and authentication-gated messages. All endpoints are documented using OpenAPI/Swagger and follow REST conventions.
-
-**Base URL:** `http://localhost:{PORT}` (local) or `https://here-and-now-service.azurewebsites.net` (Azure)
-
-**API Documentation:** Available at `/swagger` endpoint
+This document describes all REST API endpoints exposed by the Here and Now Service. The API uses JSON for request/response bodies and requires JWT authentication for protected endpoints.
 
 ## Authentication
 
-All protected endpoints require JWT Bearer authentication via Auth0.
+All endpoints under `/api/reminder-instances` require authentication. Include a valid Auth0 JWT token in the Authorization header:
 
-### Authentication Flow
+```
+Authorization: Bearer <your-jwt-token>
+```
 
-1. Client obtains JWT token from Auth0
-2. Include token in `Authorization` header: `Bearer {token}`
-3. Token is validated against Auth0 authority
-
-### Required Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `AUTH0_DOMAIN` | Auth0 tenant domain |
-| `AUTH0_AUDIENCE` | API audience identifier |
-| `CLIENT_ORIGIN_URL` | Allowed CORS origin |
-| `PORT` | Server port |
+Unauthenticated requests return `401 Unauthorized`.
 
 ---
 
-## Messages API
+## Messages Controller
 
 **Base Path:** `/api/messages`
-**Controller:** `MessagesController`
+**Source:** `Web/HereAndNow.Web/Controllers/MessagesController.cs`
 
 ### GET /api/messages/public
 
-Retrieves a public message. No authentication required.
+Retrieves a public message (no authentication required).
 
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `GET` |
-| **Auth Required** | No |
-| **Response Type** | `Message` |
+**Authentication:** None
 
-**Response Codes:**
-
-| Code | Description |
-|------|-------------|
-| `200 OK` | Returns the public message |
-
-**Response Schema:**
-
+**Response:**
 ```json
 {
-  "text": "string"
+  "text": "This is a public message."
 }
 ```
+
+**Status Codes:**
+| Code | Description |
+|------|-------------|
+| 200 | Success |
 
 ---
 
 ### GET /api/messages/protected
 
-Retrieves a protected message. Requires authentication.
+Retrieves a protected message (authentication required).
 
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `GET` |
-| **Auth Required** | Yes (`[Authorize]`) |
-| **Response Type** | `Message` |
+**Authentication:** Required
 
-**Response Codes:**
+**Response:**
+```json
+{
+  "text": "This is a protected message, and Mike is cool."
+}
+```
 
+**Status Codes:**
 | Code | Description |
 |------|-------------|
-| `200 OK` | Returns the protected message |
-| `401 Unauthorized` | Missing or invalid token |
+| 200 | Success |
+| 401 | Unauthorized - Missing or invalid token |
 
 ---
 
 ### GET /api/messages/admin
 
-Retrieves an admin message. Requires authentication.
+Retrieves an admin message (authentication required).
 
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `GET` |
-| **Auth Required** | Yes (`[Authorize]`) |
-| **Response Type** | `Message` |
+**Authentication:** Required
 
-**Response Codes:**
+**Response:**
+```json
+{
+  "text": "This is an admin message."
+}
+```
 
+**Status Codes:**
 | Code | Description |
 |------|-------------|
-| `200 OK` | Returns the admin message |
-| `401 Unauthorized` | Missing or invalid token |
+| 200 | Success |
+| 401 | Unauthorized |
 
 ---
 
-## Reminder Instances API
+## Reminder Instances Controller
 
 **Base Path:** `/api/reminder-instances`
-**Controller:** `ReminderInstancesController`
-**Authorization:** All endpoints require authentication (`[Authorize]` at controller level)
+**Source:** `Web/HereAndNow.Web/Controllers/ReminderInstancesController.cs`
+**Authentication:** All endpoints require JWT authentication
 
 ### GET /api/reminder-instances
 
-Gets all reminder instances.
+Retrieves all reminder instances.
 
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `GET` |
-| **Auth Required** | Yes |
-| **Response Type** | `IEnumerable<ReminderInstance>` |
-
-**Response Codes:**
-
-| Code | Description |
-|------|-------------|
-| `200 OK` | Returns list of all reminders |
-| `401 Unauthorized` | Not authenticated |
-
-**Example Response:**
-
+**Response:**
 ```json
 [
   {
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "text": "Team standup meeting",
-    "scheduledDateAndTime": "2025-12-13T09:00:00Z",
-    "status": "Scheduled"
+    "text": "Meeting reminder",
+    "scheduledDateAndTime": "2025-12-30T10:00:00Z",
+    "isCompleted": false,
+    "isDeleted": false,
+    "shouldPlaySound": true,
+    "shouldDoVibration": false,
+    "state": "Scheduled"
   }
 ]
 ```
+
+**Status Codes:**
+| Code | Description |
+|------|-------------|
+| 200 | Success - Returns array of reminders |
+| 401 | Unauthorized |
 
 ---
 
 ### GET /api/reminder-instances/{id}
 
-Gets a specific reminder instance by ID.
+Retrieves a specific reminder instance by ID.
 
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `GET` |
-| **Auth Required** | Yes |
-| **Response Type** | `ReminderInstance` |
-| **URL Parameter** | `id` (Guid) |
+**Path Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| id | GUID | Unique identifier of the reminder |
 
-**Response Codes:**
+**Response:**
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "Meeting reminder",
+  "scheduledDateAndTime": "2025-12-30T10:00:00Z",
+  "isCompleted": false,
+  "isDeleted": false,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false,
+  "state": "Scheduled"
+}
+```
 
+**Status Codes:**
 | Code | Description |
 |------|-------------|
-| `200 OK` | Returns the reminder |
-| `401 Unauthorized` | Not authenticated |
-| `404 Not Found` | Reminder with given ID not found |
+| 200 | Success |
+| 401 | Unauthorized |
+| 404 | Not Found - Reminder does not exist |
 
 ---
 
@@ -161,34 +157,38 @@ Gets a specific reminder instance by ID.
 
 Creates a new reminder instance.
 
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `POST` |
-| **Auth Required** | Yes |
-| **Request Body** | `ReminderInstance` |
-| **Response Type** | `ReminderInstance` |
-
-**Request Body Schema:**
-
+**Request Body:**
 ```json
 {
-  "text": "string (required)",
-  "scheduledDateAndTime": "2025-12-13T09:00:00Z",
-  "status": "Scheduled | Active | Completed"
+  "text": "New reminder",
+  "scheduledDateAndTime": "2025-12-30T10:00:00Z",
+  "isCompleted": false,
+  "isDeleted": false,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false
 }
 ```
 
-**Response Codes:**
+**Response:** `201 Created` with Location header
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "New reminder",
+  "scheduledDateAndTime": "2025-12-30T10:00:00Z",
+  "isCompleted": false,
+  "isDeleted": false,
+  "shouldPlaySound": true,
+  "shouldDoVibration": false,
+  "state": "Scheduled"
+}
+```
 
+**Status Codes:**
 | Code | Description |
 |------|-------------|
-| `201 Created` | Returns created reminder with generated ID |
-| `400 Bad Request` | Invalid request body |
-| `401 Unauthorized` | Not authenticated |
-
-**Response Headers:**
-
-- `Location`: URL of the created resource
+| 201 | Created - Returns new reminder with generated ID |
+| 400 | Bad Request - Invalid request body |
+| 401 | Unauthorized |
 
 ---
 
@@ -196,61 +196,103 @@ Creates a new reminder instance.
 
 Updates an existing reminder instance.
 
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `PUT` |
-| **Auth Required** | Yes |
-| **URL Parameter** | `id` (Guid) |
-| **Request Body** | `ReminderInstance` |
-| **Response Type** | `ReminderInstance` |
+**Path Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| id | GUID | Unique identifier of the reminder |
 
-**Request Body Schema:**
-
+**Request Body:**
 ```json
 {
-  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6 (optional, must match URL)",
-  "text": "string (required)",
-  "scheduledDateAndTime": "2025-12-13T09:00:00Z",
-  "status": "Scheduled | Active | Completed"
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "Updated reminder text",
+  "scheduledDateAndTime": "2025-12-30T14:00:00Z",
+  "isCompleted": true,
+  "isDeleted": false,
+  "shouldPlaySound": false,
+  "shouldDoVibration": true
 }
 ```
 
-**Response Codes:**
+**Response:**
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "text": "Updated reminder text",
+  "scheduledDateAndTime": "2025-12-30T14:00:00Z",
+  "isCompleted": true,
+  "isDeleted": false,
+  "shouldPlaySound": false,
+  "shouldDoVibration": true,
+  "state": "Completed"
+}
+```
 
+**Status Codes:**
 | Code | Description |
 |------|-------------|
-| `200 OK` | Returns updated reminder |
-| `400 Bad Request` | ID mismatch between URL and body |
-| `401 Unauthorized` | Not authenticated |
-| `404 Not Found` | Reminder with given ID not found |
+| 200 | Success - Returns updated reminder |
+| 400 | Bad Request - ID mismatch between URL and body |
+| 401 | Unauthorized |
+| 404 | Not Found - Reminder does not exist |
 
 ---
 
 ### DELETE /api/reminder-instances/{id}
 
-Deletes a reminder instance.
+Soft-deletes a reminder instance (sets `isDeleted` to true).
 
-| Attribute | Value |
-|-----------|-------|
-| **Method** | `DELETE` |
-| **Auth Required** | Yes |
-| **URL Parameter** | `id` (Guid) |
+**Path Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| id | GUID | Unique identifier of the reminder |
 
-**Response Codes:**
+**Response:** `204 No Content`
 
+**Status Codes:**
 | Code | Description |
 |------|-------------|
-| `204 No Content` | Successfully deleted |
-| `401 Unauthorized` | Not authenticated |
-| `404 Not Found` | Reminder with given ID not found |
+| 204 | No Content - Successfully deleted |
+| 401 | Unauthorized |
+| 404 | Not Found - Reminder does not exist |
+
+---
+
+## Data Types
+
+### ReminderInstanceDto
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| id | GUID | No (generated on create) | Unique identifier |
+| text | string | Yes | Reminder text content |
+| scheduledDateAndTime | DateTime | Yes | When the reminder triggers |
+| isCompleted | boolean | No (default: false) | Completion status |
+| isDeleted | boolean | No (default: false) | Soft-delete status |
+| shouldPlaySound | boolean | No (default: false) | Audio notification |
+| shouldDoVibration | boolean | No (default: false) | Vibration notification |
+| state | ReminderState | Read-only | Computed state |
+
+### ReminderState (Enum)
+
+| Value | Description |
+|-------|-------------|
+| Scheduled | Future reminder, not yet triggered |
+| Active | Time has passed, awaiting action |
+| Completed | Marked as done |
+| Deleted | Soft-deleted |
+
+### Message
+
+| Field | Type | Description |
+|-------|------|-------------|
+| text | string | Message content |
 
 ---
 
 ## Error Responses
 
-The API uses custom error handling middleware that provides consistent error responses.
-
-### Standard Error Response Format
+All error responses follow this format:
 
 ```json
 {
@@ -260,35 +302,34 @@ The API uses custom error handling middleware that provides consistent error res
 
 ### Common Error Messages
 
-| Status | Scenario | Message |
-|--------|----------|---------|
-| `401` | No Authorization header | `"Requires authentication"` |
-| `401` | Invalid token | `"Bad credentials"` |
-| `404` | Resource not found | `"Not Found"` |
-| `500` | Server error | `"Internal Server Error."` |
+| Status | Message |
+|--------|---------|
+| 401 | "Requires authentication" (no token) |
+| 401 | "Bad credentials" (invalid token) |
+| 404 | "Not Found" or "Reminder with ID {id} not found." |
+| 400 | "ID in URL and body do not match." |
+| 500 | "Internal Server Error." |
 
 ---
 
 ## CORS Configuration
 
-The API accepts requests from the configured `CLIENT_ORIGIN_URL` with the following settings:
+The API supports CORS for configured origins:
 
-- **Allowed Headers:** `Content-Type`, `Authorization`
-- **Allowed Methods:** `GET`, `POST`, `PUT`, `DELETE`
+- **Allowed Origins:** Configured via `CLIENT_ORIGIN_URL` environment variable (comma-separated)
+- **Allowed Methods:** GET, POST, PUT, DELETE
+- **Allowed Headers:** Content-Type, Authorization
 - **Preflight Cache:** 86400 seconds (24 hours)
 
 ---
 
-## Security Headers
+## Swagger/OpenAPI
 
-All responses include security headers set by `SecureHeadersMiddleware`:
+Interactive API documentation is available at:
 
-| Header | Value |
-|--------|-------|
-| `X-XSS-Protection` | `0` |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
-| `X-Frame-Options` | `deny` |
-| `X-Content-Type-Options` | `nosniff` |
-| `Content-Security-Policy` | `default-src 'self'; frame-ancestors 'none';` |
-| `Cache-Control` | `no-cache, no-store, max-age=0, must-revalidate` |
-| `Pragma` | `no-cache` |
+- **Swagger UI:** `/swagger`
+- **OpenAPI Spec:** `/swagger/v1/swagger.json`
+
+---
+
+_Generated using BMAD Method `document-project` workflow_

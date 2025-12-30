@@ -1,231 +1,260 @@
-# Deployment Guide
+# Here and Now Service - Deployment Guide
+
+**Date:** 2025-12-29
 
 ## Overview
 
-The Here and Now Service is deployed to **Azure App Service** using GitHub Actions for CI/CD automation.
+The Here and Now Service is deployed to Azure Web Apps using GitHub Actions. The CI/CD pipeline is triggered on every push to the `main` branch.
 
-**Production URL:** `https://here-and-now-service.azurewebsites.net`
+## Deployment Architecture
 
----
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    GitHub       │────►│  GitHub Actions │────►│  Azure Web App  │
+│   (main branch) │     │                 │     │  (Production)   │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                               │
+                               ▼
+                        ┌─────────────┐
+                        │   Tests     │
+                        │   (Gate)    │
+                        └─────────────┘
+```
 
 ## CI/CD Pipeline
 
-### Workflow Location
-
-`.github/workflows/main_here-and-now-service.yml`
-
-### Trigger Events
-
-| Event | Description |
-|-------|-------------|
-| `push` to `main` | Automatic deployment on merge to main |
-| `workflow_dispatch` | Manual trigger via GitHub UI |
+**Workflow File:** `.github/workflows/main_here-and-now-service.yml`
 
 ### Pipeline Stages
 
 ```
-┌─────────────┐     ┌─────────────┐
-│    Build    │────▶│   Deploy    │
-│  (ubuntu)   │     │  (ubuntu)   │
-└─────────────┘     └─────────────┘
-      │
-      ├── Checkout
-      ├── Setup .NET 8
-      ├── Build (Release)
-      ├── Run Tests
-      ├── Publish Results
-      ├── Upload Coverage
-      └── Publish Artifact
+┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
+│  Build  │───►│  Test   │───►│ Publish │───►│ Upload  │───►│ Deploy  │
+└─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
+                    │
+                    │ Quality Gate
+                    │ (must pass)
+                    ▼
 ```
 
-### Build Job Details
+### Pipeline Details
+
+| Stage | Command | Description |
+|-------|---------|-------------|
+| Setup | `actions/setup-dotnet@v4` | Install .NET 8.0 SDK |
+| Build | `dotnet build --configuration Release` | Compile solution |
+| Test | `dotnet test --configuration Release` | Run all tests |
+| Test Report | `dorny/test-reporter@v1` | Publish results to GitHub |
+| Coverage | `actions/upload-artifact@v4` | Upload coverage reports |
+| Publish | `dotnet publish -c Release` | Create deployment package |
+| Deploy | `azure/webapps-deploy@v3` | Deploy to Azure |
+
+### Trigger Conditions
 
 ```yaml
-steps:
-  - uses: actions/checkout@v4
-  - uses: actions/setup-dotnet@v4
-    with:
-      dotnet-version: '8.x'
-  - run: dotnet build HereAndNow.sln --configuration Release
-  - run: dotnet test HereAndNow.sln --configuration Release --no-build
-  - run: dotnet publish Web/HereAndNow.Web/HereAndNow.Web.csproj -c Release
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Manual trigger
 ```
 
-### Quality Gates
+## Quality Gates
 
-| Gate | Requirement |
-|------|-------------|
-| Build | Must succeed |
-| Tests | All tests must pass |
-| Coverage | Reports uploaded as artifacts |
+### Test Requirements
 
-**Important:** Tests must pass before deployment proceeds.
+- All tests must pass before deployment
+- Test results are published to GitHub Actions UI
+- Failed tests block deployment
 
----
+### Test Reporting
 
-## Azure App Service Configuration
+Test results are visible in:
+1. GitHub Actions workflow run
+2. Pull Request checks (if opened)
 
-### App Service Details
+## Azure Configuration
 
-| Setting | Value |
-|---------|-------|
-| **App Name** | `here-and-now-service` |
-| **Slot** | `Production` |
-| **Platform** | Linux / Windows |
-| **Runtime** | .NET 8 |
+### Required Azure Resources
 
-### Required App Settings
+| Resource | Type | Purpose |
+|----------|------|---------|
+| here-and-now-service | Azure Web App | Application hosting |
+| App Service Plan | Hosting plan | Compute resources |
 
-Configure these in Azure Portal → App Service → Configuration → Application settings:
+### Application Settings
 
-| Setting | Description |
-|---------|-------------|
-| `PORT` | Application port (usually 80 for App Service) |
-| `CLIENT_ORIGIN_URL` | Frontend URL for CORS |
-| `AUTH0_DOMAIN` | Auth0 tenant domain |
-| `AUTH0_AUDIENCE` | Auth0 API identifier |
+Configure these in Azure Portal → Web App → Configuration:
 
-### Deployment Credentials
+| Setting | Value | Description |
+|---------|-------|-------------|
+| PORT | 8080 | App Service default port |
+| CLIENT_ORIGIN_URL | https://your-frontend.com | Production frontend URL |
+| AUTH0_DOMAIN | your-tenant.auth0.com | Auth0 domain |
+| AUTH0_AUDIENCE | https://your-api | Auth0 API identifier |
 
-The GitHub Actions workflow uses a **Publish Profile** stored in GitHub Secrets:
+### Secrets Management
+
+The deployment uses a publish profile stored in GitHub Secrets:
 
 ```
 AZUREAPPSERVICE_PUBLISHPROFILE_BACC676B643B46F199F9AA3A4AF97999
 ```
 
-To update:
-1. Azure Portal → App Service → Deployment Center → Manage publish profile
-2. Download publish profile
-3. Update GitHub secret: Settings → Secrets → Actions
-
----
+**To update the publish profile:**
+1. Azure Portal → Web App → Download publish profile
+2. GitHub → Settings → Secrets → Update secret
 
 ## Manual Deployment
 
-### Build for Production
-
-```bash
-dotnet publish Web/HereAndNow.Web/HereAndNow.Web.csproj -c Release -o ./publish
-```
-
-### Deploy via Azure CLI
+### Using Azure CLI
 
 ```bash
 # Login to Azure
 az login
 
-# Deploy to App Service
-az webapp deploy \
-  --resource-group <resource-group> \
-  --name here-and-now-service \
-  --src-path ./publish \
-  --type zip
+# Deploy from local build
+dotnet publish Web/HereAndNow.Web/HereAndNow.Web.csproj -c Release -o ./publish
+az webapp deploy --resource-group <rg-name> --name here-and-now-service --src-path ./publish
 ```
 
-### Deploy via VS Code
+### Using Visual Studio
 
-1. Install Azure App Service extension
-2. Right-click on `publish` folder
-3. Select "Deploy to Web App"
-4. Choose `here-and-now-service`
+1. Right-click `HereAndNow.Web` project
+2. Select "Publish..."
+3. Choose Azure Web App target
+4. Follow wizard
 
----
+## Deployment Verification
 
-## Swagger Access in Production
+### Health Check
 
-Swagger UI is available in production but should be secured with IP restrictions.
-
-### Azure IP Restriction Setup
-
-1. Azure Portal → App Service → Networking → Access restriction
-2. Add rule for `/swagger*` path:
-   - Name: `Allow-Developer-IP`
-   - Action: Allow
-   - IP: Your public IP with `/32` suffix
-   - Priority: 100
-
-See [SWAGGER_SETUP.md](../Web/HereAndNow.Web/SWAGGER_SETUP.md) for detailed instructions.
-
----
-
-## Monitoring
-
-### Azure Application Insights
-
-Consider enabling Application Insights for:
-- Request tracking
-- Exception logging
-- Performance metrics
-- Custom telemetry
-
-### Log Streaming
+After deployment, verify the API is running:
 
 ```bash
-# Stream live logs
-az webapp log tail --name here-and-now-service --resource-group <rg>
+curl https://here-and-now-service.azurewebsites.net/api/messages/public
 ```
 
-### View Deployment Logs
+Expected response:
+```json
+{"text":"This is a public message."}
+```
 
-GitHub Actions → Select workflow run → View logs
+### Swagger Access
 
----
+Swagger UI should be available at:
+```
+https://here-and-now-service.azurewebsites.net/swagger
+```
 
 ## Rollback Procedures
 
-### Revert to Previous Deployment
+### Using Deployment Slots (Recommended)
 
-1. GitHub → Actions → Select previous successful run
-2. Click "Re-run all jobs"
-
-Or use Azure deployment slots:
+If using deployment slots:
 ```bash
 az webapp deployment slot swap \
+  --resource-group <rg-name> \
   --name here-and-now-service \
-  --resource-group <rg> \
   --slot staging \
   --target-slot production
 ```
 
-### Quick Rollback via Git
+### Using Previous Deployment
 
+1. GitHub Actions → Select previous successful run
+2. Re-run deployment job
+
+### Using Azure Portal
+
+1. Azure Portal → Web App → Deployment Center
+2. View deployment history
+3. Redeploy previous version
+
+## Monitoring
+
+### Application Logs
+
+View logs in Azure Portal:
+1. Web App → Monitoring → Log stream
+
+Or using Azure CLI:
 ```bash
-# Revert to previous commit
-git revert HEAD
-git push origin main
-# Pipeline will automatically deploy
+az webapp log tail --resource-group <rg-name> --name here-and-now-service
 ```
 
----
+### Metrics
+
+Key metrics to monitor:
+- HTTP response time
+- Request count
+- Error rate (4xx, 5xx)
+- CPU/Memory usage
 
 ## Environment-Specific Configuration
 
 ### Development
 
-- Local `.env` file
-- Swagger UI enabled
-- Debug logging
+```env
+PORT=6060
+CLIENT_ORIGIN_URL=http://localhost:3000
+AUTH0_DOMAIN=dev-tenant.auth0.com
+AUTH0_AUDIENCE=https://dev-api
+```
 
-### Production (Azure)
+### Production
 
-- Azure App Settings
-- Swagger secured by IP restriction
-- Production logging level
+Configure via Azure Application Settings:
+- Use production Auth0 tenant
+- Set production CLIENT_ORIGIN_URL
+- Ensure HTTPS-only connections
+
+## Security Considerations
+
+### HTTPS
+
+Azure Web Apps automatically provide HTTPS. Enforce HTTPS-only:
+1. Azure Portal → Web App → TLS/SSL settings
+2. Enable "HTTPS Only"
+
+### Secrets
+
+- Never commit `.env` files
+- Use Azure Key Vault for sensitive values (future enhancement)
+- Rotate Auth0 secrets periodically
+
+### Access Control
+
+- Limit who can deploy (GitHub branch protection)
+- Use Azure RBAC for portal access
+- Review publish profile access regularly
+
+## Troubleshooting
+
+### Deployment Failures
+
+| Issue | Solution |
+|-------|----------|
+| Build failure | Check .NET version compatibility |
+| Test failure | Review test results in Actions |
+| Publish profile invalid | Regenerate in Azure Portal |
+| 502 after deploy | Check application settings, view logs |
+
+### Runtime Issues
+
+| Issue | Solution |
+|-------|----------|
+| 500 errors | Check Azure Log Stream |
+| Auth failures | Verify AUTH0_* settings |
+| CORS errors | Check CLIENT_ORIGIN_URL |
+
+## Future Enhancements
+
+1. **Deployment Slots**: Add staging slot for zero-downtime deployments
+2. **Blue/Green**: Implement blue/green deployment pattern
+3. **Feature Flags**: Add LaunchDarkly or Azure App Configuration
+4. **Containerization**: Docker-based deployment option
 
 ---
 
-## Security Checklist
-
-- [ ] Auth0 credentials stored in Azure App Settings (not in code)
-- [ ] Swagger UI secured with IP restrictions
-- [ ] HTTPS enforced in Azure App Service
-- [ ] Publish profile secret rotated periodically
-- [ ] Security headers verified (X-Frame-Options, CSP, etc.)
-
----
-
-## Related Documentation
-
-- [Development Guide](./development-guide.md) - Local development setup
-- [Architecture](./architecture.md) - System architecture
-- [SWAGGER_SETUP.md](../Web/HereAndNow.Web/SWAGGER_SETUP.md) - Swagger security configuration
+_Generated using BMAD Method `document-project` workflow_
