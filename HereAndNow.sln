@@ -1,11 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.0.31903.59
+# Visual Studio 15
+VisualStudioVersion = 15.0.36324.19
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Reminders", "Reminders", "{4708D353-F015-5C27-E646-BE7702BA8CA8}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Message", "Message", "{4708D353-F015-5C27-E646-BE7702BA8CA8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HereAndNow.Reminders", "Reminders\HereAndNow.Reminders\HereAndNow.Reminders.csproj", "{B6EE6DDC-4F45-4647-A230-5CF41EA79192}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HereAndNow.Message", "Message\HereAndNow.Message\HereAndNow.Message.csproj", "{B6EE6DDC-4F45-4647-A230-5CF41EA79192}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Web", "Web", "{256F4E96-6A73-9ABE-786F-840C672A50F4}"
 EndProject
@@ -72,5 +72,8 @@ Global
 		{B6EE6DDC-4F45-4647-A230-5CF41EA79192} = {4708D353-F015-5C27-E646-BE7702BA8CA8}
 		{D8309FB2-689C-4C18-84AF-00E379807C9F} = {256F4E96-6A73-9ABE-786F-840C672A50F4}
 		{094BCC1D-7B30-487E-AA4F-80487624C8D9} = {256F4E96-6A73-9ABE-786F-840C672A50F4}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {831F0098-D49C-435C-B4FF-6ABC6FB8E4D5}
 	EndGlobalSection
 EndGlobal
