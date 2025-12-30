@@ -1,12 +1,12 @@
 # Here and Now Service - Architecture
 
-**Date:** 2025-12-29
-**Version:** 1.0
-**Architecture Pattern:** Clean Architecture with DTO Pattern
+**Date:** 2025-12-30
+**Version:** 2.0
+**Architecture Pattern:** Clean Architecture (2-Layer)
 
 ## Executive Summary
 
-The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provides reminder management capabilities. It follows Clean Architecture principles with clear separation between the business logic layer (Reminders assembly) and the web API layer (Web assembly). Authentication is handled via Auth0 JWT tokens.
+The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that demonstrates Auth0 authentication with different access levels (public, protected, admin). It follows Clean Architecture principles with clear separation between the business logic layer (Message assembly) and the web API layer (Web assembly).
 
 ## Technology Stack
 
@@ -14,7 +14,7 @@ The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provide
 |----------|------------|---------|---------------|
 | **Runtime** | .NET | 8.0 | LTS release, modern C# features, excellent performance |
 | **Framework** | ASP.NET Core | 8.0 | Industry standard for .NET APIs |
-| **Language** | C# | 12 | Modern features (required, pattern matching) |
+| **Language** | C# | 12 | Modern features (file-scoped namespaces, nullable) |
 | **Auth** | Auth0 + JWT Bearer | 8.0.11 | Managed identity, secure token validation |
 | **API Docs** | Swashbuckle | 6.9.0 | Swagger/OpenAPI generation |
 | **Env Config** | dotenv.net | 3.2.1 | 12-factor app configuration |
@@ -32,9 +32,9 @@ The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provide
 │                          Web Layer                          │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
 │  │ Controllers │  │ Middlewares │  │ DTOs + Mappers      │  │
-│  │             │  │             │  │                     │  │
-│  │ • Messages  │  │ • ErrorHdlr │  │ • ReminderInstDto   │  │
-│  │ • Reminders │  │ • SecureHdr │  │ • ReminderInstMappr │  │
+│  │             │  │             │  │ (empty - future)    │  │
+│  │ • Messages  │  │ • ErrorHdlr │  │                     │  │
+│  │ • Error     │  │ • SecureHdr │  │                     │  │
 │  └──────┬──────┘  └─────────────┘  └─────────────────────┘  │
 │         │                                                   │
 │         │ Depends On                                        │
@@ -46,9 +46,7 @@ The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provide
 │  ┌─────────────────────┐  ┌───────────────────────────────┐ │
 │  │       Models        │  │           Services            │ │
 │  │                     │  │                               │ │
-│  │ • ReminderInstance  │  │ • IReminderInstanceService    │ │
-│  │ • Message           │  │ • ReminderInstanceService     │ │
-│  │                     │  │ • IMessageService             │ │
+│  │ • Message           │  │ • IMessageService             │ │
 │  │                     │  │ • MessageService              │ │
 │  └─────────────────────┘  └───────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
@@ -58,8 +56,8 @@ The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provide
 
 1. **Dependency Inversion**: Web layer depends on abstractions (interfaces) defined in business layer
 2. **Separation of Concerns**: Business logic has no web dependencies
-3. **DTO Pattern**: API contracts (DTOs) are separate from domain models
-4. **Testability**: Each layer can be tested independently
+3. **Testability**: Each layer can be tested independently
+4. **Simplicity**: Minimal complexity for demo/sample API purposes
 
 ## Component Architecture
 
@@ -67,18 +65,28 @@ The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provide
 
 ```
 HereAndNow.sln
-├── HereAndNow.Reminders     (Business Logic)
+├── HereAndNow.Message       (Business Logic)
 │   ├── Models/
+│   │   └── Message.cs
 │   └── Services/
+│       ├── IMessageService.cs
+│       └── MessageService.cs
 ├── HereAndNow.Web           (Web API)
 │   ├── Controllers/
-│   ├── DTOs/
-│   ├── Mappers/
+│   │   ├── MessagesController.cs
+│   │   └── ErrorController.cs
+│   ├── DTOs/                (empty)
+│   ├── Mappers/             (empty)
 │   └── Middlewares/
+│       ├── ErrorHandlerMiddleware.cs
+│       └── SecureHeadersMiddleware.cs
 └── HereAndNow.Web.Tests     (Tests)
-    ├── Controllers/
+    ├── Controllers/         (empty)
     ├── Integration/
+    │   ├── AuthorizationTests.cs
+    │   └── CorsTests.cs
     └── Helpers/
+        └── TestWebApplicationFactory.cs
 ```
 
 ### Dependency Graph
@@ -88,9 +96,9 @@ HereAndNow.Web.Tests
     │
     ├──► HereAndNow.Web
     │        │
-    │        └──► HereAndNow.Reminders
+    │        └──► HereAndNow.Message
     │
-    └──► HereAndNow.Reminders
+    └──► HereAndNow.Message
 ```
 
 ## Request Flow
@@ -132,12 +140,12 @@ HTTP Request
          │
          ▼
 ┌─────────────────┐
-│   Controller    │ ◄── Handles request, calls service
+│   Controller    │ ◄── MessagesController
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│    Service      │ ◄── Business logic, data operations
+│    Service      │ ◄── MessageService (static messages)
 └────────┬────────┘
          │
          ▼
@@ -181,47 +189,22 @@ The `SecureHeadersMiddleware` adds:
 | Content-Security-Policy | default-src 'self'; frame-ancestors 'none'; | Restrict resources |
 | Cache-Control | no-cache, no-store, max-age=0, must-revalidate | Prevent caching |
 
-## Data Architecture
-
-### Current: In-Memory Storage
-
-```csharp
-private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new();
-```
-
-- Thread-safe concurrent access
-- Data lost on restart
-- Suitable for development/demo
-
-### Future: Cosmos DB (Indicated)
-
-Domain model comments indicate planned Cosmos DB integration:
-```csharp
-/// This model maps directly to the Cosmos DB storage schema.
-```
-
 ## API Design
 
-### RESTful Conventions
+### Endpoints
 
-| Operation | HTTP Method | Endpoint | Response |
-|-----------|-------------|----------|----------|
-| List | GET | /api/reminder-instances | 200 + array |
-| Get | GET | /api/reminder-instances/{id} | 200 / 404 |
-| Create | POST | /api/reminder-instances | 201 + Location |
-| Update | PUT | /api/reminder-instances/{id} | 200 / 404 |
-| Delete | DELETE | /api/reminder-instances/{id} | 204 / 404 |
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| GET /api/messages/public | None | Public message (demo) |
+| GET /api/messages/protected | JWT | Protected message (demo) |
+| GET /api/messages/admin | JWT | Admin message (demo) |
 
-### Soft Delete Pattern
+### Response Format
 
-Reminders use soft delete - the `IsDeleted` flag is set to true rather than removing records:
-
-```csharp
-public bool Delete(Guid id)
+All endpoints return the same schema:
+```json
 {
-    // Sets IsDeleted = true, doesn't remove from storage
-    var updatedReminder = new ReminderInstance { ..., IsDeleted = true };
-    _reminders.TryUpdate(id, updatedReminder, existingReminder);
+  "text": "Message content"
 }
 ```
 
@@ -232,17 +215,13 @@ public bool Delete(Guid id)
 ```csharp
 // Scoped - new instance per request
 builder.Services.AddScoped<IMessageService, MessageService>();
-
-// Singleton - single instance for app lifetime
-builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
 ```
 
 ### Lifetime Rationale
 
 | Service | Lifetime | Reason |
 |---------|----------|--------|
-| IMessageService | Scoped | Stateless, per-request is fine |
-| IReminderInstanceService | Singleton | Holds in-memory data store |
+| IMessageService | Scoped | Stateless service, per-request is appropriate |
 
 ## Testing Strategy
 
@@ -254,15 +233,15 @@ builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>
          ├─────────┤
          │ Integr. │  CorsTests, AuthorizationTests
          ├─────────┤
-         │  Unit   │  ReminderInstancesControllerTests
+         │  Unit   │  (Empty - to be added)
          └─────────┘
 ```
 
 ### Test Infrastructure
 
 - **TestWebApplicationFactory**: Custom factory with test configuration
-- **Moq**: Mock service dependencies in controller tests
-- **FluentAssertions**: Readable test assertions
+- **Moq**: Available for mocking service dependencies
+- **FluentAssertions**: Available for readable assertions
 
 ## Deployment Architecture
 
@@ -307,12 +286,14 @@ builder.Configuration.AddEnvironmentVariables();
 
 ## Future Considerations
 
-1. **Database Integration**: Cosmos DB for persistent storage
-2. **Caching**: Redis for performance optimization
-3. **Background Jobs**: Hangfire for reminder notifications
-4. **Observability**: Application Insights for monitoring
-5. **Rate Limiting**: Protect API from abuse
+1. **Database Integration**: Add persistent storage (Cosmos DB, SQL Server)
+2. **Real Business Logic**: Replace static messages with actual functionality
+3. **Role-Based Auth**: Add Auth0 roles/permissions for admin endpoint
+4. **Caching**: Redis for performance optimization
+5. **Observability**: Application Insights for monitoring
+6. **Rate Limiting**: Protect API from abuse
 
 ---
 
 _Generated using BMAD Method `document-project` workflow_
+_Last Updated: 2025-12-30_

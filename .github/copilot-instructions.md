@@ -1,12 +1,12 @@
 # Copilot Instructions
 
 ## Project Overview
-This is an ASP.NET Core API service implementing Auth0 authorization for access control.
+This is an ASP.NET Core API service demonstrating Auth0 authentication with different access levels (public, protected, admin).
 
 ## Technology Stack
-- **Framework**: ASP.NET Core (C#)
-- **Authentication**: Auth0
-- **Solution Structure**: Multi-project solution with `Reminders` and `Web` projects
+- **Framework**: ASP.NET Core 8.0 (C#)
+- **Authentication**: Auth0 JWT Bearer
+- **Solution Structure**: Multi-project solution with `Message` and `Web` projects
 
 ## Coding Standards
 
@@ -25,9 +25,18 @@ This is an ASP.NET Core API service implementing Auth0 authorization for access 
 
 
 ## Project Structure
-- `/Reminders` - Business logic and domain models
+- `/Message` - Business logic and domain models
+  - `/Message/HereAndNow.Message/Models/` - Domain models
+  - `/Message/HereAndNow.Message/Services/` - Service interfaces and implementations
 - `/Web` - API controllers and web configuration
+  - `/Web/HereAndNow.Web/Controllers/` - REST API endpoints
+  - `/Web/HereAndNow.Web/Middlewares/` - Custom middleware
 - `HereAndNow.sln` - Main solution file
+
+## API Endpoints
+- `GET /api/messages/public` - No authentication required
+- `GET /api/messages/protected` - JWT authentication required
+- `GET /api/messages/admin` - JWT authentication required
 
 ## Authentication & Authorization
 - This project uses Auth0 for authentication and authorization
@@ -41,8 +50,8 @@ This is an ASP.NET Core API service implementing Auth0 authorization for access 
 4. Update relevant documentation when adding new features
 
 ## Common Commands
-- Build: `dotnet build`
-- Run: `dotnet run --project Web`
+- Build: `dotnet build HereAndNow.sln`
+- Run: `dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj`
 - Test: `dotnet test`
 - Restore packages: `dotnet restore`
 
@@ -67,7 +76,7 @@ The specialized code review agent is located at `.github/agents/dotnet-code-revi
 - Major refactoring efforts
 - New feature implementations spanning multiple files
 - Changes to core business logic or data access patterns
-- Adding new API endpoints or GraphQL resolvers
+- Adding new API endpoints
 - Changes that impact authentication or authorization
 - Performance-critical code modifications
 
