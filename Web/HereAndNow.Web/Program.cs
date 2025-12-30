@@ -20,7 +20,6 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 // Add services to the container.
 builder.Services.AddScoped<IMessageService, MessageService>();
-builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
 
 builder.Services.AddCors(options =>
 {

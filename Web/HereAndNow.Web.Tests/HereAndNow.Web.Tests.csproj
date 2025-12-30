@@ -18,12 +18,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Reminders\HereAndNow.Reminders\HereAndNow.Reminders.csproj" />
+    <ProjectReference Include="..\..\Message\HereAndNow.Message\HereAndNow.Message.csproj" />
     <ProjectReference Include="..\HereAndNow.Web\HereAndNow.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Controllers\" />
   </ItemGroup>
 
 </Project>

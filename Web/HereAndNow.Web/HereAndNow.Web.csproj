@@ -15,7 +15,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Reminders\HereAndNow.Reminders\HereAndNow.Reminders.csproj" />
+    <ProjectReference Include="..\..\Message\HereAndNow.Message\HereAndNow.Message.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="DTOs\" />
+    <Folder Include="Mappers\" />
   </ItemGroup>
 
 </Project>
