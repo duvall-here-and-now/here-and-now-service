@@ -1,28 +1,30 @@
-# Development Guide
+# Here and Now Service - Development Guide
+
+**Date:** 2025-12-29
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
+### Required Software
 
-| Tool | Version | Purpose |
-|------|---------|---------|
+| Software | Version | Purpose |
+|----------|---------|---------|
 | .NET SDK | 8.0+ | Build and run the application |
-| Git | Latest | Version control |
-| Visual Studio 2022 / VS Code | Latest | IDE (recommended) |
-| Auth0 Account | - | Authentication provider |
+| Git | 2.0+ | Version control |
+| IDE | VS 2022 / Rider / VS Code | Development environment |
 
-### Verify Installation
+### Optional Tools
 
-```bash
-# Check .NET SDK version
-dotnet --version
-# Expected: 8.x.x
+| Tool | Purpose |
+|------|---------|
+| Postman / Insomnia | API testing |
+| Azure CLI | Deployment operations |
 
-# Check Git
-git --version
-```
+### Auth0 Account
 
----
+You need an Auth0 account to test authenticated endpoints:
+1. Create an account at [auth0.com](https://auth0.com)
+2. Create an API in Auth0 Dashboard
+3. Note your domain and audience values
 
 ## Environment Setup
 
@@ -33,34 +35,33 @@ git clone <repository-url>
 cd here-and-now-service
 ```
 
-### 2. Create Environment File
+### 2. Configure Environment Variables
 
-Create a `.env` file in the project root (not committed to Git):
+Create a `.env` file in the project root:
 
 ```env
-PORT=3001
-CLIENT_ORIGIN_URL=http://localhost:4040
+PORT=6060
+CLIENT_ORIGIN_URL=http://localhost:3000
 AUTH0_DOMAIN=your-tenant.auth0.com
-AUTH0_AUDIENCE=your-api-identifier
+AUTH0_AUDIENCE=https://your-api-identifier
 ```
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `PORT` | Port for the API server | `3001` |
-| `CLIENT_ORIGIN_URL` | Allowed CORS origin for frontend | `http://localhost:4040` |
-| `AUTH0_DOMAIN` | Your Auth0 tenant domain | `dev-abc123.us.auth0.com` |
-| `AUTH0_AUDIENCE` | API identifier in Auth0 | `https://api.hereandnow.com` |
+**Variable Descriptions:**
 
-### 3. Auth0 Configuration
+| Variable | Example | Description |
+|----------|---------|-------------|
+| PORT | 6060 | Port the API listens on |
+| CLIENT_ORIGIN_URL | http://localhost:3000 | Allowed CORS origin(s), comma-separated |
+| AUTH0_DOMAIN | dev-abc123.auth0.com | Your Auth0 tenant domain |
+| AUTH0_AUDIENCE | https://api.example.com | Your Auth0 API identifier |
 
-1. Create an Auth0 account at [auth0.com](https://auth0.com)
-2. Create a new API in the Auth0 Dashboard
-3. Note the **Domain** and **API Identifier** for your `.env` file
-4. Create a test application for obtaining tokens
+### 3. Restore Dependencies
 
----
+```bash
+dotnet restore
+```
 
-## Building the Project
+## Building the Application
 
 ### Build Entire Solution
 
@@ -68,7 +69,7 @@ AUTH0_AUDIENCE=your-api-identifier
 dotnet build HereAndNow.sln
 ```
 
-### Build with Release Configuration
+### Build Release Configuration
 
 ```bash
 dotnet build HereAndNow.sln --configuration Release
@@ -77,14 +78,8 @@ dotnet build HereAndNow.sln --configuration Release
 ### Build Specific Project
 
 ```bash
-# Web API only
 dotnet build Web/HereAndNow.Web/HereAndNow.Web.csproj
-
-# Business logic only
-dotnet build Reminders/HereAndNow.Reminders/HereAndNow.Reminders.csproj
 ```
-
----
 
 ## Running the Application
 
@@ -94,25 +89,20 @@ dotnet build Reminders/HereAndNow.Reminders/HereAndNow.Reminders.csproj
 dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj
 ```
 
-The API will start at `http://localhost:{PORT}` (default: 3001)
+The API will be available at: `http://localhost:{PORT}`
 
-### With Hot Reload
+### Watch Mode (Auto-Reload)
 
 ```bash
 dotnet watch run --project Web/HereAndNow.Web/HereAndNow.Web.csproj
 ```
 
-### Verify It's Running
+### Accessing Swagger UI
 
-```bash
-# Test public endpoint (no auth required)
-curl http://localhost:3001/api/messages/public
-
-# Access Swagger UI
-open http://localhost:3001/swagger
+Once running, open your browser to:
 ```
-
----
+http://localhost:{PORT}/swagger
+```
 
 ## Testing
 
@@ -122,25 +112,27 @@ open http://localhost:3001/swagger
 dotnet test
 ```
 
-### Run Tests with Verbose Output
+### Run Tests with Detailed Output
 
 ```bash
 dotnet test --logger "console;verbosity=detailed"
 ```
 
-### Run Specific Test
+### Run Specific Test by Name
 
 ```bash
-dotnet test --filter "FullyQualifiedName~ReminderInstancesControllerTests"
+dotnet test --filter "FullyQualifiedName~GetAll_ShouldReturnOkWithReminders"
 ```
 
-### Run with Code Coverage
+### Run Tests with Coverage
 
 ```bash
 dotnet test --collect:"XPlat Code Coverage"
 ```
 
-### Watch Mode (Continuous Testing)
+Coverage reports are generated in `TestResults/` directories.
+
+### Watch Mode for Testing
 
 ```bash
 dotnet watch test --project Web/HereAndNow.Web.Tests/HereAndNow.Web.Tests.csproj
@@ -148,128 +140,218 @@ dotnet watch test --project Web/HereAndNow.Web.Tests/HereAndNow.Web.Tests.csproj
 
 ### Test Categories
 
-| Test Type | Location | Description |
-|-----------|----------|-------------|
-| Unit Tests | `Controllers/` | Controller logic with mocked services |
-| Integration Tests | `Integration/` | Full HTTP request/response testing |
+| Category | Location | Description |
+|----------|----------|-------------|
+| Unit Tests | `Controllers/` | Test controllers with mocked services |
+| Integration Tests | `Integration/` | Test full HTTP pipeline |
 
----
+## Project Structure
 
-## API Documentation
-
-### Accessing Swagger UI
-
-1. Start the application
-2. Navigate to `http://localhost:{PORT}/swagger`
-3. Explore and test endpoints interactively
-
-### Testing Authenticated Endpoints
-
-1. In Swagger UI, click **"Authorize"** button
-2. Enter your Auth0 JWT token (without `Bearer` prefix)
-3. Click **"Authorize"** then **"Close"**
-4. Test protected endpoints
-
-### Getting a Test Token
-
-Option 1: Via your frontend SPA
-Option 2: Auth0 test token endpoint
-Option 3: Using Postman with Auth0 OAuth2 flow
-
----
+```
+here-and-now-service/
+├── Reminders/HereAndNow.Reminders/    # Business logic (edit here for domain changes)
+│   ├── Models/                        # Domain models
+│   └── Services/                      # Service interfaces + implementations
+├── Web/HereAndNow.Web/                # API layer (edit here for API changes)
+│   ├── Controllers/                   # REST endpoints
+│   ├── DTOs/                          # API contracts
+│   ├── Mappers/                       # Domain ↔ DTO conversion
+│   └── Middlewares/                   # Custom middleware
+└── Web/HereAndNow.Web.Tests/          # Tests
+```
 
 ## Common Development Tasks
 
-### Adding a New API Endpoint
+### Adding a New Endpoint
 
-1. **Define interface** in `Reminders/Services/` (if new service)
-2. **Implement service** in `Reminders/Services/`
-3. **Register in DI** in `Program.cs`
-4. **Create controller method** in `Web/Controllers/`
-5. **Add XML documentation** for Swagger
-6. **Write tests** in `Web.Tests/`
-
-### Adding a New Model
-
-1. Create model class in `Reminders/Models/`
-2. Add XML documentation
-3. Update related service interfaces
-4. Update controller response types
-5. Add tests for new functionality
-
-### Modifying Middleware
-
-1. Edit middleware in `Web/Middlewares/`
-2. Test middleware order in `Program.cs`
-3. Verify security headers with curl:
-   ```bash
-   curl -I http://localhost:3001/api/messages/public
+1. **Add/update domain model** (if needed):
+   ```
+   Reminders/HereAndNow.Reminders/Models/NewModel.cs
    ```
 
----
+2. **Add/update service interface**:
+   ```
+   Reminders/HereAndNow.Reminders/Services/INewService.cs
+   ```
 
-## IDE Configuration
+3. **Add service implementation**:
+   ```
+   Reminders/HereAndNow.Reminders/Services/NewService.cs
+   ```
 
-### Visual Studio 2022
+4. **Add DTO** (if different from domain):
+   ```
+   Web/HereAndNow.Web/DTOs/NewModelDto.cs
+   ```
 
-1. Open `HereAndNow.sln`
-2. Set `HereAndNow.Web` as startup project
-3. Press F5 to debug
+5. **Add mapper** (if using DTO):
+   ```
+   Web/HereAndNow.Web/Mappers/NewModelMapper.cs
+   ```
 
-### Visual Studio Code
+6. **Add controller**:
+   ```
+   Web/HereAndNow.Web/Controllers/NewController.cs
+   ```
 
-Recommended extensions:
-- C# Dev Kit
-- .NET Extension Pack
-- REST Client (for API testing)
+7. **Register service in DI** (Program.cs):
+   ```csharp
+   builder.Services.AddScoped<INewService, NewService>();
+   ```
 
-Launch configuration is in `.vscode/launch.json`
+8. **Add tests**:
+   ```
+   Web/HereAndNow.Web.Tests/Controllers/NewControllerTests.cs
+   ```
 
----
+### Adding a New Middleware
+
+1. Create middleware class:
+   ```csharp
+   // Web/HereAndNow.Web/Middlewares/NewMiddleware.cs
+   class NewMiddleware
+   {
+       private readonly RequestDelegate _next;
+
+       public NewMiddleware(RequestDelegate next) => _next = next;
+
+       public async Task InvokeAsync(HttpContext context)
+       {
+           // Before
+           await _next(context);
+           // After
+       }
+   }
+
+   public static class NewMiddlewareExtensions
+   {
+       public static IApplicationBuilder UseNew(this IApplicationBuilder builder)
+           => builder.UseMiddleware<NewMiddleware>();
+   }
+   ```
+
+2. Register in pipeline (Program.cs):
+   ```csharp
+   app.UseNew();
+   ```
+
+### Modifying Authentication
+
+Authentication is configured in `Program.cs`:
+
+```csharp
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = $"https://{auth0Domain}/";
+        options.Audience = auth0Audience;
+        // Modify validation parameters here
+    });
+```
+
+## Code Style and Conventions
+
+### File-Scoped Namespaces
+
+Use file-scoped namespaces (C# 10+):
+
+```csharp
+namespace HereAndNowService.Controllers;  // Note: semicolon, not braces
+
+public class MyController : ControllerBase
+{
+    // ...
+}
+```
+
+### Nullable Reference Types
+
+Nullable reference types are enabled. Use `?` for nullable types:
+
+```csharp
+public ReminderInstance? GetById(Guid id)  // Can return null
+```
+
+### XML Documentation
+
+Document public APIs with XML comments:
+
+```csharp
+/// <summary>
+/// Gets all reminder instances.
+/// </summary>
+/// <returns>A collection of all reminder instances.</returns>
+[HttpGet]
+public ActionResult<IEnumerable<ReminderInstanceDto>> GetAll()
+```
+
+### Logging
+
+Use structured logging with ILogger:
+
+```csharp
+_logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Request received", id);
+```
+
+## Debugging
+
+### Visual Studio / Rider
+
+1. Set `HereAndNow.Web` as startup project
+2. Press F5 to start debugging
+3. Breakpoints work as expected
+
+### VS Code
+
+1. Install C# extension
+2. Create `.vscode/launch.json`:
+   ```json
+   {
+     "version": "0.2.0",
+     "configurations": [
+       {
+         "name": ".NET Core Launch (web)",
+         "type": "coreclr",
+         "request": "launch",
+         "program": "${workspaceFolder}/Web/HereAndNow.Web/bin/Debug/net8.0/HereAndNow.Web.dll",
+         "cwd": "${workspaceFolder}/Web/HereAndNow.Web"
+       }
+     ]
+   }
+   ```
+
+### Testing API Endpoints
+
+**Using curl:**
+```bash
+# Public endpoint
+curl http://localhost:6060/api/messages/public
+
+# Authenticated endpoint
+curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:6060/api/reminder-instances
+```
+
+**Using Swagger UI:**
+1. Navigate to `http://localhost:6060/swagger`
+2. Click "Authorize" button
+3. Enter your JWT token
+4. Execute endpoints
 
 ## Troubleshooting
 
-### "Config variable missing" Error
+### Common Issues
 
-**Cause:** Required environment variable not set
+| Issue | Solution |
+|-------|----------|
+| "Config variable missing" | Check `.env` file exists with all required variables |
+| 401 on all requests | Verify AUTH0_DOMAIN and AUTH0_AUDIENCE |
+| CORS errors | Check CLIENT_ORIGIN_URL matches your frontend |
+| Port already in use | Change PORT in `.env` |
 
-**Solution:** Ensure all variables are in `.env`:
-```env
-PORT=3001
-CLIENT_ORIGIN_URL=http://localhost:4040
-AUTH0_DOMAIN=your-domain.auth0.com
-AUTH0_AUDIENCE=your-api-identifier
-```
+### Viewing Logs
 
-### 401 Unauthorized on Protected Endpoints
-
-**Cause:** Invalid or missing JWT token
-
-**Solution:**
-1. Verify Auth0 configuration matches `.env`
-2. Ensure token is not expired
-3. Check token audience matches `AUTH0_AUDIENCE`
-
-### CORS Errors in Browser
-
-**Cause:** Frontend URL doesn't match `CLIENT_ORIGIN_URL`
-
-**Solution:** Update `CLIENT_ORIGIN_URL` in `.env` to match your frontend
-
-### Build Errors
-
-```bash
-# Clean and rebuild
-dotnet clean HereAndNow.sln
-dotnet restore
-dotnet build HereAndNow.sln
-```
+Application logs are written to console. For more detailed logs, adjust logging level in code or add logging configuration.
 
 ---
 
-## Project References
-
-- [API Contracts](./api-contracts.md) - API documentation
-- [Architecture](./architecture.md) - System architecture
-- [Source Tree](./source-tree-analysis.md) - Project structure
-- [SWAGGER_SETUP.md](../Web/HereAndNow.Web/SWAGGER_SETUP.md) - Swagger configuration
+_Generated using BMAD Method `document-project` workflow_

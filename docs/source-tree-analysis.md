@@ -1,211 +1,177 @@
-# Source Tree Analysis
+# Here and Now Service - Source Tree Analysis
 
-## Project Structure Overview
+**Date:** 2025-12-29
 
-The Here and Now Service follows a **Clean Architecture** pattern with clear separation between business logic and infrastructure concerns. The solution is organized as a multi-project .NET solution with three assemblies.
+## Overview
+
+This document provides an annotated directory structure of the Here and Now Service codebase, highlighting critical directories, entry points, and key file locations.
+
+## Complete Directory Structure
 
 ```
 here-and-now-service/
-├── .github/                          # GitHub configuration
-│   ├── agents/
-│   │   └── dotnet-code-reviewer.md   # AI code review agent
-│   ├── workflows/
-│   │   └── main_here-and-now-service.yml  # CI/CD pipeline
-│   └── copilot-instructions.md       # GitHub Copilot config
-│
-├── docs/                             # Generated documentation
-│   ├── index.md                      # Documentation entry point
-│   ├── api-contracts.md              # API endpoint documentation
-│   ├── data-models.md                # Data model documentation
-│   └── ...                           # Other documentation files
-│
-├── Reminders/                        # Domain/Business Logic Layer
-│   └── HereAndNow.Reminders/         # Business logic assembly
-│       ├── Models/                   # Domain models
-│       │   ├── Message.cs            # API message model
-│       │   ├── ReminderInstance.cs   # Core reminder entity
-│       │   └── ReminderStatus.cs     # Status enumeration
-│       ├── Services/                 # Service interfaces & implementations
-│       │   ├── IMessageService.cs    # Message service interface
-│       │   ├── IReminderInstanceService.cs  # Reminder service interface
-│       │   ├── MessageService.cs     # Message service implementation
-│       │   └── ReminderInstanceService.cs   # Reminder service (in-memory)
-│       └── HereAndNow.Reminders.csproj
-│
-├── Web/                              # Infrastructure/Presentation Layer
-│   ├── HereAndNow.Web/               # ASP.NET Core Web API
-│   │   ├── Controllers/              # API controllers
-│   │   │   ├── ErrorController.cs    # Global error handling
-│   │   │   ├── MessagesController.cs # Message endpoints
-│   │   │   └── ReminderInstancesController.cs  # CRUD endpoints
-│   │   ├── Middlewares/              # Custom middleware
-│   │   │   ├── ErrorHandlerMiddleware.cs     # Error response handling
-│   │   │   └── SecureHeadersMiddleware.cs    # Security headers
-│   │   ├── Properties/
-│   │   │   └── launchSettings.json   # Development launch profiles
-│   │   ├── appsettings.json          # Production configuration
-│   │   ├── appsettings.Development.json  # Development overrides
-│   │   ├── Program.cs                # Application entry point & DI setup
-│   │   ├── HereAndNow.Web.csproj     # Web project file
-│   │   └── SWAGGER_SETUP.md          # Swagger documentation
-│   │
-│   └── HereAndNow.Web.Tests/         # Test project
-│       ├── Controllers/              # Controller unit tests
+├── .claude/                    # Claude Code configuration
+│   └── commands/               # Custom slash commands
+├── .env                        # Environment variables (not in git)
+├── .github/                    # GitHub configuration
+│   ├── agents/                 # AI agent definitions
+│   │   └── dotnet-code-reviewer.md
+│   ├── copilot-instructions.md
+│   └── workflows/              # CI/CD pipelines
+│       └── main_here-and-now-service.yml
+├── .gitignore
+├── .vs/                        # Visual Studio settings
+├── .vscode/                    # VS Code settings
+├── CLAUDE.md                   # Claude Code instructions
+├── HereAndNow.sln              # ★ Solution file (entry point)
+├── README.md                   # Project readme
+├── Reminders/                  # ★ Business Logic Assembly
+│   └── HereAndNow.Reminders/
+│       ├── HereAndNow.Reminders.csproj
+│       ├── Models/             # Domain models
+│       │   ├── Message.cs
+│       │   └── ReminderInstance.cs
+│       └── Services/           # Service interfaces & implementations
+│           ├── IMessageService.cs
+│           ├── IReminderInstanceService.cs
+│           ├── MessageService.cs
+│           └── ReminderInstanceService.cs
+├── Web/                        # ★ Web Layer Assemblies
+│   ├── HereAndNow.Web/         # API Project
+│   │   ├── Controllers/        # API endpoints
+│   │   │   ├── ErrorController.cs
+│   │   │   ├── MessagesController.cs
+│   │   │   └── ReminderInstancesController.cs
+│   │   ├── DTOs/               # Data Transfer Objects
+│   │   │   ├── ReminderInstanceDto.cs
+│   │   │   └── ReminderState.cs
+│   │   ├── HereAndNow.Web.csproj
+│   │   ├── Mappers/            # Domain ↔ DTO mappers
+│   │   │   └── ReminderInstanceMapper.cs
+│   │   ├── Middlewares/        # Custom middleware
+│   │   │   ├── ErrorHandlerMiddleware.cs
+│   │   │   └── SecureHeadersMiddleware.cs
+│   │   ├── Program.cs          # ★ Application entry point
+│   │   └── SWAGGER_SETUP.md
+│   └── HereAndNow.Web.Tests/   # Test Project
+│       ├── Controllers/        # Controller unit tests
 │       │   └── ReminderInstancesControllerTests.cs
-│       ├── Helpers/                  # Test utilities
-│       │   └── TestWebApplicationFactory.cs  # Integration test factory
-│       ├── Integration/              # Integration tests
-│       │   ├── AuthorizationTests.cs # Auth integration tests
-│       │   └── CorsTests.cs          # CORS integration tests
-│       └── HereAndNow.Web.Tests.csproj
-│
-├── HereAndNow.sln                    # Solution file
-├── CLAUDE.md                         # Claude Code instructions
-├── README.md                         # Project overview
-└── .gitignore                        # Git ignore patterns
+│       ├── HereAndNow.Web.Tests.csproj
+│       ├── Helpers/            # Test infrastructure
+│       │   └── TestWebApplicationFactory.cs
+│       └── Integration/        # Integration tests
+│           ├── AuthorizationTests.cs
+│           └── CorsTests.cs
+└── docs/                       # Generated documentation
 ```
 
----
+## Critical Directories
 
-## Critical Folders
+### `Reminders/HereAndNow.Reminders/`
 
-### `/Reminders/HereAndNow.Reminders/`
+**Purpose:** Business logic assembly containing domain models and service interfaces.
 
-**Purpose:** Domain layer containing pure business logic with no web framework dependencies.
+**Contains:**
+- Domain models (`Message`, `ReminderInstance`)
+- Service interfaces (`IMessageService`, `IReminderInstanceService`)
+- Service implementations with in-memory storage
 
-**Key Characteristics:**
-- Only dependency is `Microsoft.Extensions.Logging.Abstractions`
-- Defines interfaces that the Web layer implements/uses
-- Contains domain models (`ReminderInstance`, `Message`, `ReminderStatus`)
-- Houses service implementations for business operations
+**Key Design Decision:** This assembly has no web dependencies, allowing business logic to be tested and reused independently.
 
-**Why It Matters:**
-- Enables unit testing without HTTP/web concerns
-- Can be reused across different hosting models (API, Console, Worker)
-- Follows Dependency Inversion Principle
+### `Web/HereAndNow.Web/`
 
-### `/Web/HereAndNow.Web/`
+**Purpose:** ASP.NET Core Web API project handling HTTP requests, authentication, and API documentation.
 
-**Purpose:** ASP.NET Core Web API hosting layer.
+**Contains:**
+- REST API controllers
+- DTOs for API contracts (separate from domain models)
+- Mappers for domain ↔ DTO conversion
+- Custom middleware for error handling and security headers
 
-**Key Characteristics:**
-- References `HereAndNow.Reminders` for business logic
-- Handles HTTP, authentication, CORS, and Swagger
-- Contains custom middleware for security and error handling
-- Configures dependency injection container
+**Entry Point:** `Program.cs` - Application bootstrap and configuration
 
-**Entry Point:** `Program.cs` (minimal hosting model)
+### `Web/HereAndNow.Web.Tests/`
 
-### `/Web/HereAndNow.Web.Tests/`
+**Purpose:** Test project containing unit and integration tests.
 
-**Purpose:** Automated testing for the API layer.
+**Contains:**
+- Controller unit tests with mocked dependencies
+- Integration tests for authorization and CORS
+- Test infrastructure (`TestWebApplicationFactory`)
 
-**Test Types:**
-- **Unit Tests:** Controller behavior testing with mocked services
-- **Integration Tests:** Full HTTP request/response testing with `WebApplicationFactory`
+### `.github/workflows/`
 
----
+**Purpose:** CI/CD pipeline configuration for GitHub Actions.
+
+**Contains:**
+- Build, test, and deploy workflow to Azure Web Apps
 
 ## Entry Points
 
-### Application Entry Point
+### Main Entry Point
 
-**File:** `Web/HereAndNow.Web/Program.cs`
+- **File:** `Web/HereAndNow.Web/Program.cs`
+- **Description:** Application bootstrap, service registration, middleware configuration, and Kestrel server startup.
 
-This file:
-1. Loads environment variables via `dotenv.net`
-2. Configures DI container (services, authentication)
-3. Sets up middleware pipeline
-4. Configures Swagger/OpenAPI
-5. Starts the Kestrel web server
+### Test Entry Point
 
-```csharp
-// Key startup order in Program.cs
-builder.Services.AddScoped<IMessageService, MessageService>();
-builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
-// ... authentication, CORS, Swagger setup
-app.UseErrorHandler();
-app.UseSecureHeaders();
-app.MapControllers();
-app.UseCors();
-app.UseAuthentication();
-app.UseAuthorization();
-```
+- **File:** `Web/HereAndNow.Web.Tests/Helpers/TestWebApplicationFactory.cs`
+- **Description:** Custom `WebApplicationFactory` for integration testing with test configuration overrides.
 
-### Test Entry Points
+## File Organization Patterns
 
-**File:** `Web/HereAndNow.Web.Tests/Helpers/TestWebApplicationFactory.cs`
+### Controllers Pattern
+- **Location:** `Web/HereAndNow.Web/Controllers/`
+- **Pattern:** `{Feature}Controller.cs`
+- **Purpose:** REST API endpoints grouped by feature
+- **Examples:** `MessagesController.cs`, `ReminderInstancesController.cs`
 
-Custom `WebApplicationFactory<Program>` for integration tests.
+### Services Pattern
+- **Location:** `Reminders/HereAndNow.Reminders/Services/`
+- **Pattern:** `I{Feature}Service.cs` (interface), `{Feature}Service.cs` (implementation)
+- **Purpose:** Business logic abstraction and implementation
+- **Examples:** `IReminderInstanceService.cs`, `ReminderInstanceService.cs`
 
----
+### DTOs Pattern
+- **Location:** `Web/HereAndNow.Web/DTOs/`
+- **Pattern:** `{Model}Dto.cs`
+- **Purpose:** API contract objects separated from domain models
+- **Examples:** `ReminderInstanceDto.cs`, `ReminderState.cs`
 
-## Key File Locations
+### Tests Pattern
+- **Location:** `Web/HereAndNow.Web.Tests/`
+- **Patterns:**
+  - `Controllers/{Controller}Tests.cs` - Unit tests
+  - `Integration/{Feature}Tests.cs` - Integration tests
+- **Purpose:** Comprehensive test coverage
+- **Examples:** `ReminderInstancesControllerTests.cs`, `AuthorizationTests.cs`
 
-| Category | File | Description |
-|----------|------|-------------|
-| **Configuration** | `Web/HereAndNow.Web/appsettings.json` | App settings |
-| **Configuration** | `.env` (not in repo) | Environment secrets |
-| **CI/CD** | `.github/workflows/main_here-and-now-service.yml` | GitHub Actions |
-| **API Docs** | `/swagger` endpoint | OpenAPI documentation |
-| **Solution** | `HereAndNow.sln` | Visual Studio solution |
+## Configuration Files
 
----
+| File | Description |
+|------|-------------|
+| `HereAndNow.sln` | Visual Studio solution file |
+| `*.csproj` | Project files with dependencies |
+| `.env` | Environment variables (PORT, AUTH0_*, etc.) |
+| `.github/workflows/*.yml` | CI/CD pipeline definitions |
+| `.gitignore` | Git ignore patterns |
 
-## Namespace Structure
+## Notes for Development
 
-| Namespace | Assembly | Purpose |
-|-----------|----------|---------|
-| `HereAndNowService.Models` | HereAndNow.Reminders | Domain entities |
-| `HereAndNowService.Services` | HereAndNow.Reminders | Business logic |
-| `HereAndNowService.Controllers` | HereAndNow.Web | API endpoints |
-| `HereAndNowService.Middlewares` | HereAndNow.Web | Request pipeline |
+1. **Solution Structure:** Open `HereAndNow.sln` in Visual Studio or Rider for full IDE support.
 
----
+2. **Layer Dependencies:** Web → Reminders (one-way dependency; Reminders has no knowledge of Web)
 
-## Dependency Flow
+3. **Adding New Features:**
+   - Add domain model to `Reminders/Models/`
+   - Add service interface to `Reminders/Services/`
+   - Add DTO to `Web/DTOs/`
+   - Add mapper to `Web/Mappers/`
+   - Add controller to `Web/Controllers/`
+   - Add tests to `Web.Tests/`
 
-```
-┌───────────────────────────────────────────────────────────┐
-│                     HereAndNow.Web                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐  │
-│  │ Controllers  │─▶│  Program.cs  │◀─│   Middlewares   │  │
-│  └──────────────┘  │  (DI Setup)  │  └─────────────────┘  │
-│         │          └──────────────┘                       │
-│         │                │                                │
-│         ▼                ▼                                │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │              Service Interfaces                     │  │
-│  │       IMessageService, IReminderService             │  │
-│  └─────────────────────────────────────────────────────┘  │
-└───────────────────────────┬───────────────────────────────┘
-                            │ Project Reference
-                            ▼
-┌───────────────────────────────────────────────────────────┐
-│                  HereAndNow.Reminders                     │
-│  ┌──────────────┐  ┌───────────────────────────────────┐  │
-│  │    Models    │  │            Services               │  │
-│  │  - Message   │  │  - MessageService                 │  │
-│  │  - Reminder  │  │  - ReminderInstanceService        │  │
-│  │  - Status    │  │    (ConcurrentDictionary storage) │  │
-│  └──────────────┘  └───────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────┘
-```
+4. **Configuration:** All configuration is via environment variables loaded by `dotenv.net`.
 
 ---
 
-## Files Excluded from Source Tree
-
-- `/obj/` - Build artifacts
-- `/bin/` - Output binaries
-- `/.bmad/` - BMad workflow system (meta-tooling)
-- `/node_modules/` - N/A (not a Node.js project)
-
----
-
-## Related Documentation
-
-- [Architecture](./architecture.md) - System architecture details
-- [API Contracts](./api-contracts.md) - API endpoint documentation
-- [Data Models](./data-models.md) - Domain model documentation
-- [Development Guide](./development-guide.md) - Setup and development workflow
+_Generated using BMAD Method `document-project` workflow_

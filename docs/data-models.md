@@ -1,31 +1,19 @@
-# Data Models
+# Here and Now Service - Data Models
+
+**Date:** 2025-12-29
 
 ## Overview
 
-The Here and Now Service uses domain models defined in the `HereAndNow.Reminders` assembly. Currently, data is stored in-memory using thread-safe collections, making it suitable for development and demo purposes.
-
-**Storage:** In-memory (`ConcurrentDictionary<Guid, ReminderInstance>`)
-**Persistence:** None (data lost on application restart)
-
----
+This document describes the domain models and data structures used in the Here and Now Service. The project follows a clean separation between domain models (business logic layer) and DTOs (API contract layer).
 
 ## Domain Models
 
+Located in: `Reminders/HereAndNow.Reminders/Models/`
+
 ### ReminderInstance
 
-**Namespace:** `HereAndNowService.Models`
-**Location:** `Reminders/HereAndNow.Reminders/Models/ReminderInstance.cs`
-
-Represents a reminder with scheduling and status tracking.
-
-| Property | Type | Required | Description |
-|----------|------|----------|-------------|
-| `Id` | `Guid` | Auto-generated | Unique identifier for the reminder |
-| `Text` | `string` | Yes (`required`) | The text content of the reminder |
-| `ScheduledDateAndTime` | `DateTime` | No | When the reminder is scheduled |
-| `Status` | `ReminderStatus` | No | Current status (defaults to first enum value) |
-
-**C# Definition:**
+**File:** `ReminderInstance.cs`
+**Purpose:** Represents a reminder with scheduling, completion tracking, and notification preferences.
 
 ```csharp
 public class ReminderInstance
@@ -33,64 +21,36 @@ public class ReminderInstance
     public Guid Id { get; set; }
     public required string Text { get; set; }
     public DateTime ScheduledDateAndTime { get; set; }
-    public ReminderStatus Status { get; set; }
+    public bool IsCompleted { get; set; }
+    public bool IsDeleted { get; set; }
+    public bool ShouldPlaySound { get; set; }
+    public bool ShouldDoVibration { get; set; }
 }
 ```
 
-**JSON Serialization Example:**
+**Field Descriptions:**
 
-```json
-{
-  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "text": "Review quarterly reports",
-  "scheduledDateAndTime": "2025-12-15T14:30:00Z",
-  "status": "Scheduled"
-}
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| Id | Guid | Unique identifier (auto-generated on create) |
+| Text | string | The reminder text content (required) |
+| ScheduledDateAndTime | DateTime | When the reminder should trigger |
+| IsCompleted | bool | Whether the reminder has been marked done |
+| IsDeleted | bool | Soft-delete flag (true = deleted) |
+| ShouldPlaySound | bool | Enable audio notification |
+| ShouldDoVibration | bool | Enable vibration notification |
 
----
-
-### ReminderStatus
-
-**Namespace:** `HereAndNowService.Models`
-**Location:** `Reminders/HereAndNow.Reminders/Models/ReminderStatus.cs`
-**Type:** `enum`
-
-Represents the lifecycle status of a reminder instance.
-
-| Value | Description |
-|-------|-------------|
-| `Scheduled` | Reminder is scheduled for future |
-| `Active` | Reminder is currently active |
-| `Completed` | Reminder has been completed |
-
-**C# Definition:**
-
-```csharp
-public enum ReminderStatus
-{
-    Scheduled,
-    Active,
-    Completed
-}
-```
-
-**JSON Serialization:** Serialized as string (configured via `JsonStringEnumConverter`)
+**Notes:**
+- XML comment indicates this model maps to Cosmos DB storage schema (future implementation)
+- Uses `required` modifier for Text property (C# 11+ feature)
+- Soft-delete pattern: records are never physically deleted
 
 ---
 
 ### Message
 
-**Namespace:** `HereAndNowService.Models`
-**Location:** `Reminders/HereAndNow.Reminders/Models/Message.cs`
-
-Represents a simple message response from the API.
-
-| Property | Type | Required | Description |
-|----------|------|----------|-------------|
-| `text` | `string?` | No | The text content of the message |
-
-**C# Definition:**
+**File:** `Message.cs`
+**Purpose:** Simple message response model for the messages API.
 
 ```csharp
 public class Message
@@ -99,104 +59,206 @@ public class Message
 }
 ```
 
-**JSON Example:**
+**Field Descriptions:**
 
+| Field | Type | Description |
+|-------|------|-------------|
+| text | string? | The message content (nullable) |
+
+**Notes:**
+- Uses lowercase `text` property name (matches JSON convention)
+- Used for demo endpoints showing public/protected/admin messages
+
+---
+
+## Data Transfer Objects (DTOs)
+
+Located in: `Web/HereAndNow.Web/DTOs/`
+
+DTOs are separate from domain models to:
+1. Control what's exposed in the API
+2. Add computed properties for API consumers
+3. Allow API contract evolution independent of domain changes
+
+### ReminderInstanceDto
+
+**File:** `ReminderInstanceDto.cs`
+**Purpose:** API contract for reminder instances with computed state.
+
+```csharp
+public class ReminderInstanceDto
+{
+    public Guid Id { get; set; }
+    public required string Text { get; set; }
+    public DateTime ScheduledDateAndTime { get; set; }
+    public bool IsCompleted { get; set; }
+    public bool IsDeleted { get; set; }
+    public bool ShouldPlaySound { get; set; }
+    public bool ShouldDoVibration { get; set; }
+
+    // Computed property
+    public ReminderState State => this switch
+    {
+        { IsDeleted: true } => ReminderState.Deleted,
+        { IsCompleted: true } => ReminderState.Completed,
+        _ when DateTime.UtcNow >= ScheduledDateAndTime => ReminderState.Active,
+        _ => ReminderState.Scheduled
+    };
+}
+```
+
+**Key Difference from Domain Model:**
+- Includes computed `State` property using C# pattern matching
+- State is calculated on-the-fly based on flags and current time
+
+---
+
+### ReminderState (Enum)
+
+**File:** `ReminderState.cs`
+**Purpose:** Represents the lifecycle state of a reminder.
+
+```csharp
+public enum ReminderState
+{
+    Scheduled,  // Future reminder
+    Active,     // Time has passed, awaiting action
+    Completed,  // Marked as done
+    Deleted     // Soft-deleted
+}
+```
+
+**State Transition Logic:**
+
+```
+┌─────────────┐
+│  Scheduled  │ ← Initial state (future time)
+└──────┬──────┘
+       │ (time passes)
+       ▼
+┌─────────────┐
+│   Active    │ ← ScheduledDateAndTime <= Now
+└──────┬──────┘
+       │ (user marks complete)
+       ▼
+┌─────────────┐
+│  Completed  │ ← IsCompleted = true
+└─────────────┘
+
+Any state can transition to:
+┌─────────────┐
+│   Deleted   │ ← IsDeleted = true (takes priority)
+└─────────────┘
+```
+
+---
+
+## Mappers
+
+Located in: `Web/HereAndNow.Web/Mappers/`
+
+### ReminderInstanceMapper
+
+**File:** `ReminderInstanceMapper.cs`
+**Purpose:** Converts between domain models and DTOs.
+
+```csharp
+public static class ReminderInstanceMapper
+{
+    public static ReminderInstanceDto ToDto(ReminderInstance domain);
+    public static ReminderInstance ToDomain(ReminderInstanceDto dto);
+    public static IEnumerable<ReminderInstanceDto> ToDtos(IEnumerable<ReminderInstance> domains);
+}
+```
+
+**Usage Pattern:**
+```csharp
+// Controller receiving request
+var domain = ReminderInstanceMapper.ToDomain(requestDto);
+var created = _service.Create(domain);
+var responseDto = ReminderInstanceMapper.ToDto(created);
+```
+
+---
+
+## Data Storage
+
+### Current Implementation
+
+The service currently uses **in-memory storage** via `ConcurrentDictionary`:
+
+```csharp
+// In ReminderInstanceService.cs
+private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new();
+```
+
+**Characteristics:**
+- Thread-safe for concurrent access
+- Data is lost on application restart
+- Suitable for development/demo purposes
+
+### Future Storage (Indicated)
+
+XML comments in `ReminderInstance.cs` indicate planned Cosmos DB integration:
+```csharp
+/// This model maps directly to the Cosmos DB storage schema.
+```
+
+---
+
+## Data Relationships
+
+```
+┌─────────────────────────┐
+│    ReminderInstance     │ (Domain Model)
+│   - Business Logic      │
+│   - Storage Schema      │
+└───────────┬─────────────┘
+            │
+            │ ReminderInstanceMapper
+            │
+            ▼
+┌─────────────────────────┐
+│   ReminderInstanceDto   │ (API Contract)
+│   - Computed State      │
+│   - JSON Serialization  │
+└─────────────────────────┘
+```
+
+---
+
+## JSON Serialization
+
+The API uses `System.Text.Json` with the following configuration:
+
+```csharp
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
+```
+
+**Effect:** Enums (like `ReminderState`) are serialized as strings, not integers.
+
+**Example Response:**
 ```json
 {
-  "text": "This is a protected message."
+  "id": "...",
+  "state": "Scheduled"  // String, not 0
 }
 ```
 
 ---
 
-## Data Access Layer
+## Validation
 
-### IReminderInstanceService
+Currently, validation is minimal:
+- `required` modifier on `Text` property enforces non-null
+- ID mismatch check in PUT endpoint
 
-**Namespace:** `HereAndNowService.Services`
-**Location:** `Reminders/HereAndNow.Reminders/Services/IReminderInstanceService.cs`
-
-Service interface defining CRUD operations for reminders.
-
-| Method | Return Type | Description |
-|--------|-------------|-------------|
-| `GetAll()` | `IEnumerable<ReminderInstance>` | Retrieves all reminders |
-| `GetById(Guid id)` | `ReminderInstance?` | Retrieves a single reminder |
-| `Create(ReminderInstance)` | `ReminderInstance` | Creates a new reminder |
-| `Update(Guid id, ReminderInstance)` | `ReminderInstance?` | Updates existing reminder |
-| `Delete(Guid id)` | `bool` | Deletes a reminder |
+**Recommendation for future:** Consider adding FluentValidation or Data Annotations for more robust validation.
 
 ---
 
-### ReminderInstanceService
-
-**Namespace:** `HereAndNowService.Services`
-**Location:** `Reminders/HereAndNow.Reminders/Services/ReminderInstanceService.cs`
-**Lifetime:** Singleton (registered in DI container)
-
-In-memory implementation using `ConcurrentDictionary` for thread safety.
-
-**Key Implementation Details:**
-
-1. **Thread Safety:** Uses `ConcurrentDictionary` for safe concurrent access
-2. **ID Generation:** Auto-generates `Guid.NewGuid()` on create
-3. **Optimistic Concurrency:** Uses `TryUpdate` to handle concurrent modifications
-4. **Logging:** Comprehensive structured logging for all operations
-
-**Storage Strategy:**
-
-```csharp
-private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new();
-```
-
----
-
-## Data Flow
-
-```
-┌─────────────────┐     ┌───────────────────────────┐     ┌─────────────────────────┐
-│   Controller    │────▶│ IReminderInstanceService  │────▶│  ConcurrentDictionary   │
-│  (API Layer)    │     │       (Interface)         │     │   (In-Memory Store)     │
-└─────────────────┘     └───────────────────────────┘     └─────────────────────────┘
-         │                          │
-         │                          │
-    HTTP Request              Business Logic
-    Validation                ID Generation
-    Authentication            Concurrency Control
-```
-
----
-
-## Future Considerations
-
-### Database Migration Path
-
-To add persistent storage, consider:
-
-1. **Entity Framework Core** - Add EF Core packages and DbContext
-2. **Repository Pattern** - Create `IReminderRepository` interface
-3. **SQL Server / PostgreSQL** - Azure SQL or PostgreSQL for Azure
-4. **Migration Strategy** - EF Migrations for schema management
-
-### Suggested Schema (SQL)
-
-```sql
-CREATE TABLE ReminderInstances (
-    Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-    Text NVARCHAR(500) NOT NULL,
-    ScheduledDateAndTime DATETIME2 NOT NULL,
-    Status INT NOT NULL DEFAULT 0,
-    CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
-    UpdatedAt DATETIME2 NULL
-);
-
-CREATE INDEX IX_ReminderInstances_Status ON ReminderInstances(Status);
-CREATE INDEX IX_ReminderInstances_ScheduledDateAndTime ON ReminderInstances(ScheduledDateAndTime);
-```
-
----
-
-## Related Documentation
-
-- [API Contracts](./api-contracts.md) - REST API endpoint documentation
-- [Architecture](./architecture.md) - System architecture overview
+_Generated using BMAD Method `document-project` workflow_

@@ -1,328 +1,318 @@
-# Architecture Document
+# Here and Now Service - Architecture
+
+**Date:** 2025-12-29
+**Version:** 1.0
+**Architecture Pattern:** Clean Architecture with DTO Pattern
 
 ## Executive Summary
 
-The **Here and Now Service** is an ASP.NET Core 8 REST API implementing a reminder management system with Auth0-based authentication. The application follows Clean Architecture principles with clear separation between domain logic and infrastructure concerns.
-
-| Aspect | Details |
-|--------|---------|
-| **Type** | Backend API Service |
-| **Framework** | ASP.NET Core 8.0 |
-| **Architecture Pattern** | Clean Architecture / Layered |
-| **Authentication** | Auth0 JWT Bearer |
-| **Deployment** | Azure App Service |
-| **Data Storage** | In-memory (ConcurrentDictionary) |
-
----
+The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provides reminder management capabilities. It follows Clean Architecture principles with clear separation between the business logic layer (Reminders assembly) and the web API layer (Web assembly). Authentication is handled via Auth0 JWT tokens.
 
 ## Technology Stack
 
-| Category | Technology | Version | Purpose |
-|----------|-----------|---------|---------|
-| **Framework** | ASP.NET Core | 8.0 | Web API hosting |
-| **Language** | C# | 12 | Primary language |
-| **Authentication** | Auth0 + JWT Bearer | - | Identity & access management |
-| **API Documentation** | Swashbuckle/Swagger | 6.9.0 | OpenAPI spec generation |
-| **Environment Config** | dotenv.net | 3.2.1 | Environment variable loading |
-| **Testing** | xUnit | 2.9.2 | Unit/integration testing |
-| **Mocking** | Moq | 4.20.72 | Test doubles |
-| **Assertions** | FluentAssertions | 6.12.0 | Test assertions |
-| **Integration Tests** | WebApplicationFactory | 8.0.11 | HTTP testing |
-| **CI/CD** | GitHub Actions | - | Build, test, deploy |
-| **Cloud Hosting** | Azure App Service | - | Production hosting |
-
----
+| Category | Technology | Version | Justification |
+|----------|------------|---------|---------------|
+| **Runtime** | .NET | 8.0 | LTS release, modern C# features, excellent performance |
+| **Framework** | ASP.NET Core | 8.0 | Industry standard for .NET APIs |
+| **Language** | C# | 12 | Modern features (required, pattern matching) |
+| **Auth** | Auth0 + JWT Bearer | 8.0.11 | Managed identity, secure token validation |
+| **API Docs** | Swashbuckle | 6.9.0 | Swagger/OpenAPI generation |
+| **Env Config** | dotenv.net | 3.2.1 | 12-factor app configuration |
+| **Testing** | xUnit | 2.9.2 | Popular .NET testing framework |
+| **Mocking** | Moq | 4.20.72 | Flexible mocking for unit tests |
+| **Assertions** | FluentAssertions | 6.12.0 | Readable test assertions |
+| **Integration Testing** | Mvc.Testing | 8.0.11 | In-memory test server |
 
 ## Architecture Pattern
 
 ### Clean Architecture Overview
 
-The solution implements **Clean Architecture** with two assemblies:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                          Web Layer                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │ Controllers │  │ Middlewares │  │ DTOs + Mappers      │  │
+│  │             │  │             │  │                     │  │
+│  │ • Messages  │  │ • ErrorHdlr │  │ • ReminderInstDto   │  │
+│  │ • Reminders │  │ • SecureHdr │  │ • ReminderInstMappr │  │
+│  └──────┬──────┘  └─────────────┘  └─────────────────────┘  │
+│         │                                                   │
+│         │ Depends On                                        │
+└─────────┼───────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Business Logic Layer                     │
+│  ┌─────────────────────┐  ┌───────────────────────────────┐ │
+│  │       Models        │  │           Services            │ │
+│  │                     │  │                               │ │
+│  │ • ReminderInstance  │  │ • IReminderInstanceService    │ │
+│  │ • Message           │  │ • ReminderInstanceService     │ │
+│  │                     │  │ • IMessageService             │ │
+│  │                     │  │ • MessageService              │ │
+│  └─────────────────────┘  └───────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Principles
+
+1. **Dependency Inversion**: Web layer depends on abstractions (interfaces) defined in business layer
+2. **Separation of Concerns**: Business logic has no web dependencies
+3. **DTO Pattern**: API contracts (DTOs) are separate from domain models
+4. **Testability**: Each layer can be tested independently
+
+## Component Architecture
+
+### Assembly Structure
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                   External Interface Layer                   │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │                    HereAndNow.Web                      │  │
-│  │  • Controllers (API endpoints)                         │  │
-│  │  • Middlewares (Error handling, Security headers)      │  │
-│  │  • Program.cs (DI configuration, pipeline setup)       │  │
-│  │  • Authentication (Auth0 JWT validation)               │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                             │                                │
-│                   Project Reference                          │
-│                             ▼                                │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │                 HereAndNow.Reminders                   │  │
-│  │                    (Domain Layer)                      │  │
-│  │  • Models (ReminderInstance, Message, ReminderStatus)  │  │
-│  │  • Service Interfaces (IReminderInstanceService)       │  │
-│  │  • Service Implementations (ReminderInstanceService)   │  │
-│  │  • No web framework dependencies                       │  │
-│  └────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────┘
+HereAndNow.sln
+├── HereAndNow.Reminders     (Business Logic)
+│   ├── Models/
+│   └── Services/
+├── HereAndNow.Web           (Web API)
+│   ├── Controllers/
+│   ├── DTOs/
+│   ├── Mappers/
+│   └── Middlewares/
+└── HereAndNow.Web.Tests     (Tests)
+    ├── Controllers/
+    ├── Integration/
+    └── Helpers/
 ```
 
-### Key Architectural Decisions
+### Dependency Graph
 
-| Decision | Rationale |
-|----------|-----------|
-| **Separate Domain Assembly** | Business logic can be tested independently and reused |
-| **Interface-Based Services** | Enables mocking for tests and future implementations |
-| **Singleton ReminderService** | In-memory storage requires single instance for consistency |
-| **Scoped MessageService** | Stateless service, new instance per request is fine |
-| **Middleware for Cross-Cutting** | Security headers and error handling applied globally |
-
----
+```
+HereAndNow.Web.Tests
+    │
+    ├──► HereAndNow.Web
+    │        │
+    │        └──► HereAndNow.Reminders
+    │
+    └──► HereAndNow.Reminders
+```
 
 ## Request Flow
 
 ```
-┌─────────┐     ┌─────────────┐     ┌────────────────────┐     ┌────────────┐
-│  Client │─ ─▶│   Kestrel   │────▶│     Middleware     │────▶│ Controller │
-└─────────┘     └─────────────┘     │      Pipeline      │     └────────────┘
-                                    │                    │            │
-                                    │  1. ErrorHandler   │            │
-                                    │  2. SecureHeaders  │            │
-                                    │  3. CORS           │            │
-                                    │  4. Authentication │            │
-                                    │  5. Authorization  │            │
-                                    └────────────────────┘            │
-                                                                      ▼
-                                    ┌────────────────────────────────────┐
-                                    │           Service Layer            │
-                                    │    IReminderInstanceService        │
-                                    │    IMessageService                 │
-                                    └────────────────────────────────────┘
-                                                       │
-                                                       ▼
-                                    ┌────────────────────────────────────┐
-                                    │           Data Storage             │
-                                    │    ConcurrentDictionary<Guid,      │
-                                    │         ReminderInstance>          │
-                                    └────────────────────────────────────┘
+HTTP Request
+     │
+     ▼
+┌─────────────────┐
+│  Kestrel Server │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Error Handler   │ ◄── Catches exceptions, formats error responses
+│ Middleware      │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Secure Headers  │ ◄── Adds security headers (HSTS, CSP, etc.)
+│ Middleware      │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│     CORS        │ ◄── Validates origin, handles preflight
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Authentication  │ ◄── Validates JWT token with Auth0
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Authorization   │ ◄── Enforces [Authorize] attributes
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Controller    │ ◄── Handles request, calls service
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│    Service      │ ◄── Business logic, data operations
+└────────┬────────┘
+         │
+         ▼
+HTTP Response
 ```
 
----
+## Security Architecture
 
-## Middleware Pipeline
+### Authentication Flow
 
-The middleware is configured in `Program.cs` in this specific order:
-
-```csharp
-app.UseErrorHandler();      // 1. Global error handling
-app.UseSecureHeaders();     // 2. Security headers injection
-app.MapControllers();       // 3. Endpoint routing
-app.UseCors();              // 4. CORS policy application
-app.UseAuthentication();    // 5. JWT token validation
-app.UseAuthorization();     // 6. Authorization policy check
+```
+┌──────────┐     ┌──────────┐     ┌──────────────┐
+│  Client  │────►│  Auth0   │────►│ JWT Token    │
+└──────────┘     └──────────┘     └──────┬───────┘
+                                         │
+                                         ▼
+                               ┌──────────────────┐
+                               │ API Request with │
+                               │ Bearer Token     │
+                               └────────┬─────────┘
+                                        │
+                                        ▼
+                               ┌──────────────────┐
+                               │ JWT Validation   │
+                               │ • Issuer         │
+                               │ • Audience       │
+                               │ • Signature      │
+                               └──────────────────┘
 ```
 
-### ErrorHandlerMiddleware
+### Security Headers
 
-- Catches unhandled exceptions
-- Returns consistent JSON error responses
-- Differentiates between "Requires authentication" and "Bad credentials" for 401s
+The `SecureHeadersMiddleware` adds:
 
-### SecureHeadersMiddleware
-
-Adds security headers to all responses:
-- `X-XSS-Protection: 0`
-- `Strict-Transport-Security` (HSTS)
-- `X-Frame-Options: deny`
-- `X-Content-Type-Options: nosniff`
-- `Content-Security-Policy`
-- Cache-Control headers
-
----
+| Header | Value | Purpose |
+|--------|-------|---------|
+| X-XSS-Protection | 0 | Disable legacy XSS filter |
+| Strict-Transport-Security | max-age=31536000; includeSubDomains | Force HTTPS |
+| X-Frame-Options | deny | Prevent clickjacking |
+| X-Content-Type-Options | nosniff | Prevent MIME sniffing |
+| Content-Security-Policy | default-src 'self'; frame-ancestors 'none'; | Restrict resources |
+| Cache-Control | no-cache, no-store, max-age=0, must-revalidate | Prevent caching |
 
 ## Data Architecture
 
-### Current Implementation (In-Memory)
+### Current: In-Memory Storage
 
 ```csharp
 private readonly ConcurrentDictionary<Guid, ReminderInstance> _reminders = new();
 ```
 
-**Characteristics:**
 - Thread-safe concurrent access
-- Data persists only for application lifetime
-- Suitable for development/demo purposes
+- Data lost on restart
+- Suitable for development/demo
 
-### Domain Model
+### Future: Cosmos DB (Indicated)
 
+Domain model comments indicate planned Cosmos DB integration:
+```csharp
+/// This model maps directly to the Cosmos DB storage schema.
 ```
-ReminderInstance
-├── Id: Guid (auto-generated)
-├── Text: string (required)
-├── ScheduledDateAndTime: DateTime
-└── Status: ReminderStatus (Scheduled | Active | Completed)
-```
-
-### Future Database Path
-
-For production persistence, consider:
-1. Entity Framework Core with SQL Server/PostgreSQL
-2. Repository pattern abstraction
-3. EF Migrations for schema management
-
----
 
 ## API Design
 
-### REST Conventions
+### RESTful Conventions
 
-| HTTP Method | Usage |
-|-------------|-------|
-| `GET` | Retrieve resources |
-| `POST` | Create new resource |
-| `PUT` | Full update of resource |
-| `DELETE` | Remove resource |
+| Operation | HTTP Method | Endpoint | Response |
+|-----------|-------------|----------|----------|
+| List | GET | /api/reminder-instances | 200 + array |
+| Get | GET | /api/reminder-instances/{id} | 200 / 404 |
+| Create | POST | /api/reminder-instances | 201 + Location |
+| Update | PUT | /api/reminder-instances/{id} | 200 / 404 |
+| Delete | DELETE | /api/reminder-instances/{id} | 204 / 404 |
 
-### Endpoint Summary
+### Soft Delete Pattern
 
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/api/messages/public` | GET | No | Public message |
-| `/api/messages/protected` | GET | Yes | Protected message |
-| `/api/messages/admin` | GET | Yes | Admin message |
-| `/api/reminder-instances` | GET | Yes | List all reminders |
-| `/api/reminder-instances/{id}` | GET | Yes | Get single reminder |
-| `/api/reminder-instances` | POST | Yes | Create reminder |
-| `/api/reminder-instances/{id}` | PUT | Yes | Update reminder |
-| `/api/reminder-instances/{id}` | DELETE | Yes | Delete reminder |
+Reminders use soft delete - the `IsDeleted` flag is set to true rather than removing records:
 
-### Response Format
-
-All responses use JSON with consistent error format:
-```json
+```csharp
+public bool Delete(Guid id)
 {
-  "message": "Error description"
+    // Sets IsDeleted = true, doesn't remove from storage
+    var updatedReminder = new ReminderInstance { ..., IsDeleted = true };
+    _reminders.TryUpdate(id, updatedReminder, existingReminder);
 }
 ```
 
----
+## Dependency Injection
 
-## Authentication & Authorization
-
-### Auth0 Integration
+### Service Registration (Program.cs)
 
 ```csharp
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.Authority = $"https://{auth0Domain}/";
-        options.Audience = auth0Audience;
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateAudience = true,
-            ValidateIssuer = true,
-            ValidIssuer = $"https://{auth0Domain}/",
-            ValidateIssuerSigningKey = true
-        };
-    });
+// Scoped - new instance per request
+builder.Services.AddScoped<IMessageService, MessageService>();
+
+// Singleton - single instance for app lifetime
+builder.Services.AddSingleton<IReminderInstanceService, ReminderInstanceService>();
 ```
 
-### Authorization Flow
+### Lifetime Rationale
 
-1. Client obtains JWT from Auth0
-2. JWT included in `Authorization: Bearer {token}` header
-3. Middleware validates token against Auth0 issuer
-4. `[Authorize]` attribute enforces authentication on endpoints
+| Service | Lifetime | Reason |
+|---------|----------|--------|
+| IMessageService | Scoped | Stateless, per-request is fine |
+| IReminderInstanceService | Singleton | Holds in-memory data store |
 
----
+## Testing Strategy
 
-## Testing Architecture
-
-### Test Project Structure
+### Test Pyramid
 
 ```
-HereAndNow.Web.Tests/
-├── Controllers/
-│   └── ReminderInstancesControllerTests.cs  # Unit tests
-├── Helpers/
-│   └── TestWebApplicationFactory.cs         # Test host factory
-└── Integration/
-    ├── AuthorizationTests.cs                # Auth integration tests
-    └── CorsTests.cs                         # CORS integration tests
+         ┌─────────┐
+         │   E2E   │  (Manual via Swagger)
+         ├─────────┤
+         │ Integr. │  CorsTests, AuthorizationTests
+         ├─────────┤
+         │  Unit   │  ReminderInstancesControllerTests
+         └─────────┘
 ```
 
-### Testing Strategies
+### Test Infrastructure
 
-| Test Type | Purpose | Tools |
-|-----------|---------|-------|
-| **Unit Tests** | Test controller logic in isolation | xUnit, Moq |
-| **Integration Tests** | Test full HTTP pipeline | WebApplicationFactory |
-
----
+- **TestWebApplicationFactory**: Custom factory with test configuration
+- **Moq**: Mock service dependencies in controller tests
+- **FluentAssertions**: Readable test assertions
 
 ## Deployment Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌───────────────────┐
-│   GitHub Repo   │────▶│  GitHub Actions │────▶│ Azure App Service │
-│                 │     │      CI/CD      │     │   (Production)    │
-└─────────────────┘     └─────────────────┘     └───────────────────┘
-        │                       │
-        │                       ├── Build (.NET 8)
-        │                       ├── Test (xUnit)
-        │                       ├── Publish
-        │                       └── Deploy
-        │
-        └── Trigger: Push to main branch
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   GitHub        │────►│  GitHub Actions │────►│   Azure Web     │
+│   Repository    │     │  Build + Test   │     │   App Service   │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                        │
+                                                        ▼
+                                               ┌─────────────────┐
+                                               │    Auth0        │
+                                               │    (Identity)   │
+                                               └─────────────────┘
 ```
 
-### Infrastructure
+### CI/CD Pipeline
 
-| Component | Service |
-|-----------|---------|
-| **Hosting** | Azure App Service |
-| **CI/CD** | GitHub Actions |
-| **Identity** | Auth0 |
-| **Secrets** | Azure App Settings + GitHub Secrets |
+1. **Trigger**: Push to `main` branch
+2. **Build**: `dotnet build --configuration Release`
+3. **Test**: `dotnet test` with code coverage
+4. **Publish**: `dotnet publish`
+5. **Deploy**: Azure Web Apps Deploy action
 
----
+## Configuration
 
-## Security Considerations
+### Environment Variables
 
-### Implemented Security
+| Variable | Required | Description |
+|----------|----------|-------------|
+| PORT | Yes | Server port number |
+| CLIENT_ORIGIN_URL | Yes | Allowed CORS origins (comma-separated) |
+| AUTH0_DOMAIN | Yes | Auth0 tenant domain |
+| AUTH0_AUDIENCE | Yes | Auth0 API identifier |
 
-- JWT Bearer authentication
-- CORS policy with specific origin
-- Security headers (HSTS, CSP, X-Frame-Options)
-- No server header exposed
-- Swagger access restricted by IP in production
+### Loading Mechanism
 
-### Security Recommendations
+```csharp
+DotEnv.Load();
+builder.Configuration.AddEnvironmentVariables();
+```
 
-- [ ] Implement rate limiting
-- [ ] Add request logging with PII masking
-- [ ] Configure Application Insights for monitoring
-- [ ] Implement refresh token rotation
-- [ ] Add input validation middleware
+## Future Considerations
 
----
-
-## Scalability Considerations
-
-### Current Limitations
-
-- In-memory storage limits horizontal scaling
-- Single instance deployment
-
-### Scaling Path
-
-1. **Add Database** - Replace ConcurrentDictionary with SQL/NoSQL
-2. **Stateless Services** - All services should be stateless for multi-instance
-3. **Azure Service Bus** - For event-driven features
-4. **Redis Cache** - For session/cache if needed
+1. **Database Integration**: Cosmos DB for persistent storage
+2. **Caching**: Redis for performance optimization
+3. **Background Jobs**: Hangfire for reminder notifications
+4. **Observability**: Application Insights for monitoring
+5. **Rate Limiting**: Protect API from abuse
 
 ---
 
-## Related Documentation
-
-- [API Contracts](./api-contracts.md) - Detailed API specification
-- [Data Models](./data-models.md) - Domain model documentation
-- [Source Tree](./source-tree-analysis.md) - Project structure
-- [Development Guide](./development-guide.md) - Setup instructions
-- [Deployment Guide](./deployment-guide.md) - CI/CD and Azure deployment
+_Generated using BMAD Method `document-project` workflow_
