@@ -1,6 +1,6 @@
 # Here and Now Service - Source Tree Analysis
 
-**Date:** 2025-12-29
+**Date:** 2025-12-30
 
 ## Overview
 
@@ -24,57 +24,50 @@ here-and-now-service/
 ├── .vscode/                    # VS Code settings
 ├── CLAUDE.md                   # Claude Code instructions
 ├── HereAndNow.sln              # ★ Solution file (entry point)
-├── README.md                   # Project readme
-├── Reminders/                  # ★ Business Logic Assembly
-│   └── HereAndNow.Reminders/
-│       ├── HereAndNow.Reminders.csproj
+├── README.md                   # Project readme (Auth0 sample)
+├── Message/                    # ★ Business Logic Assembly
+│   └── HereAndNow.Message/
+│       ├── HereAndNow.Message.csproj
 │       ├── Models/             # Domain models
-│       │   ├── Message.cs
-│       │   └── ReminderInstance.cs
+│       │   └── Message.cs      # Simple message model
 │       └── Services/           # Service interfaces & implementations
 │           ├── IMessageService.cs
-│           ├── IReminderInstanceService.cs
-│           ├── MessageService.cs
-│           └── ReminderInstanceService.cs
+│           └── MessageService.cs
 ├── Web/                        # ★ Web Layer Assemblies
 │   ├── HereAndNow.Web/         # API Project
 │   │   ├── Controllers/        # API endpoints
 │   │   │   ├── ErrorController.cs
-│   │   │   ├── MessagesController.cs
-│   │   │   └── ReminderInstancesController.cs
-│   │   ├── DTOs/               # Data Transfer Objects
-│   │   │   ├── ReminderInstanceDto.cs
-│   │   │   └── ReminderState.cs
+│   │   │   └── MessagesController.cs
+│   │   ├── DTOs/               # (Empty - for future expansion)
 │   │   ├── HereAndNow.Web.csproj
-│   │   ├── Mappers/            # Domain ↔ DTO mappers
-│   │   │   └── ReminderInstanceMapper.cs
+│   │   ├── Mappers/            # (Empty - for future expansion)
 │   │   ├── Middlewares/        # Custom middleware
 │   │   │   ├── ErrorHandlerMiddleware.cs
 │   │   │   └── SecureHeadersMiddleware.cs
 │   │   ├── Program.cs          # ★ Application entry point
 │   │   └── SWAGGER_SETUP.md
 │   └── HereAndNow.Web.Tests/   # Test Project
-│       ├── Controllers/        # Controller unit tests
-│       │   └── ReminderInstancesControllerTests.cs
+│       ├── Controllers/        # (Empty - for controller tests)
 │       ├── HereAndNow.Web.Tests.csproj
 │       ├── Helpers/            # Test infrastructure
 │       │   └── TestWebApplicationFactory.cs
 │       └── Integration/        # Integration tests
 │           ├── AuthorizationTests.cs
 │           └── CorsTests.cs
-└── docs/                       # Generated documentation
+├── docs/                       # Generated documentation
+└── _bmad/                      # BMAD workflow tooling
 ```
 
 ## Critical Directories
 
-### `Reminders/HereAndNow.Reminders/`
+### `Message/HereAndNow.Message/`
 
 **Purpose:** Business logic assembly containing domain models and service interfaces.
 
 **Contains:**
-- Domain models (`Message`, `ReminderInstance`)
-- Service interfaces (`IMessageService`, `IReminderInstanceService`)
-- Service implementations with in-memory storage
+- Domain model (`Message`)
+- Service interface (`IMessageService`)
+- Service implementation (`MessageService`) with static messages
 
 **Key Design Decision:** This assembly has no web dependencies, allowing business logic to be tested and reused independently.
 
@@ -83,10 +76,10 @@ here-and-now-service/
 **Purpose:** ASP.NET Core Web API project handling HTTP requests, authentication, and API documentation.
 
 **Contains:**
-- REST API controllers
-- DTOs for API contracts (separate from domain models)
-- Mappers for domain ↔ DTO conversion
+- REST API controller (`MessagesController`)
+- Error handling controller (`ErrorController`)
 - Custom middleware for error handling and security headers
+- Empty DTOs and Mappers folders for future expansion
 
 **Entry Point:** `Program.cs` - Application bootstrap and configuration
 
@@ -95,9 +88,9 @@ here-and-now-service/
 **Purpose:** Test project containing unit and integration tests.
 
 **Contains:**
-- Controller unit tests with mocked dependencies
-- Integration tests for authorization and CORS
+- Integration test classes (currently empty method bodies)
 - Test infrastructure (`TestWebApplicationFactory`)
+- Empty Controllers folder for unit tests
 
 ### `.github/workflows/`
 
@@ -124,27 +117,26 @@ here-and-now-service/
 - **Location:** `Web/HereAndNow.Web/Controllers/`
 - **Pattern:** `{Feature}Controller.cs`
 - **Purpose:** REST API endpoints grouped by feature
-- **Examples:** `MessagesController.cs`, `ReminderInstancesController.cs`
+- **Current:** `MessagesController.cs`, `ErrorController.cs`
 
 ### Services Pattern
-- **Location:** `Reminders/HereAndNow.Reminders/Services/`
+- **Location:** `Message/HereAndNow.Message/Services/`
 - **Pattern:** `I{Feature}Service.cs` (interface), `{Feature}Service.cs` (implementation)
 - **Purpose:** Business logic abstraction and implementation
-- **Examples:** `IReminderInstanceService.cs`, `ReminderInstanceService.cs`
+- **Current:** `IMessageService.cs`, `MessageService.cs`
 
-### DTOs Pattern
-- **Location:** `Web/HereAndNow.Web/DTOs/`
-- **Pattern:** `{Model}Dto.cs`
-- **Purpose:** API contract objects separated from domain models
-- **Examples:** `ReminderInstanceDto.cs`, `ReminderState.cs`
+### Models Pattern
+- **Location:** `Message/HereAndNow.Message/Models/`
+- **Pattern:** `{ModelName}.cs`
+- **Purpose:** Domain models
+- **Current:** `Message.cs`
 
 ### Tests Pattern
 - **Location:** `Web/HereAndNow.Web.Tests/`
 - **Patterns:**
   - `Controllers/{Controller}Tests.cs` - Unit tests
   - `Integration/{Feature}Tests.cs` - Integration tests
-- **Purpose:** Comprehensive test coverage
-- **Examples:** `ReminderInstancesControllerTests.cs`, `AuthorizationTests.cs`
+- **Current:** `AuthorizationTests.cs`, `CorsTests.cs`
 
 ## Configuration Files
 
@@ -160,18 +152,19 @@ here-and-now-service/
 
 1. **Solution Structure:** Open `HereAndNow.sln` in Visual Studio or Rider for full IDE support.
 
-2. **Layer Dependencies:** Web → Reminders (one-way dependency; Reminders has no knowledge of Web)
+2. **Layer Dependencies:** Web → Message (one-way dependency; Message has no knowledge of Web)
 
 3. **Adding New Features:**
-   - Add domain model to `Reminders/Models/`
-   - Add service interface to `Reminders/Services/`
-   - Add DTO to `Web/DTOs/`
-   - Add mapper to `Web/Mappers/`
-   - Add controller to `Web/Controllers/`
-   - Add tests to `Web.Tests/`
+   - Add domain model to `Message/HereAndNow.Message/Models/`
+   - Add service interface to `Message/HereAndNow.Message/Services/`
+   - Add service implementation to `Message/HereAndNow.Message/Services/`
+   - Register service in DI (`Program.cs`)
+   - Add controller to `Web/HereAndNow.Web/Controllers/`
+   - Add tests to `Web/HereAndNow.Web.Tests/`
 
 4. **Configuration:** All configuration is via environment variables loaded by `dotenv.net`.
 
 ---
 
 _Generated using BMAD Method `document-project` workflow_
+_Last Updated: 2025-12-30_

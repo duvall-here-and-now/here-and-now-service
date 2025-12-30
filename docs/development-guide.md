@@ -1,6 +1,6 @@
 # Here and Now Service - Development Guide
 
-**Date:** 2025-12-29
+**Date:** 2025-12-30
 
 ## Prerequisites
 
@@ -118,12 +118,6 @@ dotnet test
 dotnet test --logger "console;verbosity=detailed"
 ```
 
-### Run Specific Test by Name
-
-```bash
-dotnet test --filter "FullyQualifiedName~GetAll_ShouldReturnOkWithReminders"
-```
-
 ### Run Tests with Coverage
 
 ```bash
@@ -142,22 +136,22 @@ dotnet watch test --project Web/HereAndNow.Web.Tests/HereAndNow.Web.Tests.csproj
 
 | Category | Location | Description |
 |----------|----------|-------------|
-| Unit Tests | `Controllers/` | Test controllers with mocked services |
 | Integration Tests | `Integration/` | Test full HTTP pipeline |
+| Unit Tests | `Controllers/` | (Empty - to be added) |
 
 ## Project Structure
 
 ```
 here-and-now-service/
-├── Reminders/HereAndNow.Reminders/    # Business logic (edit here for domain changes)
-│   ├── Models/                        # Domain models
-│   └── Services/                      # Service interfaces + implementations
-├── Web/HereAndNow.Web/                # API layer (edit here for API changes)
-│   ├── Controllers/                   # REST endpoints
-│   ├── DTOs/                          # API contracts
-│   ├── Mappers/                       # Domain ↔ DTO conversion
-│   └── Middlewares/                   # Custom middleware
-└── Web/HereAndNow.Web.Tests/          # Tests
+├── Message/HereAndNow.Message/       # Business logic (edit here for domain changes)
+│   ├── Models/                       # Domain models
+│   └── Services/                     # Service interfaces + implementations
+├── Web/HereAndNow.Web/               # API layer (edit here for API changes)
+│   ├── Controllers/                  # REST endpoints
+│   ├── DTOs/                         # (Empty - for future expansion)
+│   ├── Mappers/                      # (Empty - for future expansion)
+│   └── Middlewares/                  # Custom middleware
+└── Web/HereAndNow.Web.Tests/         # Tests
 ```
 
 ## Common Development Tasks
@@ -166,17 +160,17 @@ here-and-now-service/
 
 1. **Add/update domain model** (if needed):
    ```
-   Reminders/HereAndNow.Reminders/Models/NewModel.cs
+   Message/HereAndNow.Message/Models/NewModel.cs
    ```
 
 2. **Add/update service interface**:
    ```
-   Reminders/HereAndNow.Reminders/Services/INewService.cs
+   Message/HereAndNow.Message/Services/INewService.cs
    ```
 
 3. **Add service implementation**:
    ```
-   Reminders/HereAndNow.Reminders/Services/NewService.cs
+   Message/HereAndNow.Message/Services/NewService.cs
    ```
 
 4. **Add DTO** (if different from domain):
@@ -269,7 +263,7 @@ public class MyController : ControllerBase
 Nullable reference types are enabled. Use `?` for nullable types:
 
 ```csharp
-public ReminderInstance? GetById(Guid id)  // Can return null
+public string? text { get; set; }  // Nullable string
 ```
 
 ### XML Documentation
@@ -278,19 +272,11 @@ Document public APIs with XML comments:
 
 ```csharp
 /// <summary>
-/// Gets all reminder instances.
+/// Retrieves a public message that doesn't require authentication.
 /// </summary>
-/// <returns>A collection of all reminder instances.</returns>
-[HttpGet]
-public ActionResult<IEnumerable<ReminderInstanceDto>> GetAll()
-```
-
-### Logging
-
-Use structured logging with ILogger:
-
-```csharp
-_logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Request received", id);
+/// <returns>A public message accessible to all users.</returns>
+[HttpGet("public")]
+public ActionResult<Message> GetPublicMessage()
 ```
 
 ## Debugging
@@ -324,11 +310,16 @@ _logger.LogInformation("GET /api/reminder-instances/{ReminderId} - Request recei
 
 **Using curl:**
 ```bash
-# Public endpoint
+# Public endpoint (no auth)
 curl http://localhost:6060/api/messages/public
 
-# Authenticated endpoint
-curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:6060/api/reminder-instances
+# Protected endpoint (requires token)
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  http://localhost:6060/api/messages/protected
+
+# Admin endpoint (requires token)
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  http://localhost:6060/api/messages/admin
 ```
 
 **Using Swagger UI:**
@@ -355,3 +346,4 @@ Application logs are written to console. For more detailed logs, adjust logging 
 ---
 
 _Generated using BMAD Method `document-project` workflow_
+_Last Updated: 2025-12-30_

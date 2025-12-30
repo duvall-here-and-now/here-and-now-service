@@ -4,25 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an ASP.NET Core 8 API service implementing a reminder system with Auth0 authentication and authorization. The project is structured as a multi-project solution with separation between business logic and API layers.
+This is an ASP.NET Core 8 API service demonstrating Auth0 authentication with different access levels (public, protected, admin). The project is structured as a multi-project solution with separation between business logic and API layers.
 
 ## Solution Structure
 
 The solution follows a clean architecture pattern with two main assemblies:
 
-- **HereAndNow.Reminders** (`/Reminders/HereAndNow.Reminders/`)
+- **HereAndNow.Message** (`/Message/HereAndNow.Message/`)
   - Business logic assembly containing domain models and service interfaces
-  - Models: `ReminderInstance`, `Message`, `ReminderStatus`
-  - Service interfaces: `IReminderInstanceService`, `IMessageService`
+  - Models: `Message`
+  - Service interfaces: `IMessageService`
+  - Service implementation: `MessageService` (returns static messages)
   - Pure business logic with no web dependencies
   - References: Microsoft.Extensions.Logging.Abstractions
 
 - **HereAndNow.Web** (`/Web/HereAndNow.Web/`)
   - ASP.NET Core Web API project containing controllers and middleware
   - Handles HTTP concerns, authentication, CORS, and Swagger configuration
-  - Controllers: `MessagesController`, `ReminderInstancesController`, `ErrorController`
+  - Controllers: `MessagesController`, `ErrorController`
   - Custom middlewares: `ErrorHandlerMiddleware`, `SecureHeadersMiddleware`
-  - References the Reminders assembly for business logic
+  - References the Message assembly for business logic
   - Uses dotenv.net for environment variable management
 
 - **HereAndNow.Web.Tests** (`/Web/HereAndNow.Web.Tests/`)
@@ -77,7 +78,7 @@ dotnet publish Web/HereAndNow.Web/HereAndNow.Web.csproj -c Release -o ./publish
 
 The application uses environment variables loaded via dotenv.net. Required variables:
 - `PORT` - Port number for the web server
-- `CLIENT_ORIGIN_URL` - CORS origin URL for the frontend
+- `CLIENT_ORIGIN_URL` - CORS origin URL for the frontend (comma-separated for multiple)
 - `AUTH0_DOMAIN` - Auth0 domain for JWT validation
 - `AUTH0_AUDIENCE` - Auth0 API audience identifier
 
@@ -91,16 +92,24 @@ The application uses Auth0 for JWT-based authentication:
 - JWT Bearer tokens validated against Auth0 authority
 - Configured in `Program.cs` with `AddJwtBearer`
 - Swagger UI includes Bearer token authentication
-- All API endpoints require authentication by default
+- Protected endpoints require authentication (`[Authorize]` attribute)
+- Public endpoint (`/api/messages/public`) does not require authentication
 - CORS configured to accept requests from configured client origin
+
+## API Endpoints
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| GET /api/messages/public | None | Returns public message |
+| GET /api/messages/protected | JWT | Returns protected message |
+| GET /api/messages/admin | JWT | Returns admin message |
 
 ## Dependency Injection Pattern
 
 Services are registered in `Program.cs` with appropriate lifetimes:
 - `IMessageService` → `MessageService` (Scoped)
-- `IReminderInstanceService` → `ReminderInstanceService` (Singleton)
 
-The Reminders assembly defines service interfaces, while Web project provides implementations. This allows the business layer to remain independent of infrastructure concerns.
+The Message assembly defines service interfaces and implementations, while the Web project handles HTTP concerns. This allows the business layer to remain independent of infrastructure concerns.
 
 ## .NET 8 Standards
 

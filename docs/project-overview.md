@@ -1,12 +1,12 @@
 # Here and Now Service - Project Overview
 
-**Date:** 2025-12-29
+**Date:** 2025-12-30
 **Type:** Backend API Service
-**Architecture:** Clean Architecture with DTO Pattern
+**Architecture:** Clean Architecture (2-Layer)
 
 ## Executive Summary
 
-Here and Now Service is an ASP.NET Core 8.0 REST API that provides a reminder management system with Auth0-based authentication. The service allows authenticated users to create, read, update, and delete reminder instances, with features for scheduling, completion tracking, and soft-deletion.
+Here and Now Service is an ASP.NET Core 8.0 REST API that demonstrates Auth0 JWT authentication with different access levels. The service provides three simple endpoints (public, protected, admin) to showcase authentication and authorization patterns.
 
 ## Project Classification
 
@@ -35,28 +35,29 @@ Here and Now Service is an ASP.NET Core 8.0 REST API that provides a reminder ma
 
 ## Key Features
 
-1. **Reminder Management**: Full CRUD operations for reminder instances
-2. **JWT Authentication**: All reminder endpoints require Auth0 authentication
-3. **Soft Delete**: Reminders are soft-deleted (marked as deleted, not removed)
-4. **State Machine**: Computed reminder states (Scheduled, Active, Completed, Deleted)
-5. **CORS Support**: Configurable cross-origin resource sharing
-6. **Security Headers**: Comprehensive security headers middleware
-7. **Swagger UI**: Interactive API documentation at `/swagger`
+1. **Message API**: Three endpoints demonstrating access levels:
+   - `/api/messages/public` - No authentication required
+   - `/api/messages/protected` - JWT required
+   - `/api/messages/admin` - JWT required
+
+2. **JWT Authentication**: Auth0-based token validation
+3. **CORS Support**: Configurable cross-origin resource sharing
+4. **Security Headers**: Comprehensive security headers middleware
+5. **Swagger UI**: Interactive API documentation at `/swagger`
 
 ## Architecture Highlights
 
 The solution follows Clean Architecture principles with two main assemblies:
 
-1. **HereAndNow.Reminders** (Business Logic Layer)
-   - Pure domain models with no web dependencies
-   - Service interfaces defining business operations
-   - In-memory service implementations
+1. **HereAndNow.Message** (Business Logic Layer)
+   - Simple domain model (`Message`)
+   - Service interface (`IMessageService`)
+   - Service implementation with static messages
 
 2. **HereAndNow.Web** (Web API Layer)
-   - ASP.NET Core controllers
-   - DTOs for API contracts (separated from domain models)
-   - Mappers for domain ↔ DTO conversion
+   - ASP.NET Core controller (`MessagesController`)
    - Custom middlewares for error handling and security
+   - Empty DTOs/Mappers folders for future expansion
 
 ## Development Overview
 
@@ -96,8 +97,10 @@ dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj
 ```
 here-and-now-service/
 ├── HereAndNow.sln              # Solution file
-├── Reminders/                  # Business logic assembly
-│   └── HereAndNow.Reminders/
+├── Message/                    # Business logic assembly
+│   └── HereAndNow.Message/
+│       ├── Models/Message.cs
+│       └── Services/
 ├── Web/                        # Web layer assemblies
 │   ├── HereAndNow.Web/         # API project
 │   └── HereAndNow.Web.Tests/   # Test project
@@ -120,3 +123,4 @@ For detailed information, see:
 ---
 
 _Generated using BMAD Method `document-project` workflow_
+_Last Updated: 2025-12-30_
