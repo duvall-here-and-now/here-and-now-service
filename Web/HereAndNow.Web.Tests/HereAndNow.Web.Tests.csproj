@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Message\HereAndNow.Message\HereAndNow.Message.csproj" />
+    <ProjectReference Include="..\..\Task\HereAndNow.Task\HereAndNow.Task.csproj" />
     <ProjectReference Include="..\HereAndNow.Web\HereAndNow.Web.csproj" />
   </ItemGroup>
 
