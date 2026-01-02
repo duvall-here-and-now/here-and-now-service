@@ -38,7 +38,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 DatabaseName = "TestDb",
                 ContainerName = "TestTasks"
             });
-            services.AddSingleton(MockTaskRepository.Object);
+            services.AddSingleton<ITaskRepository>(MockTaskRepository.Object);
             services.AddScoped<ITaskService>(sp => MockTaskService.Object);
 
             // Add test authentication handler

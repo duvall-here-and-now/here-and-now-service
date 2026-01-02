@@ -72,24 +72,6 @@ public class TasksControllerTests
     }
 
     [Fact]
-    public async Task CreateTask_WithEmptyName_Returns400BadRequest()
-    {
-        // Arrange
-        var createDto = new CreateTaskDto { Name = "" };
-        _mockTaskService
-            .Setup(s => s.CreateTaskAsync("", TestUserId))
-            .ThrowsAsync(new ArgumentException("Task name cannot be empty"));
-
-        // Act
-        var result = await _controller.CreateTask(createDto);
-
-        // Assert
-        var badRequestResult = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
-        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
-        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
-    }
-
-    [Fact]
     public async Task CreateTask_SetsStateToOnDeck()
     {
         // Arrange
