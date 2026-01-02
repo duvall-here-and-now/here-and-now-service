@@ -1,7 +1,9 @@
 using HereAndNowService.Middlewares;
+using HereAndNowService.Repositories;
 using HereAndNowService.Services;
 using dotenv.net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Azure.Cosmos;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 using Microsoft.OpenApi.Models;
@@ -20,6 +22,34 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 // Add services to the container.
 builder.Services.AddScoped<IMessageService, MessageService>();
+
+// Cosmos DB configuration
+var cosmosConnectionString = builder.Configuration.GetValue<string>("COSMOS_CONNECTION_STRING");
+var cosmosDbSettings = new CosmosDbSettings
+{
+    ConnectionString = cosmosConnectionString ?? string.Empty,
+    DatabaseName = builder.Configuration.GetValue<string>("COSMOS_DATABASE_NAME") ?? "HereAndNow",
+    ContainerName = builder.Configuration.GetValue<string>("COSMOS_CONTAINER_NAME") ?? "Tasks"
+};
+
+// Only register Cosmos DB services if connection string is configured
+if (!string.IsNullOrEmpty(cosmosConnectionString))
+{
+    builder.Services.AddSingleton(cosmosDbSettings);
+    builder.Services.AddSingleton<CosmosClient>(sp =>
+    {
+        var cosmosOptions = new CosmosClientOptions
+        {
+            SerializerOptions = new CosmosSerializationOptions
+            {
+                PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
+            }
+        };
+        return new CosmosClient(cosmosDbSettings.ConnectionString, cosmosOptions);
+    });
+    builder.Services.AddSingleton<ITaskRepository, TaskRepository>();
+    builder.Services.AddScoped<ITaskService, TaskService>();
+}
 
 builder.Services.AddCors(options =>
 {
@@ -151,6 +181,16 @@ app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Create Cosmos DB database and container if they don't exist
+if (!string.IsNullOrEmpty(cosmosConnectionString))
+{
+    using var scope = app.Services.CreateScope();
+    var cosmosClient = scope.ServiceProvider.GetRequiredService<CosmosClient>();
+    var database = await cosmosClient.CreateDatabaseIfNotExistsAsync(cosmosDbSettings.DatabaseName);
+    await database.Database.CreateContainerIfNotExistsAsync(
+        new ContainerProperties(cosmosDbSettings.ContainerName, "/userId"));
+}
 
 app.Run();
 
