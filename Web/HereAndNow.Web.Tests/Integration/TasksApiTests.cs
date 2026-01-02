@@ -50,6 +50,28 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
+    #region Validation Error Format Tests
+
+    [Fact]
+    public async Task CreateTask_WithEmptyName_ReturnsStandardErrorFormat()
+    {
+        // Arrange - send request with empty name that triggers DataAnnotations validation
+        var createDto = new CreateTaskDto { Name = "" };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", createDto);
+
+        // Assert - should return project-standard error format, NOT ProblemDetails
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse.Should().NotBeNull();
+        errorResponse!.Error.Should().NotBeNull();
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().NotBeNullOrEmpty();
+    }
+
+    #endregion
+
     #region Create Task Tests (AC: #1)
 
     [Fact]

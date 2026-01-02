@@ -1,8 +1,10 @@
+using HereAndNowService.DTOs;
 using HereAndNowService.Middlewares;
 using HereAndNowService.Repositories;
 using HereAndNowService.Services;
 using dotenv.net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
@@ -76,6 +78,30 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
+
+// Configure validation error responses to use project-standard error format
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var firstError = context.ModelState
+            .Where(e => e.Value?.Errors.Count > 0)
+            .SelectMany(e => e.Value!.Errors)
+            .Select(e => e.ErrorMessage)
+            .FirstOrDefault() ?? "Validation failed";
+
+        var errorResponse = new ErrorResponseDto
+        {
+            Error = new ErrorDetailsDto
+            {
+                Code = "VALIDATION_ERROR",
+                Message = firstError
+            }
+        };
+
+        return new BadRequestObjectResult(errorResponse);
+    };
+});
 
 var auth0Domain = builder.Configuration.GetValue<string>("AUTH0_DOMAIN");
 var auth0Audience = builder.Configuration.GetValue<string>("AUTH0_AUDIENCE");
