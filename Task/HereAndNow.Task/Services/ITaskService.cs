@@ -31,4 +31,15 @@ public interface ITaskService
     /// <returns>The task document</returns>
     /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
     Task<TaskDocument> GetTaskByIdAsync(string taskId, string userId);
+
+    /// <summary>
+    /// Updates a task with the provided changes
+    /// </summary>
+    /// <param name="taskId">The task ID</param>
+    /// <param name="userId">The user ID</param>
+    /// <param name="name">The new name (null to keep existing)</param>
+    /// <param name="state">The new state (null to keep existing)</param>
+    /// <returns>The updated task document</returns>
+    /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
+    Task<TaskDocument> UpdateTaskAsync(string taskId, string userId, string? name, string? state);
 }

@@ -124,6 +124,50 @@ public class TasksController : ControllerBase
     }
 
     /// <summary>
+    /// Updates an existing task
+    /// </summary>
+    /// <param name="id">The task ID</param>
+    /// <param name="updateTaskDto">The update request with optional name and/or state</param>
+    /// <returns>The updated task</returns>
+    /// <response code="200">Returns the updated task</response>
+    /// <response code="400">If the request is invalid</response>
+    /// <response code="404">If the task is not found</response>
+    /// <response code="401">If the user is not authenticated</response>
+    [HttpPut("{id}")]
+    [ProducesResponseType(typeof(TaskDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<TaskDto>> UpdateTask(string id, [FromBody] UpdateTaskDto updateTaskDto)
+    {
+        var userId = GetUserId();
+
+        _logger.LogInformation("Updating task {TaskId} for user {UserId}", id, userId);
+
+        // Validate the DTO
+        if (!updateTaskDto.IsValid(out var validationError))
+        {
+            _logger.LogWarning("Invalid update request for task {TaskId}: {Error}", id, validationError);
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", validationError!));
+        }
+
+        try
+        {
+            var task = await _taskService.UpdateTaskAsync(id, userId, updateTaskDto.Name, updateTaskDto.State);
+            return Ok(TaskMapper.ToDto(task));
+        }
+        catch (TaskNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("TASK_NOT_FOUND", $"Task with ID {id} not found"));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid update request for task {TaskId}", id);
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
     /// Extracts the user ID from the JWT claims
     /// </summary>
     private string GetUserId()

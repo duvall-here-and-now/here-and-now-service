@@ -231,4 +231,291 @@ public class TaskServiceTests
     }
 
     #endregion
+
+    #region UpdateTaskAsync Tests
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithValidName_UpdatesName()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Original Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, "Updated Name", null);
+
+        // Assert
+        result.Name.Should().Be("Updated Name");
+        result.State.Should().Be(TaskState.OnDeck); // unchanged
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithValidState_UpdatesState()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, null, TaskState.InProgress);
+
+        // Assert
+        result.State.Should().Be(TaskState.InProgress);
+        result.Name.Should().Be("My Task"); // unchanged
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_TransitionToCompleted_SetsCompletedAt()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = null
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, null, TaskState.Completed);
+
+        // Assert
+        result.State.Should().Be(TaskState.Completed);
+        result.CompletedAt.Should().NotBeNull();
+        result.CompletedAt!.Value.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_TransitionFromCompletedToOnDeck_ClearsCompletedAt()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = DateTime.UtcNow.AddHours(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, null, TaskState.OnDeck);
+
+        // Assert
+        result.State.Should().Be(TaskState.OnDeck);
+        result.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_TransitionFromCompletedToInProgress_ClearsCompletedAt()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = DateTime.UtcNow.AddHours(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, null, TaskState.InProgress);
+
+        // Assert
+        result.State.Should().Be(TaskState.InProgress);
+        result.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_OnDeckToInProgress_PreservesNullCompletedAt()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = null
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, null, TaskState.InProgress);
+
+        // Assert
+        result.State.Should().Be(TaskState.InProgress);
+        result.CompletedAt.Should().BeNull(); // still null
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithBothNameAndState_UpdatesBoth()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Original Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, "New Name", TaskState.InProgress);
+
+        // Assert
+        result.Name.Should().Be("New Name");
+        result.State.Should().Be(TaskState.InProgress);
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_TrimsName()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Original Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, "  Trimmed Name  ", null);
+
+        // Assert
+        result.Name.Should().Be("Trimmed Name");
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithNonExistentTask_ThrowsTaskNotFoundException()
+    {
+        // Arrange
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("nonexistent", TestUserId))
+            .ReturnsAsync((TaskDocument?)null);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<TaskNotFoundException>(
+            () => _taskService.UpdateTaskAsync("nonexistent", TestUserId, "New Name", null));
+
+        exception.TaskId.Should().Be("nonexistent");
+    }
+
+    [Theory]
+    [InlineData("", TestUserId)]
+    [InlineData("   ", TestUserId)]
+    [InlineData("task-123", "")]
+    [InlineData("task-123", "   ")]
+    public async Task UpdateTaskAsync_WithInvalidInput_ThrowsArgumentException(string taskId, string userId)
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _taskService.UpdateTaskAsync(taskId, userId, "New Name", null));
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithInvalidState_ThrowsArgumentException()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => _taskService.UpdateTaskAsync("task-123", TestUserId, null, "InvalidState"));
+
+        exception.Message.Should().Contain("Invalid task state");
+        exception.ParamName.Should().Be("state");
+
+        // Verify repository.UpdateAsync was never called (validation failed before persistence)
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Never);
+    }
+
+    #endregion
 }
