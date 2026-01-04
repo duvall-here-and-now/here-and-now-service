@@ -1,3 +1,5 @@
+using HereAndNowService.DTOs;
+
 namespace HereAndNowService.Middlewares;
 
 class ErrorHandlerMiddleware
@@ -25,18 +27,27 @@ class ErrorHandlerMiddleware
 
             if (context.Response is HttpResponse response && response.StatusCode == 404)
             {
-                await response.WriteAsJsonAsync(new {
-                    message = "Not Found"
+                await response.WriteAsJsonAsync(new ErrorResponseDto
+                {
+                    Error = new ErrorDetailsDto
+                    {
+                        Code = "NOT_FOUND",
+                        Message = "Not Found"
+                    }
                 });
             }
             else if (context.Response is HttpResponse unauthorizedResponse && unauthorizedResponse.StatusCode == 401)
             {
-                await unauthorizedResponse.WriteAsJsonAsync(
-                    new {
-                        message = context.Request.Headers.ContainsKey("Authorization")
-                                        ? "Bad credentials"
-                                        : "Requires authentication"
-                    });
+                await unauthorizedResponse.WriteAsJsonAsync(new ErrorResponseDto
+                {
+                    Error = new ErrorDetailsDto
+                    {
+                        Code = "UNAUTHORIZED",
+                        Message = context.Request.Headers.ContainsKey("Authorization")
+                            ? "Bad credentials"
+                            : "Requires authentication"
+                    }
+                });
             }
         }
         catch (Exception ex)
@@ -53,8 +64,13 @@ class ErrorHandlerMiddleware
         if (!context.Response.HasStarted)
         {
             context.Response.StatusCode = 500;
-            await context.Response.WriteAsJsonAsync(new {
-                message = "Internal Server Error."
+            await context.Response.WriteAsJsonAsync(new ErrorResponseDto
+            {
+                Error = new ErrorDetailsDto
+                {
+                    Code = "INTERNAL_ERROR",
+                    Message = "Internal Server Error"
+                }
             });
         }
     }
