@@ -3,10 +3,12 @@ namespace HereAndNowService.Middlewares;
 class ErrorHandlerMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<ErrorHandlerMiddleware> _logger;
 
-    public ErrorHandlerMiddleware(RequestDelegate next)
+    public ErrorHandlerMiddleware(RequestDelegate next, ILogger<ErrorHandlerMiddleware> logger)
     {
         _next = next;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -39,6 +41,9 @@ class ErrorHandlerMiddleware
 
     private async Task HandleException(HttpContext context, Exception ex)
     {
+        _logger.LogError(ex, "Unhandled exception occurred while processing {Method} {Path}",
+            context.Request.Method, context.Request.Path);
+
         context.Response.StatusCode = 500;
         await context.Response.WriteAsJsonAsync(new {
             message = "Internal Server Error."
