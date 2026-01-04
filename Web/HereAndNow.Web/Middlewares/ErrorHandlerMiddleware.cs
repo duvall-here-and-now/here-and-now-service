@@ -1,3 +1,4 @@
+using System.Security.Authentication;
 using HereAndNowService.DTOs;
 
 namespace HereAndNowService.Middlewares;
@@ -58,11 +59,30 @@ class ErrorHandlerMiddleware
 
     private async Task HandleException(HttpContext context, Exception ex)
     {
-        _logger.LogError(ex, "Unhandled exception occurred while processing {Method} {Path}",
-            context.Request.Method, context.Request.Path);
-
         if (!context.Response.HasStarted)
         {
+            // Handle authentication/authorization exceptions as 401
+            if (ex is UnauthorizedAccessException or AuthenticationException)
+            {
+                _logger.LogWarning(ex, "Authentication failed for {Method} {Path}",
+                    context.Request.Method, context.Request.Path);
+
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsJsonAsync(new ErrorResponseDto
+                {
+                    Error = new ErrorDetailsDto
+                    {
+                        Code = "UNAUTHORIZED",
+                        Message = ex.Message
+                    }
+                });
+                return;
+            }
+
+            // All other exceptions are 500
+            _logger.LogError(ex, "Unhandled exception occurred while processing {Method} {Path}",
+                context.Request.Method, context.Request.Path);
+
             context.Response.StatusCode = 500;
             await context.Response.WriteAsJsonAsync(new ErrorResponseDto
             {
