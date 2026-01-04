@@ -133,6 +133,12 @@ public class TaskService : ITaskService
         // Handle state transitions with completedAt logic
         if (!string.IsNullOrWhiteSpace(state))
         {
+            // Validate state at service layer (defense in depth)
+            if (!TaskState.IsValid(state))
+            {
+                throw new ArgumentException($"Invalid task state: {state}", nameof(state));
+            }
+
             var isTransitioningToCompleted = state == TaskState.Completed && task.State != TaskState.Completed;
             var isTransitioningFromCompleted = state != TaskState.Completed && task.State == TaskState.Completed;
 

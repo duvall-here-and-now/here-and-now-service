@@ -489,5 +489,33 @@ public class TaskServiceTests
             () => _taskService.UpdateTaskAsync(taskId, userId, "New Name", null));
     }
 
+    [Fact]
+    public async Task UpdateTaskAsync_WithInvalidState_ThrowsArgumentException()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .ReturnsAsync(existingTask);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => _taskService.UpdateTaskAsync("task-123", TestUserId, null, "InvalidState"));
+
+        exception.Message.Should().Contain("Invalid task state");
+        exception.ParamName.Should().Be("state");
+
+        // Verify repository.UpdateAsync was never called (validation failed before persistence)
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Never);
+    }
+
     #endregion
 }
