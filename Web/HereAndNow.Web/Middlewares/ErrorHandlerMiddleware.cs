@@ -17,6 +17,12 @@ class ErrorHandlerMiddleware
         {
             await _next(context);
 
+            // Only write default messages if the response hasn't already been written
+            if (context.Response.HasStarted)
+            {
+                return;
+            }
+
             if (context.Response is HttpResponse response && response.StatusCode == 404)
             {
                 await response.WriteAsJsonAsync(new {
@@ -44,10 +50,13 @@ class ErrorHandlerMiddleware
         _logger.LogError(ex, "Unhandled exception occurred while processing {Method} {Path}",
             context.Request.Method, context.Request.Path);
 
-        context.Response.StatusCode = 500;
-        await context.Response.WriteAsJsonAsync(new {
-            message = "Internal Server Error."
-        });
+        if (!context.Response.HasStarted)
+        {
+            context.Response.StatusCode = 500;
+            await context.Response.WriteAsJsonAsync(new {
+                message = "Internal Server Error."
+            });
+        }
     }
 }
 

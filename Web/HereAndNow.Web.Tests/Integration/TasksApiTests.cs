@@ -4,6 +4,7 @@ using FluentAssertions;
 using HereAndNow.Web.Tests.Helpers;
 using HereAndNowService.DTOs;
 using HereAndNowService.Models;
+using HereAndNowService.Models.Exceptions;
 using Moq;
 
 namespace HereAndNow.Web.Tests.Integration;
@@ -266,6 +267,217 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
         _factory.MockTaskService.Verify(
             s => s.CreateTaskAsync("User's Task", TestAuthHandler.TestUserId),
             Times.Once);
+    }
+
+    #endregion
+
+    #region Update Task Tests (AC: 1-5)
+
+    [Fact]
+    public async Task UpdateTask_WithValidState_Returns200Ok()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "My Task",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, null, TaskState.InProgress))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.State.Should().Be(TaskState.InProgress);
+    }
+
+    [Fact]
+    public async Task UpdateTask_TransitionToCompleted_SetsCompletedAt()
+    {
+        // Arrange (AC: 2)
+        var updateDto = new UpdateTaskDto { State = TaskState.Completed };
+        var completedAt = DateTime.UtcNow;
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "My Task",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = completedAt
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, null, TaskState.Completed))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.State.Should().Be(TaskState.Completed);
+        taskDto.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateTask_TransitionFromCompleted_ClearsCompletedAt()
+    {
+        // Arrange (AC: 3)
+        var updateDto = new UpdateTaskDto { State = TaskState.OnDeck };
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = null // cleared
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, null, TaskState.OnDeck))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.State.Should().Be(TaskState.OnDeck);
+        taskDto.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateTask_WithNonExistentId_Returns404()
+    {
+        // Arrange (AC: 4)
+        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("invalid-id", TestAuthHandler.TestUserId, null, TaskState.InProgress))
+            .ThrowsAsync(new TaskNotFoundException("invalid-id"));
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/invalid-id", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task UpdateTask_WithInvalidState_Returns400()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { State = "InvalidState" };
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("VALIDATION_ERROR");
+    }
+
+    [Fact]
+    public async Task UpdateTask_WithoutAuthentication_Returns401()
+    {
+        // Arrange
+        _client.DefaultRequestHeaders.Add("X-Test-Unauthenticated", "true");
+        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task UpdateTask_OtherUsersTask_Returns404()
+    {
+        // Arrange (AC: 5 - user isolation)
+        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
+
+        // Simulate that the task belongs to a different user by having service throw TaskNotFoundException
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("other-users-task", TestAuthHandler.TestUserId, null, TaskState.InProgress))
+            .ThrowsAsync(new TaskNotFoundException("other-users-task"));
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/other-users-task", updateDto);
+
+        // Assert - 404 not 403, to avoid information leakage
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task UpdateTask_PartialUpdateNameOnly_Returns200()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { Name = "Updated Name" };
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Updated Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, "Updated Name", null))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.Name.Should().Be("Updated Name");
+    }
+
+    [Fact]
+    public async Task UpdateTask_FullUpdate_Returns200()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { Name = "New Name", State = TaskState.InProgress };
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "New Name",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, "New Name", TaskState.InProgress))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.Name.Should().Be("New Name");
+        taskDto.State.Should().Be(TaskState.InProgress);
     }
 
     #endregion

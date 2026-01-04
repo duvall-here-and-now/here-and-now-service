@@ -212,4 +212,143 @@ public class TasksControllerTests
     }
 
     #endregion
+
+    #region UpdateTask Tests
+
+    [Fact]
+    public async Task UpdateTask_WithValidInput_ReturnsOkWithUpdatedTask()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestUserId, null, TaskState.InProgress))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.UpdateTask("task-123", updateDto);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.Id.Should().Be("task-123");
+        taskDto.State.Should().Be(TaskState.InProgress);
+    }
+
+    [Fact]
+    public async Task UpdateTask_WithNameOnly_ReturnsOkWithUpdatedTask()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { Name = "Updated Name" };
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Updated Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestUserId, "Updated Name", null))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.UpdateTask("task-123", updateDto);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.Name.Should().Be("Updated Name");
+    }
+
+    [Fact]
+    public async Task UpdateTask_TransitionToCompleted_ReturnsTaskWithCompletedAt()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { State = TaskState.Completed };
+        var completedAt = DateTime.UtcNow;
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = completedAt
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestUserId, null, TaskState.Completed))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.UpdateTask("task-123", updateDto);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.State.Should().Be(TaskState.Completed);
+        taskDto.CompletedAt.Should().Be(completedAt);
+    }
+
+    [Fact]
+    public async Task UpdateTask_WithNonExistentId_Returns404NotFound()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskAsync("nonexistent", TestUserId, null, TaskState.InProgress))
+            .ThrowsAsync(new TaskNotFoundException("nonexistent"));
+
+        // Act
+        var result = await _controller.UpdateTask("nonexistent", updateDto);
+
+        // Assert
+        var notFoundResult = result.Result.Should().BeOfType<NotFoundObjectResult>().Subject;
+        var errorResponse = notFoundResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("TASK_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task UpdateTask_WithInvalidState_Returns400BadRequest()
+    {
+        // Arrange
+        var updateDto = new UpdateTaskDto { State = "InvalidState" };
+
+        // Act
+        var result = await _controller.UpdateTask("task-123", updateDto);
+
+        // Assert
+        var badRequestResult = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+    }
+
+    [Fact]
+    public async Task UpdateTask_WithEmptyDto_Returns400BadRequest()
+    {
+        // Arrange - no fields set
+        var updateDto = new UpdateTaskDto();
+
+        // Act
+        var result = await _controller.UpdateTask("task-123", updateDto);
+
+        // Assert
+        var badRequestResult = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("At least one field");
+    }
+
+    #endregion
 }

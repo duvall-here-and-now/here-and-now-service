@@ -100,4 +100,61 @@ public class TaskService : ITaskService
 
         return task;
     }
+
+    /// <inheritdoc />
+    public async Task<TaskDocument> UpdateTaskAsync(string taskId, string userId, string? name, string? state)
+    {
+        if (string.IsNullOrWhiteSpace(taskId))
+        {
+            throw new ArgumentException("Task ID cannot be empty", nameof(taskId));
+        }
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        _logger.LogDebug("Updating task {TaskId} for user {UserId}", taskId, userId);
+
+        // Fetch the existing task
+        var task = await _taskRepository.GetByIdAsync(taskId, userId);
+
+        if (task is null)
+        {
+            throw new TaskNotFoundException(taskId);
+        }
+
+        // Update name if provided
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            task.Name = name.Trim();
+        }
+
+        // Handle state transitions with completedAt logic
+        if (!string.IsNullOrWhiteSpace(state))
+        {
+            var isTransitioningToCompleted = state == TaskState.Completed && task.State != TaskState.Completed;
+            var isTransitioningFromCompleted = state != TaskState.Completed && task.State == TaskState.Completed;
+
+            task.State = state;
+
+            if (isTransitioningToCompleted)
+            {
+                task.CompletedAt = DateTime.UtcNow;
+                _logger.LogDebug("Task {TaskId} marked completed, setting completedAt", taskId);
+            }
+            else if (isTransitioningFromCompleted)
+            {
+                task.CompletedAt = null;
+                _logger.LogDebug("Task {TaskId} transitioned from Completed, clearing completedAt", taskId);
+            }
+            // Otherwise: preserve existing completedAt
+        }
+
+        var updatedTask = await _taskRepository.UpdateAsync(task);
+
+        _logger.LogInformation("Updated task {TaskId} for user {UserId}", taskId, userId);
+
+        return updatedTask;
+    }
 }
