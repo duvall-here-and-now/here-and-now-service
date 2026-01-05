@@ -44,16 +44,22 @@ public class TaskRepository : ITaskRepository
     /// <inheritdoc />
     public async Task<IEnumerable<TaskDocument>> GetByUserIdAsync(string userId, string? state = null)
     {
-        _logger.LogDebug("Getting tasks for user {UserId} with state filter {State}", userId, state ?? "all");
+        _logger.LogDebug("Getting tasks for user {UserId} with state filter {State}", userId, state ?? "all (excluding Deleted)");
 
+        // When no state filter is provided, exclude Deleted tasks by default (soft-delete pattern)
+        // When a specific state is requested, return exactly that state (including Deleted if explicitly requested)
         var queryText = state is null
-            ? "SELECT * FROM c WHERE c.userId = @userId AND c.type = 'Task'"
+            ? "SELECT * FROM c WHERE c.userId = @userId AND c.type = 'Task' AND c.state != @deletedState"
             : "SELECT * FROM c WHERE c.userId = @userId AND c.type = 'Task' AND c.state = @state";
 
         var queryDefinition = new QueryDefinition(queryText)
             .WithParameter("@userId", userId);
 
-        if (state is not null)
+        if (state is null)
+        {
+            queryDefinition = queryDefinition.WithParameter("@deletedState", TaskState.Deleted);
+        }
+        else
         {
             queryDefinition = queryDefinition.WithParameter("@state", state);
         }
@@ -111,14 +117,29 @@ public class TaskRepository : ITaskRepository
     }
 
     /// <inheritdoc />
-    public async System.Threading.Tasks.Task DeleteAsync(string taskId, string userId)
+    public async Task<TaskDocument> UpdateReminderIdAsync(string userId, string taskId, string? reminderId)
     {
-        _logger.LogDebug("Deleting task {TaskId} for user {UserId}", taskId, userId);
+        _logger.LogDebug("Patching reminderId on task {TaskId} for user {UserId}", taskId, userId);
 
-        await _container.DeleteItemAsync<TaskDocument>(
-            taskId,
-            new PartitionKey(userId));
+        var patchOperations = new List<PatchOperation>
+        {
+            PatchOperation.Set("/reminderId", reminderId)
+        };
 
-        _logger.LogInformation("Deleted task {TaskId} for user {UserId}", taskId, userId);
+        try
+        {
+            var response = await _container.PatchItemAsync<TaskDocument>(
+                taskId,
+                new PartitionKey(userId),
+                patchOperations);
+
+            _logger.LogInformation("Updated reminderId to {ReminderId} on task {TaskId} for user {UserId}",
+                reminderId ?? "(null)", taskId, userId);
+            return response.Resource;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            throw new Models.Exceptions.TaskNotFoundException(taskId);
+        }
     }
 }

@@ -481,4 +481,104 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     #endregion
+
+    #region Soft Delete Tests (Story 2-4: Task Deletion)
+
+    [Fact]
+    public async Task UpdateTask_TransitionToDeleted_Returns200()
+    {
+        // Arrange (Story 2-4, AC: 2 - soft delete via state transition)
+        var updateDto = new UpdateTaskDto { State = TaskState.Deleted };
+        var deletedTask = new TaskDocument
+        {
+            Id = "task-to-delete",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Task to Delete",
+            State = TaskState.Deleted,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-to-delete", TestAuthHandler.TestUserId, null, TaskState.Deleted))
+            .ReturnsAsync(deletedTask);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-to-delete", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.State.Should().Be(TaskState.Deleted);
+    }
+
+    [Fact]
+    public async Task GetTasks_ExcludesDeletedTasksByDefault()
+    {
+        // Arrange (Story 2-4, AC: 4 - deleted tasks excluded from results by default)
+        // When GetTasksAsync is called without a state filter, it should only return non-deleted tasks
+        var activeTasks = new List<TaskDocument>
+        {
+            new TaskDocument { Id = "active-task-1", UserId = TestAuthHandler.TestUserId, Name = "Active Task 1", State = TaskState.OnDeck },
+            new TaskDocument { Id = "active-task-2", UserId = TestAuthHandler.TestUserId, Name = "Active Task 2", State = TaskState.InProgress }
+        };
+
+        // The service should NOT return deleted tasks when no state filter is provided
+        _factory.MockTaskService
+            .Setup(s => s.GetTasksAsync(TestAuthHandler.TestUserId, null))
+            .ReturnsAsync(activeTasks);
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/tasks");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDtos = await response.Content.ReadFromJsonAsync<List<TaskDto>>();
+        taskDtos.Should().HaveCount(2);
+        taskDtos.Should().NotContain(t => t.State == TaskState.Deleted);
+    }
+
+    [Fact]
+    public async Task GetTasks_WithDeletedStateFilter_ReturnsDeletedTasks()
+    {
+        // Arrange (Story 2-4 - explicit filter for deleted tasks should work)
+        var deletedTasks = new List<TaskDocument>
+        {
+            new TaskDocument { Id = "deleted-task", UserId = TestAuthHandler.TestUserId, Name = "Deleted Task", State = TaskState.Deleted }
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.GetTasksAsync(TestAuthHandler.TestUserId, TaskState.Deleted))
+            .ReturnsAsync(deletedTasks);
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/tasks?state=Deleted");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDtos = await response.Content.ReadFromJsonAsync<List<TaskDto>>();
+        taskDtos.Should().HaveCount(1);
+        taskDtos!.First().State.Should().Be(TaskState.Deleted);
+    }
+
+    [Fact]
+    public async Task UpdateTask_DeleteOtherUsersTask_Returns404()
+    {
+        // Arrange (Story 2-4, AC related - user isolation for delete operations)
+        var updateDto = new UpdateTaskDto { State = TaskState.Deleted };
+
+        // Simulate that the task belongs to a different user by having service throw TaskNotFoundException
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("other-users-task", TestAuthHandler.TestUserId, null, TaskState.Deleted))
+            .ThrowsAsync(new TaskNotFoundException("other-users-task"));
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/other-users-task", updateDto);
+
+        // Assert - 404 not 403, to avoid information leakage
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
+    }
+
+    #endregion
 }

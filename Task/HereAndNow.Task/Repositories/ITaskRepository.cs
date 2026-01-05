@@ -38,9 +38,11 @@ public interface ITaskRepository
     Task<TaskDocument> UpdateAsync(TaskDocument task);
 
     /// <summary>
-    /// Deletes a task document (hard delete)
+    /// Updates only the reminderId field on a task
     /// </summary>
-    /// <param name="taskId">The task ID</param>
     /// <param name="userId">The user ID (partition key)</param>
-    Task DeleteAsync(string taskId, string userId);
+    /// <param name="taskId">The task ID</param>
+    /// <param name="reminderId">The reminder ID to set (null to clear)</param>
+    /// <returns>The updated task document</returns>
+    Task<TaskDocument> UpdateReminderIdAsync(string userId, string taskId, string? reminderId);
 }

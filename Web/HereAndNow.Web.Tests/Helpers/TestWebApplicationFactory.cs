@@ -14,6 +14,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
     public Mock<ITaskRepository> MockTaskRepository { get; } = new();
     public Mock<ITaskService> MockTaskService { get; } = new();
+    public Mock<ITaskReminderRepository> MockReminderRepository { get; } = new();
+    public Mock<ITaskReminderService> MockReminderService { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -40,6 +42,10 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             });
             services.AddSingleton<ITaskRepository>(MockTaskRepository.Object);
             services.AddScoped<ITaskService>(sp => MockTaskService.Object);
+
+            // Add mock Reminder services for integration tests
+            services.AddSingleton<ITaskReminderRepository>(MockReminderRepository.Object);
+            services.AddScoped<ITaskReminderService>(sp => MockReminderService.Object);
 
             // Add test authentication handler
             services.AddAuthentication("Test")
