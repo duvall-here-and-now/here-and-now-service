@@ -147,4 +147,47 @@ public class TaskReminderRepository : ITaskReminderRepository
         _logger.LogInformation("Updated reminder {ReminderId} for user {UserId}", reminder.Id, reminder.UserId);
         return response.Resource;
     }
+
+    /// <inheritdoc />
+    public async Task<TaskReminderDocument> CreateWithTaskLinkAsync(TaskReminderDocument reminder, string taskId)
+    {
+        _logger.LogDebug("Creating reminder {ReminderId} with atomic task link for task {TaskId}",
+            reminder.Id, taskId);
+
+        var batch = _container.CreateTransactionalBatch(new PartitionKey(reminder.UserId));
+
+        // Operation 1: Create reminder document
+        batch.CreateItem(reminder);
+
+        // Operation 2: Patch task document's reminderId field
+        var patchOperations = new List<PatchOperation>
+        {
+            PatchOperation.Set("/reminderId", reminder.Id)
+        };
+        batch.PatchItem(taskId, patchOperations);
+
+        using var batchResponse = await batch.ExecuteAsync();
+
+        if (!batchResponse.IsSuccessStatusCode)
+        {
+            _logger.LogError("Transactional batch failed with status {StatusCode}", batchResponse.StatusCode);
+
+            // Check if task not found (patch operation failed with 404)
+            if (batchResponse[1].StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new Models.Exceptions.TaskNotFoundException(taskId);
+            }
+
+            throw new InvalidOperationException(
+                $"Failed to create reminder atomically: {batchResponse.StatusCode}");
+        }
+
+        var createdReminder = batchResponse.GetOperationResultAtIndex<TaskReminderDocument>(0).Resource;
+
+        _logger.LogInformation(
+            "Created reminder {ReminderId} with atomic task link for task {TaskId} by user {UserId}",
+            createdReminder.Id, taskId, reminder.UserId);
+
+        return createdReminder;
+    }
 }

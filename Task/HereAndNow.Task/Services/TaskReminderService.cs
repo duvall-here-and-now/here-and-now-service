@@ -68,11 +68,9 @@ public class TaskReminderService : ITaskReminderService
             CreatedAt = DateTime.UtcNow
         };
 
-        // 4. Save reminder
-        var createdReminder = await _reminderRepository.CreateAsync(reminder);
-
-        // 5. Update task with reminderId (bidirectional link)
-        await _taskRepository.UpdateReminderIdAsync(userId, taskId, reminder.Id);
+        // 4. Atomically create reminder AND update task's reminderId in single transaction
+        // Uses Cosmos DB TransactionalBatch to ensure both operations succeed or both fail
+        var createdReminder = await _reminderRepository.CreateWithTaskLinkAsync(reminder, taskId);
 
         _logger.LogInformation("Created reminder {ReminderId} for task {TaskId} by user {UserId}",
             createdReminder.Id, taskId, userId);

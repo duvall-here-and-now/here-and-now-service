@@ -43,4 +43,14 @@ public interface ITaskReminderRepository
     /// <param name="reminder">The reminder document with updated values</param>
     /// <returns>The updated reminder document</returns>
     Task<TaskReminderDocument> UpdateAsync(TaskReminderDocument reminder);
+
+    /// <summary>
+    /// Creates a reminder and atomically updates the task's reminderId in a single transaction.
+    /// Uses Cosmos DB TransactionalBatch to ensure both operations succeed or both fail.
+    /// </summary>
+    /// <param name="reminder">The reminder document to create</param>
+    /// <param name="taskId">The task ID to link the reminder to</param>
+    /// <returns>The created reminder document</returns>
+    /// <exception cref="Models.Exceptions.TaskNotFoundException">If the task does not exist</exception>
+    Task<TaskReminderDocument> CreateWithTaskLinkAsync(TaskReminderDocument reminder, string taskId);
 }
