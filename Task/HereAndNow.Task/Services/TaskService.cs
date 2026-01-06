@@ -77,6 +77,59 @@ public class TaskService : ITaskService
     }
 
     /// <inheritdoc />
+    public async Task<PagedResult<TaskDocument>> GetTasksPagedAsync(
+        string userId,
+        string? state = null,
+        string orderBy = "createdAt",
+        string direction = "asc",
+        int skip = 0,
+        int take = 50)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        // Validate state if provided
+        if (state is not null && !TaskState.IsValid(state))
+        {
+            throw new ArgumentException($"Invalid task state: {state}", nameof(state));
+        }
+
+        // Validate orderBy
+        if (!orderBy.Equals("createdAt", StringComparison.OrdinalIgnoreCase) &&
+            !orderBy.Equals("completedAt", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException($"Invalid orderBy value: {orderBy}. Must be 'createdAt' or 'completedAt'", nameof(orderBy));
+        }
+
+        // Validate direction
+        if (!direction.Equals("asc", StringComparison.OrdinalIgnoreCase) &&
+            !direction.Equals("desc", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException($"Invalid direction value: {direction}. Must be 'asc' or 'desc'", nameof(direction));
+        }
+
+        // Validate skip
+        if (skip < 0)
+        {
+            throw new ArgumentException("Skip cannot be negative", nameof(skip));
+        }
+
+        // Validate take
+        if (take < 1 || take > 100)
+        {
+            throw new ArgumentException("Take must be between 1 and 100", nameof(take));
+        }
+
+        _logger.LogDebug(
+            "Getting paged tasks for user {UserId}: state={State}, orderBy={OrderBy}, direction={Direction}, skip={Skip}, take={Take}",
+            userId, state ?? "all", orderBy, direction, skip, take);
+
+        return await _taskRepository.GetByUserIdPagedAsync(userId, state, orderBy, direction, skip, take);
+    }
+
+    /// <inheritdoc />
     public async Task<TaskDocument> GetTaskByIdAsync(string taskId, string userId)
     {
         if (string.IsNullOrWhiteSpace(taskId))

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using HereAndNowService.Models;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
@@ -80,6 +81,109 @@ public class TaskRepository : ITaskRepository
 
         _logger.LogDebug("Found {Count} tasks for user {UserId}", results.Count, userId);
         return results;
+    }
+
+    /// <inheritdoc />
+    public async Task<PagedResult<TaskDocument>> GetByUserIdPagedAsync(
+        string userId,
+        string? state = null,
+        string orderBy = "createdAt",
+        string direction = "asc",
+        int skip = 0,
+        int take = 50)
+    {
+        _logger.LogDebug(
+            "Getting paged tasks for user {UserId}: state={State}, orderBy={OrderBy}, direction={Direction}, skip={Skip}, take={Take}",
+            userId, state ?? "all", orderBy, direction, skip, take);
+
+        // Clamp take to max 100
+        take = Math.Min(take, 100);
+
+        // Build the order clause - use safe field names
+        var orderDirection = direction.Equals("desc", StringComparison.OrdinalIgnoreCase) ? "DESC" : "ASC";
+        var orderField = orderBy.Equals("completedAt", StringComparison.OrdinalIgnoreCase) ? "c.completedAt" : "c.createdAt";
+
+        // Build the base query for items
+        var queryBuilder = new StringBuilder(
+            "SELECT * FROM c WHERE c.type = 'Task' AND c.userId = @userId AND c.state != @deletedState");
+
+        if (!string.IsNullOrEmpty(state))
+        {
+            queryBuilder.Append(" AND c.state = @state");
+        }
+
+        queryBuilder.Append($" ORDER BY {orderField} {orderDirection}");
+        queryBuilder.Append(" OFFSET @skip LIMIT @take");
+
+        var queryDefinition = new QueryDefinition(queryBuilder.ToString())
+            .WithParameter("@userId", userId)
+            .WithParameter("@deletedState", TaskState.Deleted)
+            .WithParameter("@skip", skip)
+            .WithParameter("@take", take);
+
+        if (!string.IsNullOrEmpty(state))
+        {
+            queryDefinition = queryDefinition.WithParameter("@state", state);
+        }
+
+        // Execute query to get items
+        var items = new List<TaskDocument>();
+        using var iterator = _container.GetItemQueryIterator<TaskDocument>(
+            queryDefinition,
+            requestOptions: new QueryRequestOptions
+            {
+                PartitionKey = new PartitionKey(userId)
+            });
+
+        while (iterator.HasMoreResults)
+        {
+            var response = await iterator.ReadNextAsync();
+            items.AddRange(response);
+        }
+
+        // Get total count for pagination metadata
+        var totalCount = await GetCountAsync(userId, state);
+
+        _logger.LogDebug("Found {Count} tasks (of {Total}) for user {UserId}", items.Count, totalCount, userId);
+
+        return new PagedResult<TaskDocument>
+        {
+            Items = items,
+            TotalCount = totalCount,
+            HasMore = skip + items.Count < totalCount
+        };
+    }
+
+    /// <summary>
+    /// Gets the count of tasks for pagination metadata
+    /// </summary>
+    private async Task<int> GetCountAsync(string userId, string? state)
+    {
+        var countQueryText = state is null
+            ? "SELECT VALUE COUNT(1) FROM c WHERE c.userId = @userId AND c.type = 'Task' AND c.state != @deletedState"
+            : "SELECT VALUE COUNT(1) FROM c WHERE c.userId = @userId AND c.type = 'Task' AND c.state = @state";
+
+        var countQuery = new QueryDefinition(countQueryText)
+            .WithParameter("@userId", userId);
+
+        if (state is null)
+        {
+            countQuery = countQuery.WithParameter("@deletedState", TaskState.Deleted);
+        }
+        else
+        {
+            countQuery = countQuery.WithParameter("@state", state);
+        }
+
+        using var countIterator = _container.GetItemQueryIterator<int>(
+            countQuery,
+            requestOptions: new QueryRequestOptions
+            {
+                PartitionKey = new PartitionKey(userId)
+            });
+
+        var countResponse = await countIterator.ReadNextAsync();
+        return countResponse.FirstOrDefault();
     }
 
     /// <inheritdoc />

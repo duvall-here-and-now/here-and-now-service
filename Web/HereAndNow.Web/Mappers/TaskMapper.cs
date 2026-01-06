@@ -35,4 +35,19 @@ public static class TaskMapper
     {
         return documents.Select(ToDto);
     }
+
+    /// <summary>
+    /// Maps a PagedResult of TaskDocuments to PagedTasksDto
+    /// </summary>
+    /// <param name="pagedResult">The paginated result from the service</param>
+    /// <returns>The paginated DTO for API response</returns>
+    public static PagedTasksDto ToPagedDto(PagedResult<TaskDocument> pagedResult)
+    {
+        return new PagedTasksDto
+        {
+            Items = pagedResult.Items.Select(ToDto).ToList(),
+            TotalCount = pagedResult.TotalCount,
+            HasMore = pagedResult.HasMore
+        };
+    }
 }

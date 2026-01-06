@@ -24,6 +24,24 @@ public interface ITaskService
     Task<IEnumerable<TaskDocument>> GetTasksAsync(string userId, string? state = null);
 
     /// <summary>
+    /// Gets tasks for a user with sorting and pagination
+    /// </summary>
+    /// <param name="userId">The ID of the user</param>
+    /// <param name="state">Optional state filter (OnDeck, InProgress, Completed)</param>
+    /// <param name="orderBy">Field to order by (createdAt or completedAt)</param>
+    /// <param name="direction">Sort direction (asc or desc)</param>
+    /// <param name="skip">Number of items to skip</param>
+    /// <param name="take">Number of items to return (max 100)</param>
+    /// <returns>Paginated result with items, total count, and hasMore flag</returns>
+    Task<PagedResult<TaskDocument>> GetTasksPagedAsync(
+        string userId,
+        string? state = null,
+        string orderBy = "createdAt",
+        string direction = "asc",
+        int skip = 0,
+        int take = 50);
+
+    /// <summary>
     /// Gets a specific task by ID for a user
     /// </summary>
     /// <param name="taskId">The task ID</param>

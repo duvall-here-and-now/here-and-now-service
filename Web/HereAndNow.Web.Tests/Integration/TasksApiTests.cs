@@ -174,17 +174,26 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
             new TaskDocument { Id = "task-2", UserId = TestAuthHandler.TestUserId, Name = "Task 2", State = TaskState.InProgress }
         };
 
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 2,
+            HasMore = false
+        };
+
         _factory.MockTaskService
-            .Setup(s => s.GetTasksAsync(TestAuthHandler.TestUserId, null))
-            .ReturnsAsync(tasks);
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, null, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
 
         // Act
         var response = await _client.GetAsync("/api/v1/tasks");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDtos = await response.Content.ReadFromJsonAsync<List<TaskDto>>();
-        taskDtos.Should().HaveCount(2);
+        var pagedDto = await response.Content.ReadFromJsonAsync<PagedTasksDto>();
+        pagedDto!.Items.Should().HaveCount(2);
+        pagedDto.TotalCount.Should().Be(2);
+        pagedDto.HasMore.Should().BeFalse();
     }
 
     [Fact]
@@ -196,18 +205,182 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
             new TaskDocument { Id = "task-1", UserId = TestAuthHandler.TestUserId, Name = "Task 1", State = TaskState.OnDeck }
         };
 
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 1,
+            HasMore = false
+        };
+
         _factory.MockTaskService
-            .Setup(s => s.GetTasksAsync(TestAuthHandler.TestUserId, TaskState.OnDeck))
-            .ReturnsAsync(tasks);
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, TaskState.OnDeck, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
 
         // Act
         var response = await _client.GetAsync("/api/v1/tasks?state=OnDeck");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDtos = await response.Content.ReadFromJsonAsync<List<TaskDto>>();
-        taskDtos.Should().HaveCount(1);
-        taskDtos!.First().State.Should().Be(TaskState.OnDeck);
+        var pagedDto = await response.Content.ReadFromJsonAsync<PagedTasksDto>();
+        pagedDto!.Items.Should().HaveCount(1);
+        pagedDto.Items.First().State.Should().Be(TaskState.OnDeck);
+    }
+
+    [Fact]
+    public async Task GetTasks_WithSortingParams_PassesCorrectParamsToService()
+    {
+        // Arrange (Story 2-5, AC: 1, 2 - sorting)
+        var tasks = new List<TaskDocument>
+        {
+            new TaskDocument { Id = "task-1", UserId = TestAuthHandler.TestUserId, Name = "Task 1", State = TaskState.Completed, CompletedAt = DateTime.UtcNow }
+        };
+
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 1,
+            HasMore = false
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, TaskState.Completed, "completedAt", "desc", 0, 50))
+            .ReturnsAsync(pagedResult);
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/tasks?state=Completed&orderBy=completedAt&direction=desc");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.MockTaskService.Verify(
+            s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, TaskState.Completed, "completedAt", "desc", 0, 50),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task GetTasks_WithPaginationParams_ReturnsCorrectPage()
+    {
+        // Arrange (Story 2-5, AC: 3, 4 - pagination)
+        var tasks = new List<TaskDocument>
+        {
+            new TaskDocument { Id = "task-51", UserId = TestAuthHandler.TestUserId, Name = "Task 51", State = TaskState.OnDeck }
+        };
+
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 60,
+            HasMore = false
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, null, "createdAt", "asc", 50, 50))
+            .ReturnsAsync(pagedResult);
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/tasks?skip=50&take=50");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pagedDto = await response.Content.ReadFromJsonAsync<PagedTasksDto>();
+        pagedDto!.Items.Should().HaveCount(1);
+        pagedDto.TotalCount.Should().Be(60);
+        pagedDto.HasMore.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetTasks_WithHasMoreTrue_IndicatesMoreDataAvailable()
+    {
+        // Arrange (Story 2-5, AC: 3 - hasMore flag)
+        var tasks = Enumerable.Range(1, 50).Select(i => new TaskDocument
+        {
+            Id = $"task-{i}",
+            UserId = TestAuthHandler.TestUserId,
+            Name = $"Task {i}",
+            State = TaskState.OnDeck
+        }).ToList();
+
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 75,
+            HasMore = true
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, null, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/tasks");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pagedDto = await response.Content.ReadFromJsonAsync<PagedTasksDto>();
+        pagedDto!.Items.Should().HaveCount(50);
+        pagedDto.TotalCount.Should().Be(75);
+        pagedDto.HasMore.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetTasks_WithCreatedAtAscending_ForOnDeckColumn()
+    {
+        // Arrange (Story 2-5, AC: 1 - OnDeck sorted by createdAt ASC)
+        var tasks = new List<TaskDocument>
+        {
+            new TaskDocument { Id = "task-old", UserId = TestAuthHandler.TestUserId, Name = "Old Task", State = TaskState.OnDeck, CreatedAt = DateTime.UtcNow.AddDays(-2) },
+            new TaskDocument { Id = "task-new", UserId = TestAuthHandler.TestUserId, Name = "New Task", State = TaskState.OnDeck, CreatedAt = DateTime.UtcNow }
+        };
+
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 2,
+            HasMore = false
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, TaskState.OnDeck, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/tasks?state=OnDeck&orderBy=createdAt&direction=asc");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.MockTaskService.Verify(
+            s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, TaskState.OnDeck, "createdAt", "asc", 0, 50),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task GetTasks_WithCompletedAtDescending_ForCompletedColumn()
+    {
+        // Arrange (Story 2-5, AC: 2 - Completed sorted by completedAt DESC)
+        var tasks = new List<TaskDocument>
+        {
+            new TaskDocument { Id = "task-recent", UserId = TestAuthHandler.TestUserId, Name = "Recent Task", State = TaskState.Completed, CompletedAt = DateTime.UtcNow },
+            new TaskDocument { Id = "task-older", UserId = TestAuthHandler.TestUserId, Name = "Older Task", State = TaskState.Completed, CompletedAt = DateTime.UtcNow.AddDays(-1) }
+        };
+
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 2,
+            HasMore = false
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, TaskState.Completed, "completedAt", "desc", 0, 50))
+            .ReturnsAsync(pagedResult);
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/tasks?state=Completed&orderBy=completedAt&direction=desc");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.MockTaskService.Verify(
+            s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, TaskState.Completed, "completedAt", "desc", 0, 50),
+            Times.AtLeastOnce);
     }
 
     #endregion
@@ -226,9 +399,16 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
             new TaskDocument { Id = "task-isolation-test", UserId = TestAuthHandler.TestUserId, Name = "Isolated Task" }
         };
 
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = currentUserTasks,
+            TotalCount = 1,
+            HasMore = false
+        };
+
         _factory.MockTaskService
-            .Setup(s => s.GetTasksAsync(TestAuthHandler.TestUserId, null))
-            .ReturnsAsync(currentUserTasks);
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, null, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
 
         // Act
         var response = await _client.GetAsync("/api/v1/tasks");
@@ -238,7 +418,7 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
 
         // Verify the service was called with the correct user ID (at least once due to shared factory)
         _factory.MockTaskService.Verify(
-            s => s.GetTasksAsync(TestAuthHandler.TestUserId, null),
+            s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, null, "createdAt", "asc", 0, 50),
             Times.AtLeastOnce);
     }
 
@@ -515,26 +695,33 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetTasks_ExcludesDeletedTasksByDefault()
     {
         // Arrange (Story 2-4, AC: 4 - deleted tasks excluded from results by default)
-        // When GetTasksAsync is called without a state filter, it should only return non-deleted tasks
+        // When GetTasksPagedAsync is called without a state filter, it should only return non-deleted tasks
         var activeTasks = new List<TaskDocument>
         {
             new TaskDocument { Id = "active-task-1", UserId = TestAuthHandler.TestUserId, Name = "Active Task 1", State = TaskState.OnDeck },
             new TaskDocument { Id = "active-task-2", UserId = TestAuthHandler.TestUserId, Name = "Active Task 2", State = TaskState.InProgress }
         };
 
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = activeTasks,
+            TotalCount = 2,
+            HasMore = false
+        };
+
         // The service should NOT return deleted tasks when no state filter is provided
         _factory.MockTaskService
-            .Setup(s => s.GetTasksAsync(TestAuthHandler.TestUserId, null))
-            .ReturnsAsync(activeTasks);
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, null, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
 
         // Act
         var response = await _client.GetAsync("/api/v1/tasks");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDtos = await response.Content.ReadFromJsonAsync<List<TaskDto>>();
-        taskDtos.Should().HaveCount(2);
-        taskDtos.Should().NotContain(t => t.State == TaskState.Deleted);
+        var pagedDto = await response.Content.ReadFromJsonAsync<PagedTasksDto>();
+        pagedDto!.Items.Should().HaveCount(2);
+        pagedDto.Items.Should().NotContain(t => t.State == TaskState.Deleted);
     }
 
     [Fact]
@@ -546,18 +733,25 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
             new TaskDocument { Id = "deleted-task", UserId = TestAuthHandler.TestUserId, Name = "Deleted Task", State = TaskState.Deleted }
         };
 
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = deletedTasks,
+            TotalCount = 1,
+            HasMore = false
+        };
+
         _factory.MockTaskService
-            .Setup(s => s.GetTasksAsync(TestAuthHandler.TestUserId, TaskState.Deleted))
-            .ReturnsAsync(deletedTasks);
+            .Setup(s => s.GetTasksPagedAsync(TestAuthHandler.TestUserId, TaskState.Deleted, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
 
         // Act
         var response = await _client.GetAsync("/api/v1/tasks?state=Deleted");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDtos = await response.Content.ReadFromJsonAsync<List<TaskDto>>();
-        taskDtos.Should().HaveCount(1);
-        taskDtos!.First().State.Should().Be(TaskState.Deleted);
+        var pagedDto = await response.Content.ReadFromJsonAsync<PagedTasksDto>();
+        pagedDto!.Items.Should().HaveCount(1);
+        pagedDto.Items.First().State.Should().Be(TaskState.Deleted);
     }
 
     [Fact]
