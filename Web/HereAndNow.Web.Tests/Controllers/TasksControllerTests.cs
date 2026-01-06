@@ -112,17 +112,26 @@ public class TasksControllerTests
             new TaskDocument { Id = "task-2", UserId = TestUserId, Name = "Task 2", State = TaskState.InProgress }
         };
 
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 2,
+            HasMore = false
+        };
+
         _mockTaskService
-            .Setup(s => s.GetTasksAsync(TestUserId, null))
-            .ReturnsAsync(tasks);
+            .Setup(s => s.GetTasksPagedAsync(TestUserId, null, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
 
         // Act
         var result = await _controller.GetTasks();
 
         // Assert
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var taskDtos = okResult.Value.Should().BeAssignableTo<IEnumerable<TaskDto>>().Subject;
-        taskDtos.Should().HaveCount(2);
+        var pagedDto = okResult.Value.Should().BeOfType<PagedTasksDto>().Subject;
+        pagedDto.Items.Should().HaveCount(2);
+        pagedDto.TotalCount.Should().Be(2);
+        pagedDto.HasMore.Should().BeFalse();
     }
 
     [Fact]
@@ -134,18 +143,25 @@ public class TasksControllerTests
             new TaskDocument { Id = "task-1", UserId = TestUserId, Name = "Task 1", State = TaskState.OnDeck }
         };
 
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 1,
+            HasMore = false
+        };
+
         _mockTaskService
-            .Setup(s => s.GetTasksAsync(TestUserId, TaskState.OnDeck))
-            .ReturnsAsync(tasks);
+            .Setup(s => s.GetTasksPagedAsync(TestUserId, TaskState.OnDeck, "createdAt", "asc", 0, 50))
+            .ReturnsAsync(pagedResult);
 
         // Act
         var result = await _controller.GetTasks(TaskState.OnDeck);
 
         // Assert
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var taskDtos = okResult.Value.Should().BeAssignableTo<IEnumerable<TaskDto>>().Subject;
-        taskDtos.Should().HaveCount(1);
-        taskDtos.First().State.Should().Be(TaskState.OnDeck);
+        var pagedDto = okResult.Value.Should().BeOfType<PagedTasksDto>().Subject;
+        pagedDto.Items.Should().HaveCount(1);
+        pagedDto.Items.First().State.Should().Be(TaskState.OnDeck);
     }
 
     [Fact]
@@ -153,7 +169,7 @@ public class TasksControllerTests
     {
         // Arrange
         _mockTaskService
-            .Setup(s => s.GetTasksAsync(TestUserId, "InvalidState"))
+            .Setup(s => s.GetTasksPagedAsync(TestUserId, "InvalidState", "createdAt", "asc", 0, 50))
             .ThrowsAsync(new ArgumentException("Invalid task state: InvalidState"));
 
         // Act
@@ -163,6 +179,67 @@ public class TasksControllerTests
         var badRequestResult = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
         var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
         errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+    }
+
+    [Fact]
+    public async Task GetTasks_WithPagination_ReturnsPagedResults()
+    {
+        // Arrange
+        var tasks = new List<TaskDocument>
+        {
+            new TaskDocument { Id = "task-51", UserId = TestUserId, Name = "Task 51", State = TaskState.OnDeck }
+        };
+
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 60,
+            HasMore = false
+        };
+
+        _mockTaskService
+            .Setup(s => s.GetTasksPagedAsync(TestUserId, null, "createdAt", "asc", 50, 50))
+            .ReturnsAsync(pagedResult);
+
+        // Act
+        var result = await _controller.GetTasks(null, "createdAt", "asc", 50, 50);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var pagedDto = okResult.Value.Should().BeOfType<PagedTasksDto>().Subject;
+        pagedDto.Items.Should().HaveCount(1);
+        pagedDto.TotalCount.Should().Be(60);
+        pagedDto.HasMore.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetTasks_WithSorting_CallsServiceWithCorrectParams()
+    {
+        // Arrange
+        var tasks = new List<TaskDocument>
+        {
+            new TaskDocument { Id = "task-1", UserId = TestUserId, Name = "Task 1", State = TaskState.Completed, CompletedAt = DateTime.UtcNow }
+        };
+
+        var pagedResult = new PagedResult<TaskDocument>
+        {
+            Items = tasks,
+            TotalCount = 1,
+            HasMore = false
+        };
+
+        _mockTaskService
+            .Setup(s => s.GetTasksPagedAsync(TestUserId, TaskState.Completed, "completedAt", "desc", 0, 50))
+            .ReturnsAsync(pagedResult);
+
+        // Act
+        var result = await _controller.GetTasks(TaskState.Completed, "completedAt", "desc");
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var pagedDto = okResult.Value.Should().BeOfType<PagedTasksDto>().Subject;
+        pagedDto.Items.Should().HaveCount(1);
+        _mockTaskService.Verify(s => s.GetTasksPagedAsync(TestUserId, TaskState.Completed, "completedAt", "desc", 0, 50), Times.Once);
     }
 
     #endregion

@@ -64,28 +64,38 @@ public class TasksController : ControllerBase
     }
 
     /// <summary>
-    /// Gets all tasks for the authenticated user
+    /// Gets tasks for the authenticated user with optional sorting and pagination
     /// </summary>
     /// <param name="state">Optional filter by task state (OnDeck, InProgress, Completed)</param>
-    /// <returns>List of tasks</returns>
-    /// <response code="200">Returns the list of tasks</response>
-    /// <response code="400">If the state filter is invalid</response>
+    /// <param name="orderBy">Field to order by (createdAt or completedAt). Default: createdAt</param>
+    /// <param name="direction">Sort direction (asc or desc). Default: asc</param>
+    /// <param name="skip">Number of items to skip for pagination. Default: 0</param>
+    /// <param name="take">Number of items to return (max 100). Default: 50</param>
+    /// <returns>Paginated list of tasks with metadata</returns>
+    /// <response code="200">Returns the paginated list of tasks</response>
+    /// <response code="400">If any query parameter is invalid</response>
     /// <response code="401">If the user is not authenticated</response>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<TaskDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PagedTasksDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<IEnumerable<TaskDto>>> GetTasks([FromQuery] string? state = null)
+    public async Task<ActionResult<PagedTasksDto>> GetTasks(
+        [FromQuery] string? state = null,
+        [FromQuery] string orderBy = "createdAt",
+        [FromQuery] string direction = "asc",
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50)
     {
         var userId = GetUserId();
 
-        _logger.LogInformation("Getting tasks for user {UserId} with state filter {State}",
-            userId, state ?? "all");
+        _logger.LogInformation(
+            "Getting tasks for user {UserId}: state={State}, orderBy={OrderBy}, direction={Direction}, skip={Skip}, take={Take}",
+            userId, state ?? "all", orderBy, direction, skip, take);
 
         try
         {
-            var tasks = await _taskService.GetTasksAsync(userId, state);
-            return Ok(TaskMapper.ToDtoList(tasks));
+            var pagedResult = await _taskService.GetTasksPagedAsync(userId, state, orderBy, direction, skip, take);
+            return Ok(TaskMapper.ToPagedDto(pagedResult));
         }
         catch (ArgumentException ex)
         {
