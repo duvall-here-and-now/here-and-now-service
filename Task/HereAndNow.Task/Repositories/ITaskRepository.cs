@@ -23,7 +23,9 @@ public interface ITaskRepository
     Task<IEnumerable<TaskDocument>> GetByUserIdAsync(string userId, string? state = null);
 
     /// <summary>
-    /// Gets tasks for a specific user with sorting and pagination
+    /// Gets tasks for a specific user with sorting and pagination.
+    /// Note: TotalCount may be approximate in high-concurrency scenarios due to
+    /// separate queries for items and count.
     /// </summary>
     /// <param name="userId">The user ID (partition key)</param>
     /// <param name="state">Optional state filter</param>

@@ -84,6 +84,12 @@ public class TaskRepository : ITaskRepository
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// This method executes two separate queries (items + count) which may yield
+    /// slightly inconsistent results if data changes between queries. The totalCount
+    /// should be treated as approximate in high-concurrency scenarios. For a single-user
+    /// task app, this race condition is negligible.
+    /// </remarks>
     public async Task<PagedResult<TaskDocument>> GetByUserIdPagedAsync(
         string userId,
         string? state = null,
@@ -96,10 +102,7 @@ public class TaskRepository : ITaskRepository
             "Getting paged tasks for user {UserId}: state={State}, orderBy={OrderBy}, direction={Direction}, skip={Skip}, take={Take}",
             userId, state ?? "all", orderBy, direction, skip, take);
 
-        // Clamp take to max 100
-        take = Math.Min(take, 100);
-
-        // Build the order clause - use safe field names
+        // Map API parameters to SQL field names (service layer validates these values)
         var orderDirection = direction.Equals("desc", StringComparison.OrdinalIgnoreCase) ? "DESC" : "ASC";
         var orderField = orderBy.Equals("completedAt", StringComparison.OrdinalIgnoreCase) ? "c.completedAt" : "c.createdAt";
 

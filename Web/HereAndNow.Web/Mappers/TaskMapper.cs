@@ -45,7 +45,7 @@ public static class TaskMapper
     {
         return new PagedTasksDto
         {
-            Items = pagedResult.Items.Select(ToDto).ToList(),
+            Items = pagedResult.Items.Select(ToDto).ToArray(),
             TotalCount = pagedResult.TotalCount,
             HasMore = pagedResult.HasMore
         };
