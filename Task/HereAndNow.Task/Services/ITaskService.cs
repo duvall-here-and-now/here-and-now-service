@@ -60,4 +60,14 @@ public interface ITaskService
     /// <returns>The updated task document</returns>
     /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
     Task<TaskDocument> UpdateTaskAsync(string taskId, string userId, string? name, string? state);
+
+    /// <summary>
+    /// Creates a new task with an optional reminder in a single operation.
+    /// If scheduledTime is provided, creates both the task and its reminder.
+    /// </summary>
+    /// <param name="name">The name of the task</param>
+    /// <param name="userId">The ID of the user creating the task</param>
+    /// <param name="scheduledTime">Optional UTC time for the reminder. If null, only task is created.</param>
+    /// <returns>The created task document with reminderId populated if reminder was created</returns>
+    Task<TaskDocument> CreateTaskWithOptionalReminderAsync(string name, string userId, DateTime? scheduledTime);
 }

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using HereAndNowService.Validation;
 
 namespace HereAndNowService.DTOs;
 
@@ -16,4 +17,13 @@ public class CreateTaskDto
     [MaxLength(500, ErrorMessage = "Task name cannot exceed 500 characters")]
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional scheduled time for a reminder. When provided, creates both the task
+    /// and an associated reminder. Must be a UTC datetime in the future.
+    /// </summary>
+    [DataType(DataType.DateTime)]
+    [FutureTimeValidation(ErrorMessage = "Scheduled time must be in the future")]
+    [JsonPropertyName("scheduledTime")]
+    public DateTime? ScheduledTime { get; set; }
 }

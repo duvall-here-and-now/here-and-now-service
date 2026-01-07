@@ -11,14 +11,19 @@ namespace HereAndNowService.Services;
 public class TaskService : ITaskService
 {
     private readonly ITaskRepository _taskRepository;
+    private readonly ITaskReminderRepository _reminderRepository;
     private readonly ILogger<TaskService> _logger;
 
     /// <summary>
     /// Creates a new TaskService instance
     /// </summary>
-    public TaskService(ITaskRepository taskRepository, ILogger<TaskService> logger)
+    public TaskService(
+        ITaskRepository taskRepository,
+        ITaskReminderRepository reminderRepository,
+        ILogger<TaskService> logger)
     {
         _taskRepository = taskRepository;
+        _reminderRepository = reminderRepository;
         _logger = logger;
     }
 
@@ -215,5 +220,71 @@ public class TaskService : ITaskService
         _logger.LogInformation("Updated task {TaskId} for user {UserId}", taskId, userId);
 
         return updatedTask;
+    }
+
+    /// <inheritdoc />
+    public async Task<TaskDocument> CreateTaskWithOptionalReminderAsync(string name, string userId, DateTime? scheduledTime)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Task name cannot be empty", nameof(name));
+        }
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        _logger.LogDebug("Creating task '{Name}' for user {UserId} with reminder: {HasReminder}",
+            name, userId, scheduledTime.HasValue);
+
+        // 1. Create the Task first
+        var task = new TaskDocument
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserId = userId,
+            Name = name.Trim(),
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow,
+            CompletedAt = null,
+            ReminderId = null
+        };
+
+        var createdTask = await _taskRepository.CreateAsync(task);
+
+        _logger.LogInformation("Created task {TaskId} '{Name}' for user {UserId}",
+            createdTask.Id, createdTask.Name, userId);
+
+        // 2. If scheduledTime provided, create reminder and link to task
+        if (scheduledTime.HasValue)
+        {
+            _logger.LogDebug("Creating reminder for task {TaskId} scheduled at {ScheduledTime}",
+                createdTask.Id, scheduledTime.Value);
+
+            var reminder = new TaskReminderDocument
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = userId,
+                TaskId = createdTask.Id,
+                TaskName = createdTask.Name,
+                // Use ToUniversalTime() for proper conversion (not SpecifyKind which only relabels)
+                ScheduledTime = scheduledTime.Value.Kind == DateTimeKind.Utc
+                    ? scheduledTime.Value
+                    : scheduledTime.Value.ToUniversalTime(),
+                IsDismissed = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            // Use atomic transactional method to ensure both reminder creation and task linking succeed or fail together
+            var createdReminder = await _reminderRepository.CreateWithTaskLinkAsync(reminder, createdTask.Id);
+
+            // Update local object to reflect the change made by the transaction
+            createdTask.ReminderId = createdReminder.Id;
+
+            _logger.LogInformation("Created task {TaskId} with reminder {ReminderId} for user {UserId}",
+                createdTask.Id, createdReminder.Id, userId);
+        }
+
+        return createdTask;
     }
 }

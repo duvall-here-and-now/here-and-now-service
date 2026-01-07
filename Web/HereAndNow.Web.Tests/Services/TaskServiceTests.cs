@@ -11,6 +11,7 @@ namespace HereAndNow.Web.Tests.Services;
 public class TaskServiceTests
 {
     private readonly Mock<ITaskRepository> _mockRepository;
+    private readonly Mock<ITaskReminderRepository> _mockReminderRepository;
     private readonly Mock<ILogger<TaskService>> _mockLogger;
     private readonly TaskService _taskService;
     private const string TestUserId = "auth0|test-user-123";
@@ -18,8 +19,9 @@ public class TaskServiceTests
     public TaskServiceTests()
     {
         _mockRepository = new Mock<ITaskRepository>();
+        _mockReminderRepository = new Mock<ITaskReminderRepository>();
         _mockLogger = new Mock<ILogger<TaskService>>();
-        _taskService = new TaskService(_mockRepository.Object, _mockLogger.Object);
+        _taskService = new TaskService(_mockRepository.Object, _mockReminderRepository.Object, _mockLogger.Object);
     }
 
     #region CreateTaskAsync Tests

@@ -29,12 +29,12 @@ public class TasksController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new task
+    /// Creates a new task, optionally with an associated reminder
     /// </summary>
-    /// <param name="createTaskDto">The task creation request</param>
+    /// <param name="createTaskDto">The task creation request with optional scheduledTime for reminder</param>
     /// <returns>The created task</returns>
     /// <response code="201">Returns the newly created task</response>
-    /// <response code="400">If the request is invalid</response>
+    /// <response code="400">If the request is invalid (including INVALID_SCHEDULED_TIME for past times)</response>
     /// <response code="401">If the user is not authenticated</response>
     [HttpPost]
     [ProducesResponseType(typeof(TaskDto), StatusCodes.Status201Created)]
@@ -44,11 +44,19 @@ public class TasksController : ControllerBase
     {
         var userId = GetUserId();
 
-        _logger.LogInformation("Creating task for user {UserId}", userId);
+        _logger.LogInformation("Creating task for user {UserId} with reminder: {HasReminder}",
+            userId, createTaskDto.ScheduledTime.HasValue);
+
+        // Note: ScheduledTime validation (FutureTimeValidation) is handled by InvalidModelStateResponseFactory
+        // which returns INVALID_SCHEDULED_TIME error code for scheduledTime validation failures
 
         try
         {
-            var task = await _taskService.CreateTaskAsync(createTaskDto.Name, userId);
+            var task = await _taskService.CreateTaskWithOptionalReminderAsync(
+                createTaskDto.Name,
+                userId,
+                createTaskDto.ScheduledTime);
+
             var taskDto = TaskMapper.ToDto(task);
 
             return CreatedAtAction(
