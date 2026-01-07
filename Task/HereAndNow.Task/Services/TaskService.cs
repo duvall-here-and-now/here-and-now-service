@@ -267,7 +267,10 @@ public class TaskService : ITaskService
                 UserId = userId,
                 TaskId = createdTask.Id,
                 TaskName = createdTask.Name,
-                ScheduledTime = DateTime.SpecifyKind(scheduledTime.Value, DateTimeKind.Utc),
+                // Use ToUniversalTime() for proper conversion (not SpecifyKind which only relabels)
+                ScheduledTime = scheduledTime.Value.Kind == DateTimeKind.Utc
+                    ? scheduledTime.Value
+                    : scheduledTime.Value.ToUniversalTime(),
                 IsDismissed = false,
                 CreatedAt = DateTime.UtcNow
             };

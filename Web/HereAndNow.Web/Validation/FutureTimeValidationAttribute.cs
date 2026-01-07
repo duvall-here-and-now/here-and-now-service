@@ -34,9 +34,10 @@ public class FutureTimeValidationAttribute : ValidationAttribute
         if (value is DateTime dateTime)
         {
             // Ensure we're comparing UTC times
+            // Use ToUniversalTime() for proper conversion (not SpecifyKind which only relabels)
             var utcDateTime = dateTime.Kind == DateTimeKind.Utc
                 ? dateTime
-                : DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
+                : dateTime.ToUniversalTime();
 
             if (utcDateTime <= DateTime.UtcNow)
             {
