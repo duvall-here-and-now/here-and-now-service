@@ -90,7 +90,7 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
         };
 
         _factory.MockTaskService
-            .Setup(s => s.CreateTaskAsync("My Task", TestAuthHandler.TestUserId))
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("My Task", TestAuthHandler.TestUserId, null))
             .ReturnsAsync(createdTask);
 
         // Act
@@ -121,7 +121,7 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
         };
 
         _factory.MockTaskService
-            .Setup(s => s.CreateTaskAsync("New Task", TestAuthHandler.TestUserId))
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("New Task", TestAuthHandler.TestUserId, null))
             .ReturnsAsync(createdTask);
 
         // Act
@@ -148,7 +148,7 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
         };
 
         _factory.MockTaskService
-            .Setup(s => s.CreateTaskAsync("Test Task", TestAuthHandler.TestUserId))
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("Test Task", TestAuthHandler.TestUserId, null))
             .ReturnsAsync(createdTask);
 
         // Act
@@ -437,7 +437,7 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
         };
 
         _factory.MockTaskService
-            .Setup(s => s.CreateTaskAsync("User's Task", TestAuthHandler.TestUserId))
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("User's Task", TestAuthHandler.TestUserId, null))
             .ReturnsAsync(createdTask);
 
         // Act
@@ -445,7 +445,7 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
 
         // Assert - verify service was called with correct user ID from auth
         _factory.MockTaskService.Verify(
-            s => s.CreateTaskAsync("User's Task", TestAuthHandler.TestUserId),
+            s => s.CreateTaskWithOptionalReminderAsync("User's Task", TestAuthHandler.TestUserId, null),
             Times.Once);
     }
 
@@ -772,6 +772,175 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
         errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
+    }
+
+    #endregion
+
+    #region Combined Task+Reminder Creation Tests (Story 3-2: Create Task with Reminder)
+
+    [Fact]
+    public async Task CreateTask_WithScheduledTime_CreatesTaskWithReminder()
+    {
+        // Arrange (Story 3-2, AC: 3 - creates both Task and TaskReminder together)
+        var scheduledTime = DateTime.UtcNow.AddHours(2);
+        var createDto = new CreateTaskDto
+        {
+            Name = "Task with Reminder",
+            ScheduledTime = scheduledTime
+        };
+
+        var createdTask = new TaskDocument
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Task with Reminder",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow,
+            ReminderId = "reminder-123"
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("Task with Reminder", TestAuthHandler.TestUserId, scheduledTime))
+            .ReturnsAsync(createdTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", createDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto.Should().NotBeNull();
+        taskDto!.Name.Should().Be("Task with Reminder");
+        taskDto.ReminderId.Should().Be("reminder-123");
+
+        // Verify the new combined method was called
+        _factory.MockTaskService.Verify(
+            s => s.CreateTaskWithOptionalReminderAsync("Task with Reminder", TestAuthHandler.TestUserId, scheduledTime),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTask_WithoutScheduledTime_CreatesOnlyTask()
+    {
+        // Arrange (Story 3-2, AC: 4 - only Task created when no scheduledTime)
+        var createDto = new CreateTaskDto { Name = "Task without Reminder" };
+
+        var createdTask = new TaskDocument
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Task without Reminder",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow,
+            ReminderId = null
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("Task without Reminder", TestAuthHandler.TestUserId, null))
+            .ReturnsAsync(createdTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", createDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto.Should().NotBeNull();
+        taskDto!.ReminderId.Should().BeNull();
+
+        // Verify the combined method was called with null scheduledTime
+        _factory.MockTaskService.Verify(
+            s => s.CreateTaskWithOptionalReminderAsync("Task without Reminder", TestAuthHandler.TestUserId, null),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTask_WithPastScheduledTime_Returns400InvalidScheduledTime()
+    {
+        // Arrange (Story 3-2, AC: 5 - validation prevents past times)
+        var pastTime = DateTime.UtcNow.AddHours(-1);
+        var createDto = new CreateTaskDto
+        {
+            Name = "Task with Past Reminder",
+            ScheduledTime = pastTime
+        };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", createDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse.Should().NotBeNull();
+        errorResponse!.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
+        errorResponse.Error.Message.Should().Contain("future");
+    }
+
+    [Fact]
+    public async Task CreateTask_WithScheduledTime_TaskHasReminderId()
+    {
+        // Arrange (Story 3-2, AC: 3 - task should have reminderId populated)
+        var scheduledTime = DateTime.UtcNow.AddDays(1);
+        var createDto = new CreateTaskDto
+        {
+            Name = "Task to check reminderId",
+            ScheduledTime = scheduledTime
+        };
+
+        var createdTask = new TaskDocument
+        {
+            Id = "task-abc",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Task to check reminderId",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow,
+            ReminderId = "reminder-xyz"
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("Task to check reminderId", TestAuthHandler.TestUserId, scheduledTime))
+            .ReturnsAsync(createdTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", createDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.Id.Should().Be("task-abc");
+        taskDto.ReminderId.Should().Be("reminder-xyz");
+    }
+
+    [Fact]
+    public async Task CreateTask_WithScheduledTimeInFuture_ReturnsCreated()
+    {
+        // Arrange (Story 3-2 - valid future time should work)
+        var futureTime = DateTime.UtcNow.AddMinutes(30);
+        var createDto = new CreateTaskDto
+        {
+            Name = "Future Reminder Task",
+            ScheduledTime = futureTime
+        };
+
+        var createdTask = new TaskDocument
+        {
+            Id = "task-future",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Future Reminder Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow,
+            ReminderId = "reminder-future"
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("Future Reminder Task", TestAuthHandler.TestUserId, futureTime))
+            .ReturnsAsync(createdTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", createDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
     #endregion

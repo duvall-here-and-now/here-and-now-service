@@ -56,7 +56,7 @@ public class TasksControllerTests
         };
 
         _mockTaskService
-            .Setup(s => s.CreateTaskAsync("Test Task", TestUserId))
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("Test Task", TestUserId, null))
             .ReturnsAsync(createdTask);
 
         // Act
@@ -86,7 +86,7 @@ public class TasksControllerTests
         };
 
         _mockTaskService
-            .Setup(s => s.CreateTaskAsync("New Task", TestUserId))
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("New Task", TestUserId, null))
             .ReturnsAsync(createdTask);
 
         // Act

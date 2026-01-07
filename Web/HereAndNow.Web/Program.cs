@@ -86,17 +86,24 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
     {
+        // Check for ScheduledTime validation errors (for INVALID_SCHEDULED_TIME error code)
+        var hasScheduledTimeError = context.ModelState
+            .Any(e => e.Key.Equals("ScheduledTime", StringComparison.OrdinalIgnoreCase) && e.Value?.Errors.Count > 0);
+
         var firstError = context.ModelState
             .Where(e => e.Value?.Errors.Count > 0)
             .SelectMany(e => e.Value!.Errors)
             .Select(e => e.ErrorMessage)
             .FirstOrDefault() ?? "Validation failed";
 
+        // Use specific error code for scheduledTime validation failures
+        var errorCode = hasScheduledTimeError ? "INVALID_SCHEDULED_TIME" : "VALIDATION_ERROR";
+
         var errorResponse = new ErrorResponseDto
         {
             Error = new ErrorDetailsDto
             {
-                Code = "VALIDATION_ERROR",
+                Code = errorCode,
                 Message = firstError
             }
         };
