@@ -275,13 +275,11 @@ public class TaskService : ITaskService
                 CreatedAt = DateTime.UtcNow
             };
 
-            var createdReminder = await _reminderRepository.CreateAsync(reminder);
+            // Use atomic transactional method to ensure both reminder creation and task linking succeed or fail together
+            var createdReminder = await _reminderRepository.CreateWithTaskLinkAsync(reminder, createdTask.Id);
 
-            _logger.LogDebug("Created reminder {ReminderId} for task {TaskId}",
-                createdReminder.Id, createdTask.Id);
-
-            // 3. Update task with reminder ID (bidirectional link)
-            createdTask = await _taskRepository.UpdateReminderIdAsync(userId, createdTask.Id, createdReminder.Id);
+            // Update local object to reflect the change made by the transaction
+            createdTask.ReminderId = createdReminder.Id;
 
             _logger.LogInformation("Created task {TaskId} with reminder {ReminderId} for user {UserId}",
                 createdTask.Id, createdReminder.Id, userId);
