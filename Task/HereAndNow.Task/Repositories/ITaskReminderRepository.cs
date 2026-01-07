@@ -24,18 +24,18 @@ public interface ITaskReminderRepository
     /// <summary>
     /// Gets a specific reminder by ID and user ID
     /// </summary>
-    /// <param name="reminderId">The reminder ID</param>
     /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="reminderId">The reminder ID</param>
     /// <returns>The reminder document or null if not found</returns>
-    Task<TaskReminderDocument?> GetByIdAsync(string reminderId, string userId);
+    Task<TaskReminderDocument?> GetByIdAsync(string userId, string reminderId);
 
     /// <summary>
     /// Gets a reminder by task ID to check if one already exists
     /// </summary>
-    /// <param name="taskId">The task ID</param>
     /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The task ID</param>
     /// <returns>The reminder document or null if not found</returns>
-    Task<TaskReminderDocument?> GetByTaskIdAsync(string taskId, string userId);
+    Task<TaskReminderDocument?> GetByTaskIdAsync(string userId, string taskId);
 
     /// <summary>
     /// Updates an existing reminder document

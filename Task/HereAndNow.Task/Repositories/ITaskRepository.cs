@@ -45,10 +45,10 @@ public interface ITaskRepository
     /// <summary>
     /// Gets a specific task by ID and user ID
     /// </summary>
-    /// <param name="taskId">The task ID</param>
     /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The task ID</param>
     /// <returns>The task document or null if not found</returns>
-    Task<TaskDocument?> GetByIdAsync(string taskId, string userId);
+    Task<TaskDocument?> GetByIdAsync(string userId, string taskId);
 
     /// <summary>
     /// Updates an existing task document

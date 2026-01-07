@@ -43,14 +43,14 @@ public class TaskReminderService : ITaskReminderService
         _logger.LogDebug("Creating reminder for task {TaskId} by user {UserId}", taskId, userId);
 
         // 1. Load and validate task exists
-        var task = await _taskRepository.GetByIdAsync(taskId, userId);
+        var task = await _taskRepository.GetByIdAsync(userId, taskId);
         if (task is null)
         {
             throw new TaskNotFoundException(taskId);
         }
 
         // 2. Check task doesn't already have a reminder
-        var existingReminder = await _reminderRepository.GetByTaskIdAsync(taskId, userId);
+        var existingReminder = await _reminderRepository.GetByTaskIdAsync(userId, taskId);
         if (existingReminder is not null)
         {
             throw new ReminderAlreadyExistsException(taskId);
@@ -106,6 +106,6 @@ public class TaskReminderService : ITaskReminderService
 
         _logger.LogDebug("Getting reminder {ReminderId} for user {UserId}", reminderId, userId);
 
-        return await _reminderRepository.GetByIdAsync(reminderId, userId);
+        return await _reminderRepository.GetByIdAsync(userId, reminderId);
     }
 }

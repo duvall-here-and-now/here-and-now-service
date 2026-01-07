@@ -149,7 +149,7 @@ public class TaskService : ITaskService
 
         _logger.LogDebug("Getting task {TaskId} for user {UserId}", taskId, userId);
 
-        var task = await _taskRepository.GetByIdAsync(taskId, userId);
+        var task = await _taskRepository.GetByIdAsync(userId, taskId);
 
         if (task is null)
         {
@@ -175,7 +175,7 @@ public class TaskService : ITaskService
         _logger.LogDebug("Updating task {TaskId} for user {UserId}", taskId, userId);
 
         // Fetch the existing task
-        var task = await _taskRepository.GetByIdAsync(taskId, userId);
+        var task = await _taskRepository.GetByIdAsync(userId, taskId);
 
         if (task is null)
         {
@@ -304,7 +304,7 @@ public class TaskService : ITaskService
         _logger.LogDebug("Completing task {TaskId} with Unity for user {UserId}", taskId, userId);
 
         // 1. Load the task
-        var task = await _taskRepository.GetByIdAsync(taskId, userId);
+        var task = await _taskRepository.GetByIdAsync(userId, taskId);
         if (task == null)
         {
             throw new TaskNotFoundException(taskId);
@@ -314,7 +314,7 @@ public class TaskService : ITaskService
         TaskReminderDocument? reminder = null;
         if (!string.IsNullOrEmpty(task.ReminderId))
         {
-            reminder = await _reminderRepository.GetByIdAsync(task.ReminderId, userId);
+            reminder = await _reminderRepository.GetByIdAsync(userId, task.ReminderId);
             if (reminder == null)
             {
                 // Reminder was deleted - clear the stale reference

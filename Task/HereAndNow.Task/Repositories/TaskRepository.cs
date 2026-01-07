@@ -191,7 +191,7 @@ public class TaskRepository : ITaskRepository
     }
 
     /// <inheritdoc />
-    public async Task<TaskDocument?> GetByIdAsync(string taskId, string userId)
+    public async Task<TaskDocument?> GetByIdAsync(string userId, string taskId)
     {
         _logger.LogDebug("Getting task {TaskId} for user {UserId}", taskId, userId);
 

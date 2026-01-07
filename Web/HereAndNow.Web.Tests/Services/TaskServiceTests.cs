@@ -194,7 +194,7 @@ public class TaskServiceTests
         var task = new TaskDocument { Id = "task-123", Name = "Test Task", UserId = TestUserId };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(task);
 
         // Act
@@ -210,7 +210,7 @@ public class TaskServiceTests
     {
         // Arrange
         _mockRepository
-            .Setup(r => r.GetByIdAsync("nonexistent", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "nonexistent"))
             .ReturnsAsync((TaskDocument?)null);
 
         // Act & Assert
@@ -250,7 +250,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
         _mockRepository
             .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
@@ -278,7 +278,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
         _mockRepository
             .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
@@ -307,7 +307,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
         _mockRepository
             .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
@@ -337,7 +337,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
         _mockRepository
             .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
@@ -366,7 +366,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
         _mockRepository
             .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
@@ -395,7 +395,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
         _mockRepository
             .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
@@ -423,7 +423,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
         _mockRepository
             .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
@@ -451,7 +451,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
         _mockRepository
             .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
@@ -469,7 +469,7 @@ public class TaskServiceTests
     {
         // Arrange
         _mockRepository
-            .Setup(r => r.GetByIdAsync("nonexistent", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "nonexistent"))
             .ReturnsAsync((TaskDocument?)null);
 
         // Act & Assert
@@ -505,7 +505,7 @@ public class TaskServiceTests
         };
 
         _mockRepository
-            .Setup(r => r.GetByIdAsync("task-123", TestUserId))
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
             .ReturnsAsync(existingTask);
 
         // Act & Assert

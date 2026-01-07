@@ -74,7 +74,7 @@ public class TaskReminderRepository : ITaskReminderRepository
     }
 
     /// <inheritdoc />
-    public async Task<TaskReminderDocument?> GetByIdAsync(string reminderId, string userId)
+    public async Task<TaskReminderDocument?> GetByIdAsync(string userId, string reminderId)
     {
         _logger.LogDebug("Getting reminder {ReminderId} for user {UserId}", reminderId, userId);
 
@@ -101,7 +101,7 @@ public class TaskReminderRepository : ITaskReminderRepository
     }
 
     /// <inheritdoc />
-    public async Task<TaskReminderDocument?> GetByTaskIdAsync(string taskId, string userId)
+    public async Task<TaskReminderDocument?> GetByTaskIdAsync(string userId, string taskId)
     {
         _logger.LogDebug("Getting reminder for task {TaskId} and user {UserId}", taskId, userId);
 
