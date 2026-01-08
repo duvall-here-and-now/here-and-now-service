@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using HereAndNowService.Models;
+using HereAndNowService.Models.Exceptions;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 
@@ -190,7 +191,7 @@ public class TaskRepository : ITaskRepository
     }
 
     /// <inheritdoc />
-    public async Task<TaskDocument?> GetByIdAsync(string taskId, string userId)
+    public async Task<TaskDocument?> GetByIdAsync(string userId, string taskId)
     {
         _logger.LogDebug("Getting task {TaskId} for user {UserId}", taskId, userId);
 
@@ -246,7 +247,46 @@ public class TaskRepository : ITaskRepository
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            throw new Models.Exceptions.TaskNotFoundException(taskId);
+            throw new TaskNotFoundException(taskId);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<TaskDocument> CompleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder)
+    {
+        _logger.LogDebug("Completing task {TaskId} with Unity for user {UserId}, hasReminder={HasReminder}",
+            task.Id, task.UserId, reminder != null);
+
+        // If no reminder, just update the task normally
+        if (reminder == null)
+        {
+            _logger.LogDebug("No reminder associated - performing simple task update");
+            return await UpdateAsync(task);
+        }
+
+        // Use transactional batch to atomically update both documents
+        var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
+        batch.ReplaceItem(task.Id, task);
+        batch.ReplaceItem(reminder.Id, reminder);
+
+        using var batchResponse = await batch.ExecuteAsync();
+
+        if (!batchResponse.IsSuccessStatusCode)
+        {
+            _logger.LogError("Unity transactional batch failed with status {StatusCode} for task {TaskId}",
+                batchResponse.StatusCode, task.Id);
+
+            throw new UnityTransactionFailedException(
+                $"Unity transaction failed for task {task.Id}. Status: {batchResponse.StatusCode}",
+                task.Id);
+        }
+
+        var completedTask = batchResponse.GetOperationResultAtIndex<TaskDocument>(0).Resource;
+
+        _logger.LogInformation(
+            "Completed task {TaskId} with Unity - reminder {ReminderId} dismissed atomically for user {UserId}",
+            completedTask.Id, reminder.Id, task.UserId);
+
+        return completedTask;
     }
 }

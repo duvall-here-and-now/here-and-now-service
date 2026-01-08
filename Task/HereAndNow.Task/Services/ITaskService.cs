@@ -70,4 +70,16 @@ public interface ITaskService
     /// <param name="scheduledTime">Optional UTC time for the reminder. If null, only task is created.</param>
     /// <returns>The created task document with reminderId populated if reminder was created</returns>
     Task<TaskDocument> CreateTaskWithOptionalReminderAsync(string name, string userId, DateTime? scheduledTime);
+
+    /// <summary>
+    /// Completes a task with Unity - atomically updates the task to Completed state
+    /// and dismisses the associated reminder (if any) in a single transactional batch.
+    /// This ensures data consistency: either both updates succeed or neither does.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The task ID to complete</param>
+    /// <returns>The completed task document</returns>
+    /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
+    /// <exception cref="Models.Exceptions.UnityTransactionFailedException">Thrown when the transactional batch fails</exception>
+    Task<TaskDocument> CompleteTaskWithUnityAsync(string userId, string taskId);
 }

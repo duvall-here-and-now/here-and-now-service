@@ -45,10 +45,10 @@ public interface ITaskRepository
     /// <summary>
     /// Gets a specific task by ID and user ID
     /// </summary>
-    /// <param name="taskId">The task ID</param>
     /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The task ID</param>
     /// <returns>The task document or null if not found</returns>
-    Task<TaskDocument?> GetByIdAsync(string taskId, string userId);
+    Task<TaskDocument?> GetByIdAsync(string userId, string taskId);
 
     /// <summary>
     /// Updates an existing task document
@@ -65,4 +65,14 @@ public interface ITaskRepository
     /// <param name="reminderId">The reminder ID to set (null to clear)</param>
     /// <returns>The updated task document</returns>
     Task<TaskDocument> UpdateReminderIdAsync(string userId, string taskId, string? reminderId);
+
+    /// <summary>
+    /// Atomically completes a task and dismisses its associated reminder using Cosmos DB transactional batch.
+    /// This ensures both operations succeed or both fail - no partial state possible.
+    /// </summary>
+    /// <param name="task">The task document with updated state (Completed) and completedAt</param>
+    /// <param name="reminder">The reminder document with updated isDismissed and dismissedAt (or null if no reminder)</param>
+    /// <returns>The completed task document</returns>
+    /// <exception cref="Models.Exceptions.UnityTransactionFailedException">If the transactional batch fails</exception>
+    Task<TaskDocument> CompleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder);
 }

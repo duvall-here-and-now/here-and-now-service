@@ -776,6 +776,184 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
+    #region Complete Task with Unity Tests (Story 3-4: Task-Reminder Unity on Complete)
+
+    [Fact]
+    public async Task CompleteTask_WithReminder_Returns200AndDismissesReminder()
+    {
+        // Arrange (Story 3-4, AC: 1, 3 - task moves to Completed and reminder is dismissed atomically)
+        var taskId = "task-with-reminder";
+        var completedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Task with Reminder",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = DateTime.UtcNow,
+            ReminderId = null // Cleared after Unity
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CompleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .ReturnsAsync(completedTask);
+
+        // Act
+        var response = await _client.PutAsync($"/api/v1/tasks/{taskId}/complete", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto.Should().NotBeNull();
+        taskDto!.State.Should().Be(TaskState.Completed);
+        taskDto.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CompleteTask_WithoutReminder_Returns200()
+    {
+        // Arrange (Story 3-4, AC: relates to handling tasks without reminders)
+        var taskId = "task-without-reminder";
+        var completedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Task without Reminder",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = DateTime.UtcNow,
+            ReminderId = null
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CompleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .ReturnsAsync(completedTask);
+
+        // Act
+        var response = await _client.PutAsync($"/api/v1/tasks/{taskId}/complete", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto.Should().NotBeNull();
+        taskDto!.State.Should().Be(TaskState.Completed);
+    }
+
+    [Fact]
+    public async Task CompleteTask_NonExistentTask_Returns404()
+    {
+        // Arrange (Story 3-4 - task not found handling)
+        var invalidTaskId = "invalid-task-id";
+
+        _factory.MockTaskService
+            .Setup(s => s.CompleteTaskWithUnityAsync(TestAuthHandler.TestUserId, invalidTaskId))
+            .ThrowsAsync(new TaskNotFoundException(invalidTaskId));
+
+        // Act
+        var response = await _client.PutAsync($"/api/v1/tasks/{invalidTaskId}/complete", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse.Should().NotBeNull();
+        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task CompleteTask_TransactionFails_Returns500()
+    {
+        // Arrange (Story 3-4, AC: 4 - transaction failure handling)
+        var taskId = "task-unity-fail";
+
+        _factory.MockTaskService
+            .Setup(s => s.CompleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .ThrowsAsync(new UnityTransactionFailedException("Transaction failed", taskId));
+
+        // Act
+        var response = await _client.PutAsync($"/api/v1/tasks/{taskId}/complete", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse.Should().NotBeNull();
+        errorResponse!.Error.Code.Should().Be("UNITY_TRANSACTION_FAILED");
+        errorResponse.Error.Message.Should().Contain("Please try again");
+    }
+
+    [Fact]
+    public async Task CompleteTask_WithoutAuthentication_Returns401()
+    {
+        // Arrange (Story 3-4 - authentication required)
+        _client.DefaultRequestHeaders.Add("X-Test-Unauthenticated", "true");
+
+        // Act
+        var response = await _client.PutAsync("/api/v1/tasks/some-task/complete", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CompleteTask_SetsCompletedAtTimestamp()
+    {
+        // Arrange (Story 3-4, AC: 3 - completedAt is set correctly)
+        var taskId = "task-timestamp-test";
+        var completedAt = DateTime.UtcNow;
+        var completedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Timestamp Test Task",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = completedAt,
+            ReminderId = null
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CompleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .ReturnsAsync(completedTask);
+
+        // Act
+        var response = await _client.PutAsync($"/api/v1/tasks/{taskId}/complete", null);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.CompletedAt.Should().BeCloseTo(completedAt, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task CompleteTask_CallsServiceWithCorrectUserId()
+    {
+        // Arrange (Story 3-4 - user isolation)
+        var taskId = "task-user-isolation";
+        var completedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestAuthHandler.TestUserId,
+            Name = "User Isolation Task",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = DateTime.UtcNow,
+            ReminderId = null
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CompleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .ReturnsAsync(completedTask);
+
+        // Act
+        await _client.PutAsync($"/api/v1/tasks/{taskId}/complete", null);
+
+        // Assert - verify service was called with correct user ID from auth
+        _factory.MockTaskService.Verify(
+            s => s.CompleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId),
+            Times.Once);
+    }
+
+    #endregion
+
     #region Combined Task+Reminder Creation Tests (Story 3-2: Create Task with Reminder)
 
     [Fact]

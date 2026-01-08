@@ -186,6 +186,45 @@ public class TasksController : ControllerBase
     }
 
     /// <summary>
+    /// Completes a task. If the task has an associated reminder, it will be atomically dismissed.
+    /// This is the Task-Reminder Unity operation - the core experience of HereAndNow.
+    /// </summary>
+    /// <param name="id">The task ID to complete</param>
+    /// <returns>The completed task with reminderId cleared (if reminder was dismissed)</returns>
+    /// <response code="200">Returns the completed task</response>
+    /// <response code="404">If the task is not found</response>
+    /// <response code="500">If the Unity transaction fails</response>
+    /// <response code="401">If the user is not authenticated</response>
+    [HttpPut("{id}/complete")]
+    [ProducesResponseType(typeof(TaskDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<TaskDto>> CompleteTask(string id)
+    {
+        var userId = GetUserId();
+
+        _logger.LogInformation("Completing task {TaskId} with Unity for user {UserId}", id, userId);
+
+        try
+        {
+            var task = await _taskService.CompleteTaskWithUnityAsync(userId, id);
+            return Ok(TaskMapper.ToDto(task));
+        }
+        catch (TaskNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("TASK_NOT_FOUND", $"Task with ID {id} not found"));
+        }
+        catch (UnityTransactionFailedException ex)
+        {
+            _logger.LogError(ex, "Unity transaction failed for task {TaskId}", id);
+            return StatusCode(500, CreateErrorResponse(
+                "UNITY_TRANSACTION_FAILED",
+                "Failed to complete task and dismiss reminder. Please try again."));
+        }
+    }
+
+    /// <summary>
     /// Extracts the user ID from the JWT claims
     /// </summary>
     private string GetUserId()
