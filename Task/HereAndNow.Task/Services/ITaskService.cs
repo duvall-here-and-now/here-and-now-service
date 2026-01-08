@@ -82,4 +82,15 @@ public interface ITaskService
     /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
     /// <exception cref="Models.Exceptions.UnityTransactionFailedException">Thrown when the transactional batch fails</exception>
     Task<TaskDocument> CompleteTaskWithUnityAsync(string userId, string taskId);
+
+    /// <summary>
+    /// Deletes a task with Unity - atomically soft-deletes the task (state = "Deleted")
+    /// and dismisses the associated reminder (if any) in a single transactional batch.
+    /// This ensures data consistency: either both updates succeed or neither does.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The task ID to delete</param>
+    /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
+    /// <exception cref="Models.Exceptions.UnityTransactionFailedException">Thrown when the transactional batch fails</exception>
+    Task DeleteTaskWithUnityAsync(string userId, string taskId);
 }

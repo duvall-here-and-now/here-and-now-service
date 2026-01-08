@@ -75,4 +75,13 @@ public interface ITaskRepository
     /// <returns>The completed task document</returns>
     /// <exception cref="Models.Exceptions.UnityTransactionFailedException">If the transactional batch fails</exception>
     Task<TaskDocument> CompleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder);
+
+    /// <summary>
+    /// Atomically soft-deletes a task and dismisses its associated reminder using Cosmos DB transactional batch.
+    /// This ensures both operations succeed or both fail - no partial state possible.
+    /// </summary>
+    /// <param name="task">The task document with updated state (Deleted)</param>
+    /// <param name="reminder">The reminder document with updated isDismissed and dismissedAt (or null if no reminder)</param>
+    /// <exception cref="Models.Exceptions.UnityTransactionFailedException">If the transactional batch fails</exception>
+    Task DeleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder);
 }

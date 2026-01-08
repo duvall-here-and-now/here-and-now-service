@@ -225,6 +225,45 @@ public class TasksController : ControllerBase
     }
 
     /// <summary>
+    /// Deletes a task (soft-delete). If the task has an associated reminder, it will be atomically dismissed.
+    /// This is the Task-Reminder Unity operation for deletion.
+    /// </summary>
+    /// <param name="id">The task ID to delete</param>
+    /// <returns>No content on success</returns>
+    /// <response code="204">Task successfully deleted</response>
+    /// <response code="404">If the task is not found</response>
+    /// <response code="500">If the Unity transaction fails</response>
+    /// <response code="401">If the user is not authenticated</response>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> DeleteTask(string id)
+    {
+        var userId = GetUserId();
+
+        _logger.LogInformation("Deleting task {TaskId} with Unity for user {UserId}", id, userId);
+
+        try
+        {
+            await _taskService.DeleteTaskWithUnityAsync(userId, id);
+            return NoContent();
+        }
+        catch (TaskNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("TASK_NOT_FOUND", $"Task with ID {id} not found"));
+        }
+        catch (UnityTransactionFailedException ex)
+        {
+            _logger.LogError(ex, "Unity transaction failed for task deletion {TaskId}", id);
+            return StatusCode(500, CreateErrorResponse(
+                "UNITY_TRANSACTION_FAILED",
+                "Failed to delete task and dismiss reminder. Please try again."));
+        }
+    }
+
+    /// <summary>
     /// Extracts the user ID from the JWT claims
     /// </summary>
     private string GetUserId()

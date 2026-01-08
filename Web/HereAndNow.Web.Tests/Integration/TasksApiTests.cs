@@ -954,6 +954,140 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
+    #region Delete Task with Unity Tests (Story 3-5: Unity on Delete & Reminder Status Display)
+
+    [Fact]
+    public async Task DeleteTask_WithReminder_Returns204AndDismissesReminder()
+    {
+        // Arrange (Story 3-5, AC: 1, 2 - task is deleted and reminder is dismissed atomically)
+        var taskId = "task-with-reminder-delete";
+
+        _factory.MockTaskService
+            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var response = await _client.DeleteAsync($"/api/v1/tasks/{taskId}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.MockTaskService.Verify(
+            s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteTask_WithoutReminder_Returns204()
+    {
+        // Arrange (Story 3-5, Task 1.3 - delete works for tasks without reminders)
+        var taskId = "task-without-reminder-delete";
+
+        _factory.MockTaskService
+            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var response = await _client.DeleteAsync($"/api/v1/tasks/{taskId}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task DeleteTask_NonExistentTask_Returns404()
+    {
+        // Arrange (Story 3-5, Task 2.5 - not found handling)
+        var invalidTaskId = "invalid-task-id";
+
+        _factory.MockTaskService
+            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, invalidTaskId))
+            .ThrowsAsync(new TaskNotFoundException(invalidTaskId));
+
+        // Act
+        var response = await _client.DeleteAsync($"/api/v1/tasks/{invalidTaskId}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse.Should().NotBeNull();
+        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task DeleteTask_TransactionFails_Returns500()
+    {
+        // Arrange (Story 3-5, AC: 2 - transaction failure handling)
+        var taskId = "task-unity-delete-fail";
+
+        _factory.MockTaskService
+            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .ThrowsAsync(new UnityTransactionFailedException("Transaction failed", taskId));
+
+        // Act
+        var response = await _client.DeleteAsync($"/api/v1/tasks/{taskId}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse.Should().NotBeNull();
+        errorResponse!.Error.Code.Should().Be("UNITY_TRANSACTION_FAILED");
+        errorResponse.Error.Message.Should().Contain("Please try again");
+    }
+
+    [Fact]
+    public async Task DeleteTask_WithoutAuthentication_Returns401()
+    {
+        // Arrange (Story 3-5 - authentication required)
+        _client.DefaultRequestHeaders.Add("X-Test-Unauthenticated", "true");
+
+        // Act
+        var response = await _client.DeleteAsync("/api/v1/tasks/some-task");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task DeleteTask_CallsServiceWithCorrectUserId()
+    {
+        // Arrange (Story 3-5 - user isolation)
+        var taskId = "task-delete-user-isolation";
+
+        _factory.MockTaskService
+            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await _client.DeleteAsync($"/api/v1/tasks/{taskId}");
+
+        // Assert - verify service was called with correct user ID from auth
+        _factory.MockTaskService.Verify(
+            s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteTask_OtherUsersTask_Returns404()
+    {
+        // Arrange (Story 3-5 - user isolation for delete operations)
+        var otherUsersTaskId = "other-users-task-delete";
+
+        // Simulate that the task belongs to a different user by having service throw TaskNotFoundException
+        _factory.MockTaskService
+            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, otherUsersTaskId))
+            .ThrowsAsync(new TaskNotFoundException(otherUsersTaskId));
+
+        // Act
+        var response = await _client.DeleteAsync($"/api/v1/tasks/{otherUsersTaskId}");
+
+        // Assert - 404 not 403, to avoid information leakage
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
+    }
+
+    #endregion
+
     #region Combined Task+Reminder Creation Tests (Story 3-2: Create Task with Reminder)
 
     [Fact]

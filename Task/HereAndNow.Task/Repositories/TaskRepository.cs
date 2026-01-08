@@ -289,4 +289,40 @@ public class TaskRepository : ITaskRepository
 
         return completedTask;
     }
+
+    /// <inheritdoc />
+    public async Task DeleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder)
+    {
+        _logger.LogDebug("Deleting task {TaskId} with Unity for user {UserId}, hasReminder={HasReminder}",
+            task.Id, task.UserId, reminder != null);
+
+        // If no reminder, just update the task normally (soft-delete)
+        if (reminder == null)
+        {
+            _logger.LogDebug("No reminder associated - performing simple task soft-delete");
+            await UpdateAsync(task);
+            return;
+        }
+
+        // Use transactional batch to atomically update both documents
+        var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
+        batch.ReplaceItem(task.Id, task);
+        batch.ReplaceItem(reminder.Id, reminder);
+
+        using var batchResponse = await batch.ExecuteAsync();
+
+        if (!batchResponse.IsSuccessStatusCode)
+        {
+            _logger.LogError("Unity transactional batch failed with status {StatusCode} for task deletion {TaskId}",
+                batchResponse.StatusCode, task.Id);
+
+            throw new UnityTransactionFailedException(
+                $"Unity transaction failed for task deletion {task.Id}. Status: {batchResponse.StatusCode}",
+                task.Id);
+        }
+
+        _logger.LogInformation(
+            "Deleted task {TaskId} with Unity - reminder {ReminderId} dismissed atomically for user {UserId}",
+            task.Id, reminder.Id, task.UserId);
+    }
 }
