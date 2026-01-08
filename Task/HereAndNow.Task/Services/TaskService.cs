@@ -333,6 +333,7 @@ public class TaskService : ITaskService
         {
             reminder.IsDismissed = true;
             reminder.DismissedAt = DateTime.UtcNow;
+            task.ReminderId = null;
         }
 
         // 4. Execute atomic Unity operation (batch for task+reminder, or simple update if no reminder)
