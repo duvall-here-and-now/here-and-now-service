@@ -345,4 +345,58 @@ public class TaskService : ITaskService
 
         return completedTask;
     }
+
+    /// <inheritdoc />
+    public async Task DeleteTaskWithUnityAsync(string userId, string taskId)
+    {
+        if (string.IsNullOrWhiteSpace(taskId))
+        {
+            throw new ArgumentException("Task ID cannot be empty", nameof(taskId));
+        }
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        _logger.LogDebug("Deleting task {TaskId} with Unity for user {UserId}", taskId, userId);
+
+        // 1. Load the task
+        var task = await _taskRepository.GetByIdAsync(userId, taskId);
+        if (task == null)
+        {
+            throw new TaskNotFoundException(taskId);
+        }
+
+        // 2. Check if task has a reminder
+        TaskReminderDocument? reminder = null;
+        if (!string.IsNullOrEmpty(task.ReminderId))
+        {
+            reminder = await _reminderRepository.GetByIdAsync(userId, task.ReminderId);
+            if (reminder == null)
+            {
+                // Reminder was already deleted - clear the stale reference
+                _logger.LogWarning(
+                    "Task {TaskId} has reminderId {ReminderId} but reminder not found - clearing stale reference",
+                    taskId, task.ReminderId);
+                task.ReminderId = null;
+            }
+        }
+
+        // 3. Prepare updates - soft-delete the task
+        task.State = TaskState.Deleted;
+
+        if (reminder != null)
+        {
+            reminder.IsDismissed = true;
+            reminder.DismissedAt = DateTime.UtcNow;
+        }
+
+        // 4. Execute atomic Unity operation (batch for task+reminder, or simple update if no reminder)
+        await _taskRepository.DeleteWithUnityAsync(task, reminder);
+
+        _logger.LogInformation(
+            "Deleted task {TaskId} with Unity for user {UserId}, reminderDismissed={ReminderDismissed}",
+            taskId, userId, reminder != null);
+    }
 }
