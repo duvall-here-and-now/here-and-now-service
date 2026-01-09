@@ -129,6 +129,54 @@ public class RemindersController : ControllerBase
     }
 
     /// <summary>
+    /// Snoozes (reschedules) a reminder to a new time
+    /// </summary>
+    /// <param name="id">The reminder ID</param>
+    /// <param name="snoozeDto">The new scheduled time</param>
+    /// <returns>The updated reminder</returns>
+    /// <response code="200">Returns the updated reminder</response>
+    /// <response code="400">If the scheduled time is invalid or reminder is dismissed</response>
+    /// <response code="404">If the reminder is not found</response>
+    /// <response code="401">If the user is not authenticated</response>
+    [HttpPut("{id}")]
+    [ProducesResponseType(typeof(TaskReminderDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<TaskReminderDto>> SnoozeReminder(string id, [FromBody] SnoozeReminderDto snoozeDto)
+    {
+        var userId = GetUserId();
+
+        _logger.LogInformation("Snoozing reminder {ReminderId} to {NewScheduledTime} for user {UserId}",
+            id, snoozeDto.ScheduledTime, userId);
+
+        try
+        {
+            var reminder = await _reminderService.SnoozeAsync(userId, id, snoozeDto.ScheduledTime);
+            return Ok(ReminderMapper.ToDto(reminder));
+        }
+        catch (ReminderNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("REMINDER_NOT_FOUND",
+                $"Reminder with ID {id} not found"));
+        }
+        catch (ReminderAlreadyDismissedException)
+        {
+            return BadRequest(CreateErrorResponse("REMINDER_ALREADY_DISMISSED",
+                $"Reminder with ID {id} has already been dismissed"));
+        }
+        catch (InvalidScheduledTimeException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_SCHEDULED_TIME", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid snooze reminder request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
     /// Extracts the user ID from the JWT claims
     /// </summary>
     private string GetUserId()

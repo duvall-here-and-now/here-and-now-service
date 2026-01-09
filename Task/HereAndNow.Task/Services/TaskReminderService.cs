@@ -108,4 +108,51 @@ public class TaskReminderService : ITaskReminderService
 
         return await _reminderRepository.GetByIdAsync(userId, reminderId);
     }
+
+    /// <inheritdoc />
+    public async Task<TaskReminderDocument> SnoozeAsync(string userId, string reminderId, DateTime newScheduledTime)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        if (string.IsNullOrWhiteSpace(reminderId))
+        {
+            throw new ArgumentException("Reminder ID cannot be empty", nameof(reminderId));
+        }
+
+        _logger.LogDebug("Snoozing reminder {ReminderId} to {NewScheduledTime} for user {UserId}",
+            reminderId, newScheduledTime, userId);
+
+        // 1. Load reminder
+        var reminder = await _reminderRepository.GetByIdAsync(userId, reminderId);
+        if (reminder is null)
+        {
+            throw new ReminderNotFoundException(reminderId);
+        }
+
+        // 2. Check if already dismissed
+        if (reminder.IsDismissed)
+        {
+            throw new ReminderAlreadyDismissedException(reminderId);
+        }
+
+        // 3. Validate future time (defense in depth - also validated at DTO level)
+        if (newScheduledTime <= DateTime.UtcNow)
+        {
+            throw new InvalidScheduledTimeException("Scheduled time must be in the future");
+        }
+
+        // 4. Update scheduledTime
+        reminder.ScheduledTime = DateTime.SpecifyKind(newScheduledTime, DateTimeKind.Utc);
+
+        // 5. Save and return
+        var updatedReminder = await _reminderRepository.UpdateAsync(reminder);
+
+        _logger.LogInformation("Snoozed reminder {ReminderId} to {NewScheduledTime} for user {UserId}",
+            reminderId, newScheduledTime, userId);
+
+        return updatedReminder;
+    }
 }

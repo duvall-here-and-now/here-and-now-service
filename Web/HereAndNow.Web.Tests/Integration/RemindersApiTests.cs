@@ -423,4 +423,241 @@ public class RemindersApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     #endregion
+
+    #region Snooze Reminder Tests (Story 4-1 AC: 1-5)
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_UpdatesScheduledTime()
+    {
+        // Arrange (AC: 1)
+        var reminderId = "reminder-to-snooze";
+        var newScheduledTime = DateTime.UtcNow.AddHours(2);
+        var snoozeDto = new SnoozeReminderDto
+        {
+            ScheduledTime = newScheduledTime
+        };
+
+        var updatedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestAuthHandler.TestUserId,
+            TaskId = "task-123",
+            TaskName = "Submit expense report",
+            ScheduledTime = newScheduledTime,
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(
+                TestAuthHandler.TestUserId,
+                reminderId,
+                It.IsAny<DateTime>()))
+            .ReturnsAsync(updatedReminder);
+
+        // Act
+        var response = await _client.PutAsJsonAsync($"/api/v1/reminders/{reminderId}", snoozeDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reminderDto = await response.Content.ReadFromJsonAsync<TaskReminderDto>();
+        reminderDto.Should().NotBeNull();
+        reminderDto!.Id.Should().Be(reminderId);
+        reminderDto.ScheduledTime.Should().BeCloseTo(newScheduledTime, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_ReturnsUpdatedReminder()
+    {
+        // Arrange (AC: 1)
+        var reminderId = "reminder-456";
+        var newTime = DateTime.UtcNow.AddDays(1);
+
+        var updatedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestAuthHandler.TestUserId,
+            TaskId = "task-789",
+            TaskName = "Updated Task Name",
+            ScheduledTime = newTime,
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-2)
+        };
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(
+                TestAuthHandler.TestUserId,
+                reminderId,
+                It.IsAny<DateTime>()))
+            .ReturnsAsync(updatedReminder);
+
+        // Act
+        var response = await _client.PutAsJsonAsync(
+            $"/api/v1/reminders/{reminderId}",
+            new { scheduledTime = newTime.ToString("o") });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reminderDto = await response.Content.ReadFromJsonAsync<TaskReminderDto>();
+        reminderDto!.TaskName.Should().Be("Updated Task Name");
+        reminderDto.IsDismissed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_InvalidId_Returns404()
+    {
+        // Arrange (AC: 3)
+        var invalidId = "non-existent-reminder";
+        var snoozeDto = new SnoozeReminderDto
+        {
+            ScheduledTime = DateTime.UtcNow.AddHours(1)
+        };
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(
+                TestAuthHandler.TestUserId,
+                invalidId,
+                It.IsAny<DateTime>()))
+            .ThrowsAsync(new ReminderNotFoundException(invalidId));
+
+        // Act
+        var response = await _client.PutAsJsonAsync($"/api/v1/reminders/{invalidId}", snoozeDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("REMINDER_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_PastTime_Returns400()
+    {
+        // Arrange (AC: 4)
+        var reminderId = "reminder-past-time";
+        var pastTime = DateTime.UtcNow.AddHours(-1);
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(
+                TestAuthHandler.TestUserId,
+                reminderId,
+                It.IsAny<DateTime>()))
+            .ThrowsAsync(new InvalidScheduledTimeException("Scheduled time must be in the future"));
+
+        // Act
+        var response = await _client.PutAsJsonAsync(
+            $"/api/v1/reminders/{reminderId}",
+            new { scheduledTime = pastTime.ToString("o") });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
+    }
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_DismissedReminder_Returns400()
+    {
+        // Arrange (AC: 5)
+        var reminderId = "dismissed-reminder";
+        var snoozeDto = new SnoozeReminderDto
+        {
+            ScheduledTime = DateTime.UtcNow.AddHours(1)
+        };
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(
+                TestAuthHandler.TestUserId,
+                reminderId,
+                It.IsAny<DateTime>()))
+            .ThrowsAsync(new ReminderAlreadyDismissedException(reminderId));
+
+        // Act
+        var response = await _client.PutAsJsonAsync($"/api/v1/reminders/{reminderId}", snoozeDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("REMINDER_ALREADY_DISMISSED");
+    }
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_AnotherUsersReminder_Returns404()
+    {
+        // Arrange (AC: 6 - user isolation)
+        var reminderId = "another-users-reminder";
+        var snoozeDto = new SnoozeReminderDto
+        {
+            ScheduledTime = DateTime.UtcNow.AddHours(1)
+        };
+
+        // The service throws ReminderNotFoundException because the reminder
+        // doesn't exist for the authenticated user (user isolation)
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(
+                TestAuthHandler.TestUserId,
+                reminderId,
+                It.IsAny<DateTime>()))
+            .ThrowsAsync(new ReminderNotFoundException(reminderId));
+
+        // Act
+        var response = await _client.PutAsJsonAsync($"/api/v1/reminders/{reminderId}", snoozeDto);
+
+        // Assert - 404 because user B can't see user A's reminder
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_ActiveReminderToFuture_Succeeds()
+    {
+        // Arrange (AC: 2 - snoozing an active/overdue reminder)
+        var reminderId = "active-reminder";
+        var futureTime = DateTime.UtcNow.AddHours(3);
+
+        var updatedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestAuthHandler.TestUserId,
+            TaskId = "task-active",
+            TaskName = "Overdue Task",
+            ScheduledTime = futureTime, // Moved to future
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(
+                TestAuthHandler.TestUserId,
+                reminderId,
+                It.IsAny<DateTime>()))
+            .ReturnsAsync(updatedReminder);
+
+        // Act
+        var response = await _client.PutAsJsonAsync(
+            $"/api/v1/reminders/{reminderId}",
+            new { scheduledTime = futureTime.ToString("o") });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reminderDto = await response.Content.ReadFromJsonAsync<TaskReminderDto>();
+        reminderDto!.ScheduledTime.Should().BeCloseTo(futureTime, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_WithoutAuthentication_Returns401()
+    {
+        // Arrange
+        _client.DefaultRequestHeaders.Add("X-Test-Unauthenticated", "true");
+        var snoozeDto = new SnoozeReminderDto
+        {
+            ScheduledTime = DateTime.UtcNow.AddHours(1)
+        };
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/reminders/any-reminder", snoozeDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    #endregion
 }
