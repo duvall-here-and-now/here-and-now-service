@@ -32,4 +32,16 @@ public interface ITaskReminderService
     /// <param name="reminderId">The reminder ID</param>
     /// <returns>The reminder document or null if not found</returns>
     Task<TaskReminderDocument?> GetReminderByIdAsync(string userId, string reminderId);
+
+    /// <summary>
+    /// Snoozes (reschedules) a reminder to a new time
+    /// </summary>
+    /// <param name="userId">The user ID</param>
+    /// <param name="reminderId">The reminder ID</param>
+    /// <param name="newScheduledTime">The new scheduled time (must be in the future)</param>
+    /// <returns>The updated reminder document</returns>
+    /// <exception cref="Models.Exceptions.ReminderNotFoundException">Thrown when reminder is not found</exception>
+    /// <exception cref="Models.Exceptions.ReminderAlreadyDismissedException">Thrown when reminder has been dismissed</exception>
+    /// <exception cref="Models.Exceptions.InvalidScheduledTimeException">Thrown when scheduled time is in the past</exception>
+    Task<TaskReminderDocument> SnoozeAsync(string userId, string reminderId, DateTime newScheduledTime);
 }
