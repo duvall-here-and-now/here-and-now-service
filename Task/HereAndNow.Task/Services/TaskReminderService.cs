@@ -155,4 +155,42 @@ public class TaskReminderService : ITaskReminderService
 
         return updatedReminder;
     }
+
+    /// <inheritdoc />
+    public async Task DismissAsync(string userId, string reminderId)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        if (string.IsNullOrWhiteSpace(reminderId))
+        {
+            throw new ArgumentException("Reminder ID cannot be empty", nameof(reminderId));
+        }
+
+        _logger.LogDebug("Dismissing reminder {ReminderId} for user {UserId}", reminderId, userId);
+
+        // 1. Load reminder
+        var reminder = await _reminderRepository.GetByIdAsync(userId, reminderId);
+        if (reminder is null)
+        {
+            throw new ReminderNotFoundException(reminderId);
+        }
+
+        // 2. Check if already dismissed
+        if (reminder.IsDismissed)
+        {
+            throw new ReminderAlreadyDismissedException(reminderId);
+        }
+
+        // 3. Mark as dismissed
+        reminder.IsDismissed = true;
+        reminder.DismissedAt = DateTime.UtcNow;
+
+        // 4. Save - single document update, no batch needed (task unchanged)
+        await _reminderRepository.UpdateAsync(reminder);
+
+        _logger.LogInformation("Dismissed reminder {ReminderId} for user {UserId}", reminderId, userId);
+    }
 }

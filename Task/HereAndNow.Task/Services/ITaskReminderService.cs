@@ -44,4 +44,14 @@ public interface ITaskReminderService
     /// <exception cref="Models.Exceptions.ReminderAlreadyDismissedException">Thrown when reminder has been dismissed</exception>
     /// <exception cref="Models.Exceptions.InvalidScheduledTimeException">Thrown when scheduled time is in the past</exception>
     Task<TaskReminderDocument> SnoozeAsync(string userId, string reminderId, DateTime newScheduledTime);
+
+    /// <summary>
+    /// Dismisses a reminder without affecting the associated task
+    /// </summary>
+    /// <param name="userId">The user ID</param>
+    /// <param name="reminderId">The reminder ID</param>
+    /// <returns>Task representing the async operation</returns>
+    /// <exception cref="Models.Exceptions.ReminderNotFoundException">Thrown when reminder is not found</exception>
+    /// <exception cref="Models.Exceptions.ReminderAlreadyDismissedException">Thrown when reminder has already been dismissed</exception>
+    Task DismissAsync(string userId, string reminderId);
 }
