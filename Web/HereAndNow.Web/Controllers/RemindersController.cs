@@ -211,6 +211,11 @@ public class RemindersController : ControllerBase
             return BadRequest(CreateErrorResponse("REMINDER_ALREADY_DISMISSED",
                 $"Reminder with ID {id} has already been dismissed"));
         }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid dismiss reminder request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
     }
 
     /// <summary>
