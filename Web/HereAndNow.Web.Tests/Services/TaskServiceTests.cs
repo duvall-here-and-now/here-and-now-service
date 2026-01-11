@@ -50,6 +50,22 @@ public class TaskServiceTests
     }
 
     [Fact]
+    public async Task CreateTaskAsync_WithValidInput_SetsLastModifiedAtEqualToCreatedAt()
+    {
+        // Arrange
+        _mockRepository
+            .Setup(r => r.CreateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.CreateTaskAsync("Test Task", TestUserId);
+
+        // Assert
+        result.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        result.LastModifiedAt.Should().Be(result.CreatedAt);
+    }
+
+    [Fact]
     public async Task CreateTaskAsync_InitializesStateToOnDeck()
     {
         // Arrange
@@ -519,6 +535,116 @@ public class TaskServiceTests
         _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Never);
     }
 
+    [Fact]
+    public async Task UpdateTaskAsync_WithNameChange_UpdatesLastModifiedAt()
+    {
+        // Arrange
+        var originalLastModified = DateTime.UtcNow.AddDays(-1);
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Original Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastModifiedAt = originalLastModified
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, "Updated Name", null);
+
+        // Assert
+        result.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        result.LastModifiedAt.Should().BeAfter(originalLastModified);
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithStateChange_UpdatesLastModifiedAt()
+    {
+        // Arrange
+        var originalLastModified = DateTime.UtcNow.AddDays(-1);
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastModifiedAt = originalLastModified
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, null, TaskState.InProgress);
+
+        // Assert
+        result.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        result.LastModifiedAt.Should().BeAfter(originalLastModified);
+    }
+
+    #endregion
+
+    #region CreateTaskWithOptionalReminderAsync Tests
+
+    [Fact]
+    public async Task CreateTaskWithOptionalReminderAsync_WithoutReminder_SetsLastModifiedAtEqualToCreatedAt()
+    {
+        // Arrange
+        _mockRepository
+            .Setup(r => r.CreateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.CreateTaskWithOptionalReminderAsync("Test Task", TestUserId, null);
+
+        // Assert
+        result.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        result.LastModifiedAt.Should().Be(result.CreatedAt);
+        result.ReminderId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CreateTaskWithOptionalReminderAsync_WithReminder_SetsLastModifiedAtOnBothTaskAndReminder()
+    {
+        // Arrange
+        var scheduledTime = DateTime.UtcNow.AddHours(2);
+        TaskReminderDocument? capturedReminder = null;
+
+        _mockRepository
+            .Setup(r => r.CreateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        _mockReminderRepository
+            .Setup(r => r.CreateWithTaskLinkAsync(It.IsAny<TaskReminderDocument>(), It.IsAny<string>()))
+            .Callback<TaskReminderDocument, string>((r, _) => capturedReminder = r)
+            .ReturnsAsync((TaskReminderDocument r, string _) => r);
+
+        // Act
+        var result = await _taskService.CreateTaskWithOptionalReminderAsync("Test Task", TestUserId, scheduledTime);
+
+        // Assert - Task LastModifiedAt
+        result.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        result.LastModifiedAt.Should().Be(result.CreatedAt);
+
+        // Assert - Reminder LastModifiedAt
+        capturedReminder.Should().NotBeNull();
+        capturedReminder!.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        capturedReminder.LastModifiedAt.Should().Be(capturedReminder.CreatedAt);
+    }
+
     #endregion
 
     #region CompleteTaskWithUnityAsync Tests
@@ -672,6 +798,179 @@ public class TaskServiceTests
             () => _taskService.CompleteTaskWithUnityAsync(TestUserId, "nonexistent"));
 
         exception.TaskId.Should().Be("nonexistent");
+    }
+
+    [Fact]
+    public async Task CompleteTaskWithUnityAsync_WithReminder_UpdatesLastModifiedAtOnBoth()
+    {
+        // Arrange
+        var originalTaskLastModified = DateTime.UtcNow.AddDays(-1);
+        var originalReminderLastModified = DateTime.UtcNow.AddDays(-1);
+        var reminderId = "reminder-123";
+
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Task with Reminder",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastModifiedAt = originalTaskLastModified,
+            ReminderId = reminderId
+        };
+
+        var existingReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = "task-123",
+            TaskName = "Task with Reminder",
+            ScheduledTime = DateTime.UtcNow.AddHours(1),
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastModifiedAt = originalReminderLastModified
+        };
+
+        TaskDocument? capturedTask = null;
+        TaskReminderDocument? capturedReminder = null;
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockReminderRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, reminderId))
+            .ReturnsAsync(existingReminder);
+
+        _mockRepository
+            .Setup(r => r.CompleteWithUnityAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument?>()))
+            .Callback<TaskDocument, TaskReminderDocument?>((t, r) =>
+            {
+                capturedTask = t;
+                capturedReminder = r;
+            })
+            .ReturnsAsync((TaskDocument t, TaskReminderDocument? r) => t);
+
+        // Act
+        var result = await _taskService.CompleteTaskWithUnityAsync(TestUserId, "task-123");
+
+        // Assert - Task LastModifiedAt
+        capturedTask.Should().NotBeNull();
+        capturedTask!.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        capturedTask.LastModifiedAt.Should().BeAfter(originalTaskLastModified);
+
+        // Assert - Reminder LastModifiedAt
+        capturedReminder.Should().NotBeNull();
+        capturedReminder!.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        capturedReminder.LastModifiedAt.Should().BeAfter(originalReminderLastModified);
+    }
+
+    [Fact]
+    public async Task CompleteTaskWithUnityAsync_WithoutReminder_UpdatesTaskLastModifiedAt()
+    {
+        // Arrange
+        var originalLastModified = DateTime.UtcNow.AddDays(-1);
+
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Task without Reminder",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastModifiedAt = originalLastModified,
+            ReminderId = null
+        };
+
+        TaskDocument? capturedTask = null;
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockRepository
+            .Setup(r => r.CompleteWithUnityAsync(It.IsAny<TaskDocument>(), null))
+            .Callback<TaskDocument, TaskReminderDocument?>((t, r) => capturedTask = t)
+            .ReturnsAsync((TaskDocument t, TaskReminderDocument? r) => t);
+
+        // Act
+        var result = await _taskService.CompleteTaskWithUnityAsync(TestUserId, "task-123");
+
+        // Assert
+        capturedTask.Should().NotBeNull();
+        capturedTask!.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        capturedTask.LastModifiedAt.Should().BeAfter(originalLastModified);
+    }
+
+    #endregion
+
+    #region DeleteTaskWithUnityAsync Tests
+
+    [Fact]
+    public async Task DeleteTaskWithUnityAsync_WithReminder_UpdatesLastModifiedAtOnBoth()
+    {
+        // Arrange
+        var originalTaskLastModified = DateTime.UtcNow.AddDays(-1);
+        var originalReminderLastModified = DateTime.UtcNow.AddDays(-1);
+        var reminderId = "reminder-123";
+
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Task with Reminder",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastModifiedAt = originalTaskLastModified,
+            ReminderId = reminderId
+        };
+
+        var existingReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = "task-123",
+            TaskName = "Task with Reminder",
+            ScheduledTime = DateTime.UtcNow.AddHours(1),
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastModifiedAt = originalReminderLastModified
+        };
+
+        TaskDocument? capturedTask = null;
+        TaskReminderDocument? capturedReminder = null;
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockReminderRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, reminderId))
+            .ReturnsAsync(existingReminder);
+
+        _mockRepository
+            .Setup(r => r.DeleteWithUnityAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument?>()))
+            .Callback<TaskDocument, TaskReminderDocument?>((t, r) =>
+            {
+                capturedTask = t;
+                capturedReminder = r;
+            })
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await _taskService.DeleteTaskWithUnityAsync(TestUserId, "task-123");
+
+        // Assert - Task LastModifiedAt
+        capturedTask.Should().NotBeNull();
+        capturedTask!.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        capturedTask.LastModifiedAt.Should().BeAfter(originalTaskLastModified);
+        capturedTask.State.Should().Be(TaskState.Deleted);
+
+        // Assert - Reminder LastModifiedAt
+        capturedReminder.Should().NotBeNull();
+        capturedReminder!.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        capturedReminder.LastModifiedAt.Should().BeAfter(originalReminderLastModified);
+        capturedReminder.IsDismissed.Should().BeTrue();
     }
 
     #endregion

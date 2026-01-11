@@ -1088,6 +1088,73 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
+    #region LastModifiedAt Tests
+
+    [Fact]
+    public async Task CreateTask_ResponseIncludesLastModifiedAt()
+    {
+        // Arrange
+        var createDto = new CreateTaskDto { Name = "Task with LastModifiedAt" };
+        var now = DateTime.UtcNow;
+        var createdTask = new TaskDocument
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Task with LastModifiedAt",
+            State = TaskState.OnDeck,
+            CreatedAt = now,
+            LastModifiedAt = now
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("Task with LastModifiedAt", TestAuthHandler.TestUserId, null))
+            .ReturnsAsync(createdTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", createDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto.Should().NotBeNull();
+        taskDto!.LastModifiedAt.Should().BeCloseTo(now, TimeSpan.FromSeconds(1));
+        taskDto.LastModifiedAt.Should().Be(taskDto.CreatedAt);
+    }
+
+    [Fact]
+    public async Task UpdateTask_ResponseIncludesUpdatedLastModifiedAt()
+    {
+        // Arrange
+        var originalCreatedAt = DateTime.UtcNow.AddDays(-1);
+        var updatedLastModified = DateTime.UtcNow;
+        var updateDto = new UpdateTaskDto { Name = "Updated Task Name" };
+        var updatedTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Updated Task Name",
+            State = TaskState.OnDeck,
+            CreatedAt = originalCreatedAt,
+            LastModifiedAt = updatedLastModified
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, "Updated Task Name", null))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto.Should().NotBeNull();
+        taskDto!.LastModifiedAt.Should().BeCloseTo(updatedLastModified, TimeSpan.FromSeconds(1));
+        taskDto.LastModifiedAt.Should().BeAfter(taskDto.CreatedAt);
+    }
+
+    #endregion
+
     #region Combined Task+Reminder Creation Tests (Story 3-2: Create Task with Reminder)
 
     [Fact]
