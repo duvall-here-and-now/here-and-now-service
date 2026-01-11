@@ -42,15 +42,17 @@ public class TaskService : ITaskService
 
         _logger.LogDebug("Creating task '{Name}' for user {UserId}", name, userId);
 
+        var now = DateTime.UtcNow;
         var task = new TaskDocument
         {
             Id = Guid.NewGuid().ToString(),
             UserId = userId,
             Name = name.Trim(),
             State = TaskState.OnDeck,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = now,
             CompletedAt = null,
-            ReminderId = null
+            ReminderId = null,
+            LastModifiedAt = now
         };
 
         var createdTask = await _taskRepository.CreateAsync(task);
@@ -182,6 +184,9 @@ public class TaskService : ITaskService
             throw new TaskNotFoundException(taskId);
         }
 
+        // Capture timestamp once for consistency across all field updates
+        var now = DateTime.UtcNow;
+
         // Update name if provided
         if (!string.IsNullOrWhiteSpace(name))
         {
@@ -204,7 +209,7 @@ public class TaskService : ITaskService
 
             if (isTransitioningToCompleted)
             {
-                task.CompletedAt = DateTime.UtcNow;
+                task.CompletedAt = now;
                 _logger.LogDebug("Task {TaskId} marked completed, setting completedAt", taskId);
             }
             else if (isTransitioningFromCompleted)
@@ -214,6 +219,9 @@ public class TaskService : ITaskService
             }
             // Otherwise: preserve existing completedAt
         }
+
+        // Always update LastModifiedAt on any change
+        task.LastModifiedAt = now;
 
         var updatedTask = await _taskRepository.UpdateAsync(task);
 
@@ -239,15 +247,17 @@ public class TaskService : ITaskService
             name, userId, scheduledTime.HasValue);
 
         // 1. Create the Task first
+        var now = DateTime.UtcNow;
         var task = new TaskDocument
         {
             Id = Guid.NewGuid().ToString(),
             UserId = userId,
             Name = name.Trim(),
             State = TaskState.OnDeck,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = now,
             CompletedAt = null,
-            ReminderId = null
+            ReminderId = null,
+            LastModifiedAt = now
         };
 
         var createdTask = await _taskRepository.CreateAsync(task);
@@ -272,7 +282,8 @@ public class TaskService : ITaskService
                     ? scheduledTime.Value
                     : scheduledTime.Value.ToUniversalTime(),
                 IsDismissed = false,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = now,
+                LastModifiedAt = now
             };
 
             // Use atomic transactional method to ensure both reminder creation and task linking succeed or fail together
@@ -326,13 +337,16 @@ public class TaskService : ITaskService
         }
 
         // 3. Prepare updates
+        var now = DateTime.UtcNow;
         task.State = TaskState.Completed;
-        task.CompletedAt = DateTime.UtcNow;
+        task.CompletedAt = now;
+        task.LastModifiedAt = now;
 
         if (reminder != null)
         {
             reminder.IsDismissed = true;
-            reminder.DismissedAt = DateTime.UtcNow;
+            reminder.DismissedAt = now;
+            reminder.LastModifiedAt = now;
             task.ReminderId = null;
         }
 
@@ -384,12 +398,15 @@ public class TaskService : ITaskService
         }
 
         // 3. Prepare updates - soft-delete the task
+        var now = DateTime.UtcNow;
         task.State = TaskState.Deleted;
+        task.LastModifiedAt = now;
 
         if (reminder != null)
         {
             reminder.IsDismissed = true;
-            reminder.DismissedAt = DateTime.UtcNow;
+            reminder.DismissedAt = now;
+            reminder.LastModifiedAt = now;
         }
 
         // 4. Execute atomic Unity operation (batch for task+reminder, or simple update if no reminder)

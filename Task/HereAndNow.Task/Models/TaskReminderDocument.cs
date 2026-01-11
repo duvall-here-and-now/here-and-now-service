@@ -61,4 +61,10 @@ public class TaskReminderDocument
     /// </summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// UTC timestamp when the reminder was last modified
+    /// </summary>
+    [JsonPropertyName("lastModifiedAt")]
+    public DateTime LastModifiedAt { get; set; }
 }

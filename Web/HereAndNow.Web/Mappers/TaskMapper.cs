@@ -22,7 +22,8 @@ public static class TaskMapper
             State = document.State,
             CreatedAt = document.CreatedAt,
             CompletedAt = document.CompletedAt,
-            ReminderId = document.ReminderId
+            ReminderId = document.ReminderId,
+            LastModifiedAt = document.LastModifiedAt
         };
     }
 
