@@ -424,6 +424,92 @@ public class RemindersApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
+    #region LastModifiedAt Tests
+
+    [Fact]
+    public async Task POST_CreateReminder_ResponseIncludesLastModifiedAt()
+    {
+        // Arrange
+        var now = DateTime.UtcNow;
+        var createDto = new CreateReminderDto
+        {
+            TaskId = "task-lastmodified",
+            ScheduledTime = DateTime.UtcNow.AddDays(1)
+        };
+
+        var createdReminder = new TaskReminderDocument
+        {
+            Id = "reminder-lastmodified",
+            UserId = TestAuthHandler.TestUserId,
+            TaskId = "task-lastmodified",
+            TaskName = "Task with LastModifiedAt",
+            ScheduledTime = DateTime.UtcNow.AddDays(1),
+            IsDismissed = false,
+            CreatedAt = now,
+            LastModifiedAt = now
+        };
+
+        _factory.MockReminderService
+            .Setup(s => s.CreateReminderAsync(
+                TestAuthHandler.TestUserId,
+                "task-lastmodified",
+                It.IsAny<DateTime>()))
+            .ReturnsAsync(createdReminder);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/reminders", createDto);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var reminderDto = await response.Content.ReadFromJsonAsync<TaskReminderDto>();
+        reminderDto.Should().NotBeNull();
+        reminderDto!.LastModifiedAt.Should().BeCloseTo(now, TimeSpan.FromSeconds(1));
+        reminderDto.LastModifiedAt.Should().Be(reminderDto.CreatedAt);
+    }
+
+    [Fact]
+    public async Task PUT_SnoozeReminder_ResponseIncludesUpdatedLastModifiedAt()
+    {
+        // Arrange
+        var reminderId = "reminder-snooze-lastmod";
+        var originalCreatedAt = DateTime.UtcNow.AddDays(-1);
+        var updatedLastModified = DateTime.UtcNow;
+        var newScheduledTime = DateTime.UtcNow.AddHours(2);
+
+        var updatedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestAuthHandler.TestUserId,
+            TaskId = "task-snooze",
+            TaskName = "Snoozed Task",
+            ScheduledTime = newScheduledTime,
+            IsDismissed = false,
+            CreatedAt = originalCreatedAt,
+            LastModifiedAt = updatedLastModified
+        };
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(
+                TestAuthHandler.TestUserId,
+                reminderId,
+                It.IsAny<DateTime>()))
+            .ReturnsAsync(updatedReminder);
+
+        // Act
+        var response = await _client.PutAsJsonAsync(
+            $"/api/v1/reminders/{reminderId}",
+            new SnoozeReminderDto { ScheduledTime = newScheduledTime });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reminderDto = await response.Content.ReadFromJsonAsync<TaskReminderDto>();
+        reminderDto.Should().NotBeNull();
+        reminderDto!.LastModifiedAt.Should().BeCloseTo(updatedLastModified, TimeSpan.FromSeconds(1));
+        reminderDto.LastModifiedAt.Should().BeAfter(reminderDto.CreatedAt);
+    }
+
+    #endregion
+
     #region Snooze Reminder Tests (Story 4-1 AC: 1-5)
 
     [Fact]

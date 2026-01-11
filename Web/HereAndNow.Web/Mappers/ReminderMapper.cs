@@ -23,7 +23,8 @@ public static class ReminderMapper
             ScheduledTime = document.ScheduledTime,
             IsDismissed = document.IsDismissed,
             DismissedAt = document.DismissedAt,
-            CreatedAt = document.CreatedAt
+            CreatedAt = document.CreatedAt,
+            LastModifiedAt = document.LastModifiedAt
         };
     }
 

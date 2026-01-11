@@ -54,4 +54,10 @@ public class TaskDocument
     /// </summary>
     [JsonPropertyName("reminderId")]
     public string? ReminderId { get; set; }
+
+    /// <summary>
+    /// UTC timestamp when the task was last modified
+    /// </summary>
+    [JsonPropertyName("lastModifiedAt")]
+    public DateTime LastModifiedAt { get; set; }
 }

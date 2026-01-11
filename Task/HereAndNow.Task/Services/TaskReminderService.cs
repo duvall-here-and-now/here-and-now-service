@@ -57,6 +57,7 @@ public class TaskReminderService : ITaskReminderService
         }
 
         // 3. Create reminder with denormalized taskName
+        var now = DateTime.UtcNow;
         var reminder = new TaskReminderDocument
         {
             Id = Guid.NewGuid().ToString(),
@@ -65,7 +66,8 @@ public class TaskReminderService : ITaskReminderService
             TaskName = task.Name,
             ScheduledTime = DateTime.SpecifyKind(scheduledTime, DateTimeKind.Utc),
             IsDismissed = false,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = now,
+            LastModifiedAt = now
         };
 
         // 4. Atomically create reminder AND update task's reminderId in single transaction
@@ -139,13 +141,15 @@ public class TaskReminderService : ITaskReminderService
         }
 
         // 3. Validate future time (defense in depth - also validated at DTO level)
-        if (newScheduledTime <= DateTime.UtcNow)
+        var now = DateTime.UtcNow;
+        if (newScheduledTime <= now)
         {
             throw new InvalidScheduledTimeException("Scheduled time must be in the future");
         }
 
-        // 4. Update scheduledTime
+        // 4. Update scheduledTime and LastModifiedAt
         reminder.ScheduledTime = DateTime.SpecifyKind(newScheduledTime, DateTimeKind.Utc);
+        reminder.LastModifiedAt = now;
 
         // 5. Save and return
         var updatedReminder = await _reminderRepository.UpdateAsync(reminder);
@@ -185,8 +189,10 @@ public class TaskReminderService : ITaskReminderService
         }
 
         // 3. Mark as dismissed
+        var now = DateTime.UtcNow;
         reminder.IsDismissed = true;
-        reminder.DismissedAt = DateTime.UtcNow;
+        reminder.DismissedAt = now;
+        reminder.LastModifiedAt = now;
 
         // 4. Save - single document update, no batch needed (task unchanged)
         await _reminderRepository.UpdateAsync(reminder);
