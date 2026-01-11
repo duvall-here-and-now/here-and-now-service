@@ -325,4 +325,44 @@ public class TaskRepository : ITaskRepository
             "Deleted task {TaskId} with Unity - reminder {ReminderId} dismissed atomically for user {UserId}",
             task.Id, reminder.Id, task.UserId);
     }
+
+    /// <inheritdoc />
+    public async Task<TaskDocument> UpdateWithReminderSyncAsync(TaskDocument task, TaskReminderDocument reminder)
+    {
+        // Defensive validation - both documents must be in same partition for batch
+        if (task.UserId != reminder.UserId)
+        {
+            throw new InvalidOperationException(
+                $"Cannot sync task {task.Id} with reminder {reminder.Id}: partition key mismatch " +
+                $"(task.UserId={task.UserId}, reminder.UserId={reminder.UserId})");
+        }
+
+        _logger.LogDebug("Updating task {TaskId} with reminder sync for user {UserId}",
+            task.Id, task.UserId);
+
+        // Use transactional batch to atomically update both documents
+        var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
+        batch.ReplaceItem(task.Id, task);
+        batch.ReplaceItem(reminder.Id, reminder);
+
+        using var batchResponse = await batch.ExecuteAsync();
+
+        if (!batchResponse.IsSuccessStatusCode)
+        {
+            _logger.LogError("Unity sync transactional batch failed with status {StatusCode} for task {TaskId}",
+                batchResponse.StatusCode, task.Id);
+
+            throw new UnityTransactionFailedException(
+                $"Failed to sync task name with reminder for task {task.Id}. Status: {batchResponse.StatusCode}",
+                task.Id);
+        }
+
+        var updatedTask = batchResponse.GetOperationResultAtIndex<TaskDocument>(0).Resource;
+
+        _logger.LogInformation(
+            "Updated task {TaskId} with reminder {ReminderId} TaskName synced atomically for user {UserId}",
+            updatedTask.Id, reminder.Id, task.UserId);
+
+        return updatedTask;
+    }
 }

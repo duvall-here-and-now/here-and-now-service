@@ -84,4 +84,21 @@ public interface ITaskRepository
     /// <param name="reminder">The reminder document with updated isDismissed and dismissedAt (or null if no reminder)</param>
     /// <exception cref="Models.Exceptions.UnityTransactionFailedException">If the transactional batch fails</exception>
     Task DeleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder);
+
+    /// <summary>
+    /// Atomically updates a task and syncs the denormalized TaskName field in the associated reminder.
+    /// This ensures both operations succeed or both fail - no partial state possible.
+    /// </summary>
+    /// <remarks>
+    /// Unlike CompleteWithUnityAsync/DeleteWithUnityAsync which accept nullable reminders and handle
+    /// the "no reminder" case internally, this method requires a non-null reminder because the sync
+    /// operation is only meaningful when an active reminder exists. The caller is responsible for
+    /// checking reminder existence before calling this method.
+    /// </remarks>
+    /// <param name="task">The task document with updated values</param>
+    /// <param name="reminder">The reminder document with updated taskName and lastModifiedAt (must not be null)</param>
+    /// <returns>The updated task document</returns>
+    /// <exception cref="Models.Exceptions.UnityTransactionFailedException">If the transactional batch fails</exception>
+    /// <exception cref="InvalidOperationException">If task.UserId != reminder.UserId (partition key mismatch)</exception>
+    Task<TaskDocument> UpdateWithReminderSyncAsync(TaskDocument task, TaskReminderDocument reminder);
 }

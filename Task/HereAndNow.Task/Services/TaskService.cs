@@ -223,11 +223,51 @@ public class TaskService : ITaskService
         // Always update LastModifiedAt on any change
         task.LastModifiedAt = now;
 
-        var updatedTask = await _taskRepository.UpdateAsync(task);
+        // If name changed and task has a reminder, sync the denormalized TaskName atomically
+        if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrEmpty(task.ReminderId))
+        {
+            var reminder = await _reminderRepository.GetByIdAsync(userId, task.ReminderId);
+
+            if (reminder == null)
+            {
+                // Handle stale reference - reminder was deleted but task still references it
+                _logger.LogWarning(
+                    "Task {TaskId} has reminderId {ReminderId} but reminder not found - clearing stale reference",
+                    taskId, task.ReminderId);
+                task.ReminderId = null;
+                // Fall through to regular update with cleared reference
+            }
+            else if (reminder.IsDismissed)
+            {
+                // Reminder exists but is dismissed - no sync needed
+                _logger.LogDebug(
+                    "Skipping reminder sync for task {TaskId} - reminder {ReminderId} is already dismissed",
+                    taskId, reminder.Id);
+                // Fall through to regular update
+            }
+            else
+            {
+                // Active reminder exists - sync TaskName atomically
+                _logger.LogDebug("Syncing TaskName to reminder {ReminderId} for task {TaskId}",
+                    task.ReminderId, taskId);
+
+                reminder.TaskName = task.Name;
+                reminder.LastModifiedAt = now;
+
+                var updatedTask = await _taskRepository.UpdateWithReminderSyncAsync(task, reminder);
+
+                _logger.LogInformation("Updated task {TaskId} with reminder sync for user {UserId}",
+                    taskId, userId);
+
+                return updatedTask;
+            }
+        }
+
+        var result = await _taskRepository.UpdateAsync(task);
 
         _logger.LogInformation("Updated task {TaskId} for user {UserId}", taskId, userId);
 
-        return updatedTask;
+        return result;
     }
 
     /// <inheritdoc />
