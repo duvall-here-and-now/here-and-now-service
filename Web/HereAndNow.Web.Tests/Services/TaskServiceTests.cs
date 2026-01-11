@@ -595,6 +595,234 @@ public class TaskServiceTests
         result.LastModifiedAt.Should().BeAfter(originalLastModified);
     }
 
+    [Fact]
+    public async Task UpdateTaskAsync_WithNameChangeAndActiveReminder_SyncsReminderTaskName()
+    {
+        // Arrange
+        var reminderId = "reminder-123";
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Original Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = reminderId
+        };
+
+        var existingReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = "task-123",
+            TaskName = "Original Name",
+            ScheduledTime = DateTime.UtcNow.AddHours(1),
+            IsDismissed = false
+        };
+
+        TaskDocument? capturedTask = null;
+        TaskReminderDocument? capturedReminder = null;
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockReminderRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, reminderId))
+            .ReturnsAsync(existingReminder);
+
+        _mockRepository
+            .Setup(r => r.UpdateWithReminderSyncAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument>()))
+            .Callback<TaskDocument, TaskReminderDocument>((t, r) =>
+            {
+                capturedTask = t;
+                capturedReminder = r;
+            })
+            .ReturnsAsync((TaskDocument t, TaskReminderDocument r) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, "Updated Name", null);
+
+        // Assert - Task name updated
+        capturedTask.Should().NotBeNull();
+        capturedTask!.Name.Should().Be("Updated Name");
+
+        // Assert - Reminder TaskName synced
+        capturedReminder.Should().NotBeNull();
+        capturedReminder!.TaskName.Should().Be("Updated Name", "Reminder TaskName should sync with Task Name");
+        capturedReminder.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+
+        // Assert - Sync path taken, not regular update
+        _mockRepository.Verify(r => r.UpdateWithReminderSyncAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithNameChangeAndDismissedReminder_UsesRegularUpdate()
+    {
+        // Arrange
+        var reminderId = "reminder-123";
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Original Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = reminderId
+        };
+
+        var dismissedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = "task-123",
+            TaskName = "Original Name",
+            ScheduledTime = DateTime.UtcNow.AddHours(-1),
+            IsDismissed = true,
+            DismissedAt = DateTime.UtcNow.AddMinutes(-30)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockReminderRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, reminderId))
+            .ReturnsAsync(dismissedReminder);
+
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, "Updated Name", null);
+
+        // Assert - Name updated
+        result.Name.Should().Be("Updated Name");
+
+        // Assert - Regular update path taken (no sync for dismissed reminder)
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.UpdateWithReminderSyncAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithNameChangeAndStaleReminderId_ClearsReferenceAndUpdates()
+    {
+        // Arrange - Task has ReminderId but reminder doesn't exist (stale reference)
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Original Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = "deleted-reminder"
+        };
+
+        TaskDocument? capturedTask = null;
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockReminderRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "deleted-reminder"))
+            .ReturnsAsync((TaskReminderDocument?)null);
+
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .Callback<TaskDocument>(t => capturedTask = t)
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, "Updated Name", null);
+
+        // Assert - Name updated
+        result.Name.Should().Be("Updated Name");
+
+        // Assert - Stale ReminderId cleared
+        capturedTask.Should().NotBeNull();
+        capturedTask!.ReminderId.Should().BeNull("Stale ReminderId should be cleared");
+
+        // Assert - Regular update path taken
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.UpdateWithReminderSyncAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithStateChangeOnlyAndActiveReminder_DoesNotSyncReminder()
+    {
+        // Arrange
+        var reminderId = "reminder-123";
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = reminderId
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act - State change only, no name change
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, null, TaskState.InProgress);
+
+        // Assert - State updated
+        result.State.Should().Be(TaskState.InProgress);
+
+        // Assert - No reminder lookup (name didn't change)
+        _mockReminderRepository.Verify(r => r.GetByIdAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+
+        // Assert - Regular update path taken
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.UpdateWithReminderSyncAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateTaskAsync_WithNameChangeAndNoReminder_UsesRegularUpdate()
+    {
+        // Arrange - Task has no reminder
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Original Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = null
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateTaskAsync("task-123", TestUserId, "Updated Name", null);
+
+        // Assert - Name updated
+        result.Name.Should().Be("Updated Name");
+
+        // Assert - No reminder lookup (no ReminderId)
+        _mockReminderRepository.Verify(r => r.GetByIdAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+
+        // Assert - Regular update path taken
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.UpdateWithReminderSyncAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument>()), Times.Never);
+    }
+
     #endregion
 
     #region CreateTaskWithOptionalReminderAsync Tests
