@@ -1,10 +1,10 @@
 # Here and Now Service - Deployment Guide
 
-**Date:** 2025-12-29
+**Date:** 2026-01-15
 
 ## Overview
 
-The Here and Now Service is deployed to Azure Web Apps using GitHub Actions. The CI/CD pipeline is triggered on every push to the `main` branch.
+The Here and Now Service is deployed to Azure Web Apps using GitHub Actions. The CI/CD pipeline is triggered on every push to the `main` branch. The service connects to Azure Cosmos DB for task and reminder persistence.
 
 ## Deployment Architecture
 
@@ -13,12 +13,18 @@ The Here and Now Service is deployed to Azure Web Apps using GitHub Actions. The
 │    GitHub       │────►│  GitHub Actions │────►│  Azure Web App  │
 │   (main branch) │     │                 │     │  (Production)   │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │
-                               ▼
-                        ┌─────────────┐
-                        │   Tests     │
-                        │   (Gate)    │
-                        └─────────────┘
+                               │                        │
+                               ▼                        ▼
+                        ┌─────────────┐         ┌─────────────────┐
+                        │   Tests     │         │  Azure Cosmos   │
+                        │   (Gate)    │         │      DB         │
+                        └─────────────┘         └─────────────────┘
+                                                        │
+                                                        ▼
+                                                ┌─────────────────┐
+                                                │     Auth0       │
+                                                │   (Identity)    │
+                                                └─────────────────┘
 ```
 
 ## CI/CD Pipeline
@@ -59,20 +65,6 @@ on:
   workflow_dispatch:  # Manual trigger
 ```
 
-## Quality Gates
-
-### Test Requirements
-
-- All tests must pass before deployment
-- Test results are published to GitHub Actions UI
-- Failed tests block deployment
-
-### Test Reporting
-
-Test results are visible in:
-1. GitHub Actions workflow run
-2. Pull Request checks (if opened)
-
 ## Azure Configuration
 
 ### Required Azure Resources
@@ -81,6 +73,16 @@ Test results are visible in:
 |----------|------|---------|
 | here-and-now-service | Azure Web App | Application hosting |
 | App Service Plan | Hosting plan | Compute resources |
+| Cosmos DB Account | Database | Task and reminder storage |
+
+### Cosmos DB Setup
+
+1. **Create Cosmos DB Account** (NoSQL API)
+2. **Create Database:** `HereAndNow`
+3. **Create Container:**
+   - Name: `Tasks`
+   - Partition Key: `/userId`
+   - Throughput: 400 RU/s (minimum) or autoscale
 
 ### Application Settings
 
@@ -92,6 +94,9 @@ Configure these in Azure Portal → Web App → Configuration:
 | CLIENT_ORIGIN_URL | https://your-frontend.com | Production frontend URL |
 | AUTH0_DOMAIN | your-tenant.auth0.com | Auth0 domain |
 | AUTH0_AUDIENCE | https://your-api | Auth0 API identifier |
+| COSMOS_CONNECTION_STRING | AccountEndpoint=... | CosmosDB connection |
+| COSMOS_DATABASE_NAME | HereAndNow | Database name |
+| COSMOS_CONTAINER_NAME | Tasks | Container name |
 
 ### Secrets Management
 
@@ -132,10 +137,15 @@ az webapp deploy --resource-group <rg-name> --name here-and-now-service --src-pa
 After deployment, verify the API is running:
 
 ```bash
+# Public endpoint (always works)
 curl https://here-and-now-service.azurewebsites.net/api/messages/public
+
+# Task endpoint (requires auth + CosmosDB)
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  https://here-and-now-service.azurewebsites.net/api/v1/tasks
 ```
 
-Expected response:
+Expected response for public endpoint:
 ```json
 {"text":"This is a public message."}
 ```
@@ -145,6 +155,17 @@ Expected response:
 Swagger UI should be available at:
 ```
 https://here-and-now-service.azurewebsites.net/swagger
+```
+
+### Verify CosmosDB Connection
+
+After deploying with CosmosDB settings, test by creating a task:
+
+```bash
+curl -X POST https://here-and-now-service.azurewebsites.net/api/v1/tasks \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Test task"}'
 ```
 
 ## Rollback Procedures
@@ -183,13 +204,23 @@ Or using Azure CLI:
 az webapp log tail --resource-group <rg-name> --name here-and-now-service
 ```
 
-### Metrics
+### Key Metrics
 
-Key metrics to monitor:
-- HTTP response time
-- Request count
-- Error rate (4xx, 5xx)
-- CPU/Memory usage
+| Metric | Description | Alert Threshold |
+|--------|-------------|-----------------|
+| HTTP Response Time | API latency | > 2000ms |
+| Request Count | Traffic volume | Baseline + 3σ |
+| Error Rate (5xx) | Server errors | > 1% |
+| Error Rate (4xx) | Client errors | > 10% |
+| CPU Usage | Compute load | > 80% |
+| Memory Usage | Memory pressure | > 80% |
+
+### CosmosDB Metrics
+
+Monitor in Azure Portal → Cosmos DB → Metrics:
+- Request Units (RU) consumption
+- 429 (throttled) responses
+- Latency percentiles
 
 ## Environment-Specific Configuration
 
@@ -200,6 +231,7 @@ PORT=6060
 CLIENT_ORIGIN_URL=http://localhost:3000
 AUTH0_DOMAIN=dev-tenant.auth0.com
 AUTH0_AUDIENCE=https://dev-api
+COSMOS_CONNECTION_STRING=AccountEndpoint=https://localhost:8081/...
 ```
 
 ### Production
@@ -207,6 +239,7 @@ AUTH0_AUDIENCE=https://dev-api
 Configure via Azure Application Settings:
 - Use production Auth0 tenant
 - Set production CLIENT_ORIGIN_URL
+- Use production CosmosDB account
 - Ensure HTTPS-only connections
 
 ## Security Considerations
@@ -220,7 +253,8 @@ Azure Web Apps automatically provide HTTPS. Enforce HTTPS-only:
 ### Secrets
 
 - Never commit `.env` files
-- Use Azure Key Vault for sensitive values (future enhancement)
+- Store CosmosDB connection string in Azure Application Settings
+- Use Azure Key Vault for sensitive values (recommended)
 - Rotate Auth0 secrets periodically
 
 ### Access Control
@@ -228,6 +262,13 @@ Azure Web Apps automatically provide HTTPS. Enforce HTTPS-only:
 - Limit who can deploy (GitHub branch protection)
 - Use Azure RBAC for portal access
 - Review publish profile access regularly
+- Use managed identities for CosmosDB (future enhancement)
+
+### CosmosDB Security
+
+- Use private endpoints in production
+- Enable diagnostic logging
+- Review partition key design for tenant isolation
 
 ## Troubleshooting
 
@@ -247,14 +288,18 @@ Azure Web Apps automatically provide HTTPS. Enforce HTTPS-only:
 | 500 errors | Check Azure Log Stream |
 | Auth failures | Verify AUTH0_* settings |
 | CORS errors | Check CLIENT_ORIGIN_URL |
+| Task endpoints 500 | Verify COSMOS_CONNECTION_STRING |
+| Slow queries | Check CosmosDB RU consumption |
 
-## Future Enhancements
+### CosmosDB Issues
 
-1. **Deployment Slots**: Add staging slot for zero-downtime deployments
-2. **Blue/Green**: Implement blue/green deployment pattern
-3. **Feature Flags**: Add LaunchDarkly or Azure App Configuration
-4. **Containerization**: Docker-based deployment option
+| Issue | Solution |
+|-------|----------|
+| 429 (throttled) | Increase RU/s or enable autoscale |
+| Container not found | Create Tasks container with /userId partition key |
+| Connection timeout | Check firewall rules, use private endpoint |
 
 ---
 
 _Generated using BMAD Method `document-project` workflow_
+_Last Updated: 2026-01-15_

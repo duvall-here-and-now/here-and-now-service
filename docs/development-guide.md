@@ -1,6 +1,6 @@
 # Here and Now Service - Development Guide
 
-**Date:** 2025-12-30
+**Date:** 2026-01-15
 
 ## Prerequisites
 
@@ -17,7 +17,8 @@
 | Tool | Purpose |
 |------|---------|
 | Postman / Insomnia | API testing |
-| Azure CLI | Deployment operations |
+| Azure CLI | Deployment and CosmosDB operations |
+| Azure Cosmos DB Emulator | Local database development |
 
 ### Auth0 Account
 
@@ -25,6 +26,13 @@ You need an Auth0 account to test authenticated endpoints:
 1. Create an account at [auth0.com](https://auth0.com)
 2. Create an API in Auth0 Dashboard
 3. Note your domain and audience values
+
+### Azure Cosmos DB (Optional for Full Features)
+
+For Task and Reminder functionality, you need Azure Cosmos DB:
+1. Create an Azure Cosmos DB account (or use the emulator)
+2. Create a database named `HereAndNow`
+3. Create a container named `Tasks` with partition key `/userId`
 
 ## Environment Setup
 
@@ -40,20 +48,33 @@ cd here-and-now-service
 Create a `.env` file in the project root:
 
 ```env
+# Server
 PORT=6060
+
+# CORS
 CLIENT_ORIGIN_URL=http://localhost:3000
+
+# Auth0
 AUTH0_DOMAIN=your-tenant.auth0.com
 AUTH0_AUDIENCE=https://your-api-identifier
+
+# Cosmos DB (optional - enables Task/Reminder features)
+COSMOS_CONNECTION_STRING=AccountEndpoint=https://...
+COSMOS_DATABASE_NAME=HereAndNow
+COSMOS_CONTAINER_NAME=Tasks
 ```
 
 **Variable Descriptions:**
 
-| Variable | Example | Description |
-|----------|---------|-------------|
-| PORT | 6060 | Port the API listens on |
-| CLIENT_ORIGIN_URL | http://localhost:3000 | Allowed CORS origin(s), comma-separated |
-| AUTH0_DOMAIN | dev-abc123.auth0.com | Your Auth0 tenant domain |
-| AUTH0_AUDIENCE | https://api.example.com | Your Auth0 API identifier |
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| PORT | Yes | 6060 | Port the API listens on |
+| CLIENT_ORIGIN_URL | Yes | http://localhost:3000 | Allowed CORS origin(s), comma-separated |
+| AUTH0_DOMAIN | Yes | dev-abc123.auth0.com | Your Auth0 tenant domain |
+| AUTH0_AUDIENCE | Yes | https://api.example.com | Your Auth0 API identifier |
+| COSMOS_CONNECTION_STRING | No | AccountEndpoint=... | CosmosDB connection string |
+| COSMOS_DATABASE_NAME | No | HereAndNow | CosmosDB database name (default: HereAndNow) |
+| COSMOS_CONTAINER_NAME | No | Tasks | CosmosDB container name (default: Tasks) |
 
 ### 3. Restore Dependencies
 
@@ -136,111 +157,133 @@ dotnet watch test --project Web/HereAndNow.Web.Tests/HereAndNow.Web.Tests.csproj
 
 | Category | Location | Description |
 |----------|----------|-------------|
+| Controller Unit Tests | `Controllers/` | Test controller logic with mocked services |
+| Service Unit Tests | `Services/` | Test service logic with mocked repositories |
 | Integration Tests | `Integration/` | Test full HTTP pipeline |
-| Unit Tests | `Controllers/` | (Empty - to be added) |
 
 ## Project Structure
 
 ```
 here-and-now-service/
-├── Message/HereAndNow.Message/       # Business logic (edit here for domain changes)
+├── Message/HereAndNow.Message/       # Demo business logic (Auth0 sample)
 │   ├── Models/                       # Domain models
 │   └── Services/                     # Service interfaces + implementations
-├── Web/HereAndNow.Web/               # API layer (edit here for API changes)
+├── Task/HereAndNow.Task/             # Core business logic (Tasks + Reminders)
+│   ├── Models/                       # Domain models + Exceptions
+│   ├── Repositories/                 # CosmosDB data access
+│   └── Services/                     # Business logic
+├── Web/HereAndNow.Web/               # API layer
 │   ├── Controllers/                  # REST endpoints
-│   ├── DTOs/                         # (Empty - for future expansion)
-│   ├── Mappers/                      # (Empty - for future expansion)
+│   ├── DTOs/                         # Request/Response objects
+│   ├── Mappers/                      # Document ↔ DTO conversion
+│   ├── Validation/                   # Custom validation attributes
 │   └── Middlewares/                  # Custom middleware
 └── Web/HereAndNow.Web.Tests/         # Tests
+    ├── Controllers/                  # Controller unit tests
+    ├── Services/                     # Service unit tests
+    └── Integration/                  # API integration tests
 ```
 
 ## Common Development Tasks
 
-### Adding a New Endpoint
+### Adding a New Task Feature
 
-1. **Add/update domain model** (if needed):
+1. **Add domain model** (if needed):
    ```
-   Message/HereAndNow.Message/Models/NewModel.cs
-   ```
-
-2. **Add/update service interface**:
-   ```
-   Message/HereAndNow.Message/Services/INewService.cs
+   Task/HereAndNow.Task/Models/NewModel.cs
    ```
 
-3. **Add service implementation**:
+2. **Add exception** (if needed):
    ```
-   Message/HereAndNow.Message/Services/NewService.cs
-   ```
-
-4. **Add DTO** (if different from domain):
-   ```
-   Web/HereAndNow.Web/DTOs/NewModelDto.cs
+   Task/HereAndNow.Task/Models/Exceptions/NewException.cs
    ```
 
-5. **Add mapper** (if using DTO):
+3. **Add repository interface**:
    ```
-   Web/HereAndNow.Web/Mappers/NewModelMapper.cs
+   Task/HereAndNow.Task/Repositories/INewRepository.cs
    ```
 
-6. **Add controller**:
+4. **Add repository implementation**:
+   ```
+   Task/HereAndNow.Task/Repositories/NewRepository.cs
+   ```
+
+5. **Add service interface**:
+   ```
+   Task/HereAndNow.Task/Services/INewService.cs
+   ```
+
+6. **Add service implementation**:
+   ```
+   Task/HereAndNow.Task/Services/NewService.cs
+   ```
+
+7. **Add DTOs**:
+   ```
+   Web/HereAndNow.Web/DTOs/CreateNewDto.cs
+   Web/HereAndNow.Web/DTOs/NewDto.cs
+   ```
+
+8. **Add mapper**:
+   ```
+   Web/HereAndNow.Web/Mappers/NewMapper.cs
+   ```
+
+9. **Add controller endpoints**:
    ```
    Web/HereAndNow.Web/Controllers/NewController.cs
    ```
 
-7. **Register service in DI** (Program.cs):
-   ```csharp
-   builder.Services.AddScoped<INewService, NewService>();
-   ```
+10. **Register in DI** (Program.cs):
+    ```csharp
+    builder.Services.AddSingleton<INewRepository, NewRepository>();
+    builder.Services.AddScoped<INewService, NewService>();
+    ```
 
-8. **Add tests**:
-   ```
-   Web/HereAndNow.Web.Tests/Controllers/NewControllerTests.cs
-   ```
+11. **Add tests**:
+    ```
+    Web/HereAndNow.Web.Tests/Controllers/NewControllerTests.cs
+    Web/HereAndNow.Web.Tests/Services/NewServiceTests.cs
+    ```
 
-### Adding a New Middleware
-
-1. Create middleware class:
-   ```csharp
-   // Web/HereAndNow.Web/Middlewares/NewMiddleware.cs
-   class NewMiddleware
-   {
-       private readonly RequestDelegate _next;
-
-       public NewMiddleware(RequestDelegate next) => _next = next;
-
-       public async Task InvokeAsync(HttpContext context)
-       {
-           // Before
-           await _next(context);
-           // After
-       }
-   }
-
-   public static class NewMiddlewareExtensions
-   {
-       public static IApplicationBuilder UseNew(this IApplicationBuilder builder)
-           => builder.UseMiddleware<NewMiddleware>();
-   }
-   ```
-
-2. Register in pipeline (Program.cs):
-   ```csharp
-   app.UseNew();
-   ```
-
-### Modifying Authentication
-
-Authentication is configured in `Program.cs`:
+### Adding a Custom Validation Attribute
 
 ```csharp
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+// Web/HereAndNow.Web/Validation/NewValidationAttribute.cs
+[AttributeUsage(AttributeTargets.Property)]
+public class NewValidationAttribute : ValidationAttribute
+{
+    protected override ValidationResult? IsValid(object? value, ValidationContext context)
     {
-        options.Authority = $"https://{auth0Domain}/";
-        options.Audience = auth0Audience;
-        // Modify validation parameters here
-    });
+        // Validation logic
+        return ValidationResult.Success;
+    }
+}
+```
+
+### Adding a Unity Operation
+
+Unity operations atomically update Task and Reminder together:
+
+```csharp
+// In TaskRepository
+public async Task<TaskDocument> NewUnityOperationAsync(
+    TaskDocument task,
+    TaskReminderDocument? reminder)
+{
+    if (reminder == null)
+        return await UpdateAsync(task);
+
+    var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
+    batch.ReplaceItem(task.Id, task);
+    batch.ReplaceItem(reminder.Id, reminder);
+
+    using var response = await batch.ExecuteAsync();
+    if (!response.IsSuccessStatusCode)
+        throw new UnityTransactionFailedException(...);
+
+    return response.GetOperationResultAtIndex<TaskDocument>(0).Resource;
+}
 ```
 
 ## Code Style and Conventions
@@ -263,7 +306,7 @@ public class MyController : ControllerBase
 Nullable reference types are enabled. Use `?` for nullable types:
 
 ```csharp
-public string? text { get; set; }  // Nullable string
+public string? ReminderId { get; set; }  // Nullable string
 ```
 
 ### XML Documentation
@@ -272,12 +315,56 @@ Document public APIs with XML comments:
 
 ```csharp
 /// <summary>
-/// Retrieves a public message that doesn't require authentication.
+/// Creates a new task, optionally with an associated reminder.
 /// </summary>
-/// <returns>A public message accessible to all users.</returns>
-[HttpGet("public")]
-public ActionResult<Message> GetPublicMessage()
+/// <param name="dto">The task creation request</param>
+/// <returns>The created task</returns>
+[HttpPost]
+public async Task<ActionResult<TaskDto>> CreateTask([FromBody] CreateTaskDto dto)
 ```
+
+### JSON Property Names
+
+Use `[JsonPropertyName]` for explicit JSON property names:
+
+```csharp
+[JsonPropertyName("scheduledTime")]
+public DateTime ScheduledTime { get; set; }
+```
+
+## Testing API Endpoints
+
+### Using curl
+
+```bash
+# Public endpoint (no auth)
+curl http://localhost:6060/api/messages/public
+
+# Protected endpoint (requires token)
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  http://localhost:6060/api/messages/protected
+
+# Create a task
+curl -X POST http://localhost:6060/api/v1/tasks \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Buy groceries", "scheduledTime": "2026-01-20T10:00:00Z"}'
+
+# Get all tasks
+curl "http://localhost:6060/api/v1/tasks?orderBy=createdAt&direction=desc" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Complete a task (Unity operation)
+curl -X PUT http://localhost:6060/api/v1/tasks/{taskId}/complete \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Using Swagger UI
+
+1. Navigate to `http://localhost:6060/swagger`
+2. Click "Authorize" button
+3. Enter your JWT token
+4. Execute endpoints
 
 ## Debugging
 
@@ -306,28 +393,6 @@ public ActionResult<Message> GetPublicMessage()
    }
    ```
 
-### Testing API Endpoints
-
-**Using curl:**
-```bash
-# Public endpoint (no auth)
-curl http://localhost:6060/api/messages/public
-
-# Protected endpoint (requires token)
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:6060/api/messages/protected
-
-# Admin endpoint (requires token)
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:6060/api/messages/admin
-```
-
-**Using Swagger UI:**
-1. Navigate to `http://localhost:6060/swagger`
-2. Click "Authorize" button
-3. Enter your JWT token
-4. Execute endpoints
-
 ## Troubleshooting
 
 ### Common Issues
@@ -338,12 +403,26 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 | 401 on all requests | Verify AUTH0_DOMAIN and AUTH0_AUDIENCE |
 | CORS errors | Check CLIENT_ORIGIN_URL matches your frontend |
 | Port already in use | Change PORT in `.env` |
+| Task endpoints 500 | Check COSMOS_CONNECTION_STRING is set correctly |
+| "Container not found" | Create the Tasks container in CosmosDB |
+
+### Running Without CosmosDB
+
+If `COSMOS_CONNECTION_STRING` is not set:
+- Task and Reminder endpoints will not be available
+- Message endpoints will work (static data)
+- This is useful for testing Auth0 integration only
 
 ### Viewing Logs
 
-Application logs are written to console. For more detailed logs, adjust logging level in code or add logging configuration.
+Application logs are written to console. For more detailed logs:
+
+```csharp
+// In Program.cs or appsettings.json
+builder.Logging.SetMinimumLevel(LogLevel.Debug);
+```
 
 ---
 
 _Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2025-12-30_
+_Last Updated: 2026-01-15_

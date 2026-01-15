@@ -1,199 +1,391 @@
 # Here and Now Service - Data Models
 
-**Date:** 2025-12-30
+**Date:** 2026-01-15
 
 ## Overview
 
-This document describes the domain models and data structures used in the Here and Now Service. The project follows a clean architecture pattern with separation between the Message layer (business logic) and Web layer (API concerns).
+This document describes the domain models and data structures used in the Here and Now Service. The project follows a clean architecture pattern with three layers:
 
-## Domain Models
+| Layer | Assembly | Purpose |
+|-------|----------|---------|
+| **Message** | HereAndNow.Message | Demo business logic (static messages) |
+| **Task** | HereAndNow.Task | Core business logic (Tasks, Reminders, CosmosDB) |
+| **Web** | HereAndNow.Web | API layer (Controllers, DTOs, Mappers) |
 
-Located in: `Message/HereAndNow.Message/Models/`
+## Storage
 
-### Message
+- **Message Layer:** In-memory (static messages for Auth0 demo)
+- **Task Layer:** **Azure Cosmos DB** (NoSQL document store)
+  - Database: `HereAndNow`
+  - Container: `Tasks`
+  - Partition Key: `/userId`
+  - Document Types: `Task`, `TaskReminder` (type discriminator pattern)
 
-**File:** `Message.cs`
+---
+
+## Task Module Domain Models
+
+Located in: `Task/HereAndNow.Task/Models/`
+
+### TaskDocument
+
+**File:** `TaskDocument.cs`
 **Namespace:** `HereAndNowService.Models`
-**Purpose:** Simple message response model for the API.
+**Purpose:** Core task entity stored in CosmosDB.
 
 ```csharp
-public class Message
+public class TaskDocument
 {
-    /// <summary>
-    /// The text content of the message
-    /// </summary>
-    public string? text { get; set; }
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "Task";
+
+    [JsonPropertyName("userId")]
+    public string UserId { get; set; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("state")]
+    public string State { get; set; } = TaskState.OnDeck;
+
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; set; }
+
+    [JsonPropertyName("completedAt")]
+    public DateTime? CompletedAt { get; set; }
+
+    [JsonPropertyName("reminderId")]
+    public string? ReminderId { get; set; }
+
+    [JsonPropertyName("lastModifiedAt")]
+    public DateTime LastModifiedAt { get; set; }
 }
 ```
 
 **Field Descriptions:**
 
-| Field | Type | Nullable | Description |
-|-------|------|----------|-------------|
-| text | string | Yes | The message content |
+| Field | Type | Description |
+|-------|------|-------------|
+| `Id` | string | Unique identifier (GUID) |
+| `Type` | string | Document type discriminator (`"Task"`) |
+| `UserId` | string | Partition key - user who owns the task |
+| `Name` | string | Task name/title (1-500 chars) |
+| `State` | string | Current state (OnDeck, InProgress, Completed, Deleted) |
+| `CreatedAt` | DateTime | UTC creation timestamp |
+| `CompletedAt` | DateTime? | UTC completion timestamp (null if not completed) |
+| `ReminderId` | string? | Associated reminder ID (null if none) |
+| `LastModifiedAt` | DateTime | UTC last modification timestamp |
 
-**JSON Representation:**
-```json
+---
+
+### TaskReminderDocument
+
+**File:** `TaskReminderDocument.cs`
+**Namespace:** `HereAndNowService.Models`
+**Purpose:** Reminder entity stored in same CosmosDB container as tasks.
+
+```csharp
+public class TaskReminderDocument
 {
-  "text": "This is a message."
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "TaskReminder";
+
+    [JsonPropertyName("userId")]
+    public string UserId { get; set; } = string.Empty;
+
+    [JsonPropertyName("taskId")]
+    public string TaskId { get; set; } = string.Empty;
+
+    [JsonPropertyName("taskName")]
+    public string TaskName { get; set; } = string.Empty;
+
+    [JsonPropertyName("scheduledTime")]
+    public DateTime ScheduledTime { get; set; }
+
+    [JsonPropertyName("isDismissed")]
+    public bool IsDismissed { get; set; } = false;
+
+    [JsonPropertyName("dismissedAt")]
+    public DateTime? DismissedAt { get; set; }
+
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; set; }
+
+    [JsonPropertyName("lastModifiedAt")]
+    public DateTime LastModifiedAt { get; set; }
 }
 ```
 
-**Notes:**
-- Uses lowercase `text` property name (matches JSON convention)
-- Used for demo endpoints showing public/protected/admin access levels
+**Field Descriptions:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Id` | string | Unique identifier (GUID) |
+| `Type` | string | Document type discriminator (`"TaskReminder"`) |
+| `UserId` | string | Partition key - user who owns the reminder |
+| `TaskId` | string | Associated task ID |
+| `TaskName` | string | Denormalized task name (for display without join) |
+| `ScheduledTime` | DateTime | UTC time when reminder triggers |
+| `IsDismissed` | bool | Whether reminder has been dismissed |
+| `DismissedAt` | DateTime? | UTC dismissal timestamp |
+| `CreatedAt` | DateTime | UTC creation timestamp |
+| `LastModifiedAt` | DateTime | UTC last modification timestamp |
+
+**Design Notes:**
+- `TaskName` is denormalized to avoid joins when displaying reminders
+- When task name is updated, `TaskName` is synced atomically using transactional batch
+
+---
+
+### TaskState
+
+**File:** `TaskState.cs`
+**Namespace:** `HereAndNowService.Models`
+**Purpose:** Constants for task state values (not enum for exact JSON match).
+
+```csharp
+public static class TaskState
+{
+    public const string OnDeck = "OnDeck";
+    public const string InProgress = "InProgress";
+    public const string Completed = "Completed";
+    public const string Deleted = "Deleted";
+
+    public static readonly string[] AllStates = { OnDeck, InProgress, Completed, Deleted };
+
+    public static bool IsValid(string? state) =>
+        state is OnDeck or InProgress or Completed or Deleted;
+}
+```
+
+**State Transitions:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│                                                       │
+│  ┌──────────┐   ┌────────────┐   ┌───────────────┐  │
+│  │  OnDeck  │ → │ InProgress │ → │   Completed   │  │
+│  └──────────┘   └────────────┘   └───────────────┘  │
+│       │              │                               │
+│       │              │         ┌───────────────────┐│
+│       └──────────────┴───────→ │     Deleted       ││
+│                                └───────────────────┘│
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### PagedResult<T>
+
+**File:** `PagedResult.cs`
+**Namespace:** `HereAndNowService.Models`
+**Purpose:** Generic wrapper for paginated query results.
+
+```csharp
+public class PagedResult<T>
+{
+    public IReadOnlyList<T> Items { get; set; } = Array.Empty<T>();
+    public int TotalCount { get; set; }
+    public bool HasMore { get; set; }
+}
+```
+
+---
+
+## DTOs (Data Transfer Objects)
+
+Located in: `Web/HereAndNow.Web/DTOs/`
+
+### Task DTOs
+
+| DTO | Purpose |
+|-----|---------|
+| `CreateTaskDto` | Request body for creating tasks |
+| `UpdateTaskDto` | Request body for updating tasks |
+| `TaskDto` | Response body for task data |
+| `PagedTasksDto` | Response body for paginated tasks |
+
+### Reminder DTOs
+
+| DTO | Purpose |
+|-----|---------|
+| `CreateReminderDto` | Request body for creating reminders |
+| `SnoozeReminderDto` | Request body for snoozing reminders |
+| `TaskReminderDto` | Response body for reminder data |
+
+### Error DTOs
+
+| DTO | Purpose |
+|-----|---------|
+| `ErrorResponseDto` | Standard error response wrapper |
+| `ErrorDetailsDto` | Error code and message details |
+
+---
+
+## Exceptions
+
+Located in: `Task/HereAndNow.Task/Models/Exceptions/`
+
+| Exception | Thrown When |
+|-----------|-------------|
+| `TaskNotFoundException` | Task with given ID doesn't exist |
+| `ReminderNotFoundException` | Reminder with given ID doesn't exist |
+| `ReminderAlreadyExistsException` | Task already has a reminder attached |
+| `ReminderAlreadyDismissedException` | Attempting to modify a dismissed reminder |
+| `InvalidScheduledTimeException` | Scheduled time is in the past |
+| `UnityTransactionFailedException` | CosmosDB transactional batch failed |
 
 ---
 
 ## Service Layer
 
+### Task Services
+
+Located in: `Task/HereAndNow.Task/Services/`
+
+| Interface | Implementation | Purpose |
+|-----------|----------------|---------|
+| `ITaskService` | `TaskService` | Task CRUD and Unity operations |
+| `ITaskReminderService` | `TaskReminderService` | Reminder CRUD, snooze, dismiss |
+
+### Message Services
+
 Located in: `Message/HereAndNow.Message/Services/`
 
-### IMessageService (Interface)
+| Interface | Implementation | Purpose |
+|-----------|----------------|---------|
+| `IMessageService` | `MessageService` | Demo message retrieval |
 
-**File:** `IMessageService.cs`
-**Namespace:** `HereAndNowService.Services`
-**Purpose:** Defines the contract for message retrieval operations.
+---
+
+## Repository Layer
+
+Located in: `Task/HereAndNow.Task/Repositories/`
+
+| Interface | Implementation | Purpose |
+|-----------|----------------|---------|
+| `ITaskRepository` | `TaskRepository` | CosmosDB operations for tasks |
+| `ITaskReminderRepository` | `TaskReminderRepository` | CosmosDB operations for reminders |
+
+**Key Repository Methods:**
 
 ```csharp
-public interface IMessageService
+// TaskRepository
+Task<TaskDocument> CreateAsync(TaskDocument task);
+Task<IEnumerable<TaskDocument>> GetByUserIdAsync(string userId, string? state = null);
+Task<PagedResult<TaskDocument>> GetByUserIdPagedAsync(...);
+Task<TaskDocument?> GetByIdAsync(string userId, string taskId);
+Task<TaskDocument> UpdateAsync(TaskDocument task);
+Task<TaskDocument> CompleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder);
+Task DeleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder);
+Task<TaskDocument> UpdateWithReminderSyncAsync(TaskDocument task, TaskReminderDocument reminder);
+```
+
+---
+
+## Mappers
+
+Located in: `Web/HereAndNow.Web/Mappers/`
+
+| Mapper | Purpose |
+|--------|---------|
+| `TaskMapper` | Convert TaskDocument ↔ TaskDto |
+| `ReminderMapper` | Convert TaskReminderDocument ↔ TaskReminderDto |
+
+---
+
+## CosmosDB Configuration
+
+**Settings Class:** `CosmosDbSettings`
+
+```csharp
+public class CosmosDbSettings
 {
-    Message GetPublicMessage();
-    Message GetProtectedMessage();
-    Message GetAdminMessage();
+    public string ConnectionString { get; set; } = string.Empty;
+    public string DatabaseName { get; set; } = "HereAndNow";
+    public string ContainerName { get; set; } = "Tasks";
 }
 ```
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `GetPublicMessage()` | `Message` | Returns the public message (no auth required) |
-| `GetProtectedMessage()` | `Message` | Returns the protected message (auth required) |
-| `GetAdminMessage()` | `Message` | Returns the admin message (auth required) |
+**Environment Variables:**
+
+| Variable | Purpose |
+|----------|---------|
+| `COSMOS_CONNECTION_STRING` | CosmosDB connection string |
+| `COSMOS_DATABASE_NAME` | Database name (default: HereAndNow) |
+| `COSMOS_CONTAINER_NAME` | Container name (default: Tasks) |
 
 ---
 
-### MessageService (Implementation)
+## Unity Pattern
 
-**File:** `MessageService.cs`
-**Namespace:** `HereAndNowService.Services`
-**Purpose:** Default implementation returning static messages.
+The "Unity" pattern uses CosmosDB transactional batches to atomically update Task and Reminder documents together:
 
 ```csharp
-public class MessageService : IMessageService
-{
-    public Message GetPublicMessage()
-        => new Message { text = "This is a public message." };
-
-    public Message GetProtectedMessage()
-        => new Message { text = "This is a protected message, and Mike is cool." };
-
-    public Message GetAdminMessage()
-        => new Message { text = "This is an admin message." };
-}
+// Example: CompleteWithUnityAsync
+var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
+batch.ReplaceItem(task.Id, task);
+batch.ReplaceItem(reminder.Id, reminder);
+var batchResponse = await batch.ExecuteAsync();
 ```
 
-**Dependency Injection Registration:**
-```csharp
-// In Program.cs
-builder.Services.AddScoped<IMessageService, MessageService>();
-```
-
----
-
-## Data Storage
-
-### Current Implementation
-
-**Storage Type:** In-memory (static messages)
-
-The service returns hardcoded messages directly from `MessageService`. There is no database or persistent storage - this is a demo/sample API for demonstrating Auth0 authentication.
-
----
-
-## DTOs and Mappers
-
-**Current State:** Not used
-
-The API returns domain models directly. The project structure includes empty folders prepared for future expansion:
-
-- `Web/HereAndNow.Web/DTOs/` - For Data Transfer Objects
-- `Web/HereAndNow.Web/Mappers/` - For domain-to-DTO mapping
-
-For a production API with more complex data, consider adding:
-1. **DTOs** to control what's exposed in the API
-2. **Mappers** to convert between domain models and DTOs
-3. **Validators** (e.g., FluentValidation) for request validation
-
----
-
-## JSON Serialization
-
-The API uses `System.Text.Json` with the following configuration:
-
-```csharp
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
-    });
-```
-
-**Effect:** Enums are serialized as strings rather than integers.
-
----
-
-## Extending the Data Model
-
-To add new data types:
-
-1. **Add domain model** in `Message/HereAndNow.Message/Models/`
-2. **Add service interface** in `Message/HereAndNow.Message/Services/`
-3. **Add service implementation** in `Message/HereAndNow.Message/Services/`
-4. **Register in DI** in `Web/HereAndNow.Web/Program.cs`
-5. **Create controller** in `Web/HereAndNow.Web/Controllers/`
-
-For persistent storage, consider adding:
-- Database context (e.g., Entity Framework Core, Cosmos DB SDK)
-- Repository pattern for data access abstraction
-- DTOs for API response shaping
-- Mappers for domain-to-DTO conversion
+**Operations using Unity:**
+1. **Complete Task** - Task → Completed, Reminder → Dismissed
+2. **Delete Task** - Task → Deleted, Reminder → Dismissed
+3. **Update Task Name** - Task name synced to Reminder's denormalized `TaskName`
 
 ---
 
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────┐
-│               Web Layer                      │
-│  ┌─────────────────────────────────────┐   │
-│  │      MessagesController             │   │
-│  │   (depends on IMessageService)      │   │
-│  └──────────────┬──────────────────────┘   │
-└─────────────────┼───────────────────────────┘
-                  │
-                  │ Dependency Injection
-                  ▼
-┌─────────────────────────────────────────────┐
-│             Message Layer                    │
-│  ┌─────────────────────────────────────┐   │
-│  │        IMessageService              │   │
-│  │   (interface - abstraction)         │   │
-│  └──────────────┬──────────────────────┘   │
-│                 │                           │
-│                 ▼                           │
-│  ┌─────────────────────────────────────┐   │
-│  │         MessageService              │   │
-│  │   (implementation - static data)    │   │
-│  └─────────────────────────────────────┘   │
-│                                             │
-│  ┌─────────────────────────────────────┐   │
-│  │            Message                  │   │
-│  │        (domain model)               │   │
-│  └─────────────────────────────────────┘   │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         Web Layer                                │
+│  ┌───────────────┐  ┌────────────────┐  ┌───────────────────┐  │
+│  │ TasksController│  │RemindersController│ │MessagesController│  │
+│  └───────┬───────┘  └───────┬────────┘  └─────────┬─────────┘  │
+│          │                   │                     │             │
+│          ▼                   ▼                     │             │
+│  ┌────────────────────────────────────┐           │             │
+│  │    DTOs + Mappers + Validation     │           │             │
+│  └───────────────┬────────────────────┘           │             │
+└──────────────────┼────────────────────────────────┼─────────────┘
+                   │                                │
+                   ▼                                ▼
+┌──────────────────────────────────┐  ┌────────────────────────────┐
+│          Task Layer              │  │      Message Layer          │
+│  ┌────────────────────────────┐  │  │  ┌──────────────────────┐  │
+│  │ ITaskService ← TaskService │  │  │  │IMessageService       │  │
+│  │ ITaskReminderService ←     │  │  │  │  ← MessageService    │  │
+│  │       TaskReminderService  │  │  │  └──────────────────────┘  │
+│  └─────────────┬──────────────┘  │  │            │               │
+│                │                  │  │            ▼               │
+│                ▼                  │  │  ┌──────────────────────┐  │
+│  ┌────────────────────────────┐  │  │  │     Message          │  │
+│  │ ITaskRepository ←          │  │  │  │  (static data)       │  │
+│  │       TaskRepository       │  │  │  └──────────────────────┘  │
+│  │ ITaskReminderRepository ←  │  │  └────────────────────────────┘
+│  │    TaskReminderRepository  │  │
+│  └─────────────┬──────────────┘  │
+│                │                  │
+│                ▼                  │
+│  ┌────────────────────────────┐  │
+│  │    Azure Cosmos DB         │  │
+│  │  ┌──────────┬───────────┐  │  │
+│  │  │  Task    │TaskReminder│  │  │
+│  │  │Documents │ Documents  │  │  │
+│  │  └──────────┴───────────┘  │  │
+│  └────────────────────────────┘  │
+└──────────────────────────────────┘
 ```
 
 ---
 
 _Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2025-12-30_
+_Last Updated: 2026-01-15_
