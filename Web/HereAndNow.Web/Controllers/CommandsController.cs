@@ -19,7 +19,7 @@ namespace HereAndNowService.Controllers;
 /// - CreateTask: Create a new task with a client-generated ID
 /// - CreateTaskAndTaskReminder: Atomic task + reminder creation with client-generated IDs
 ///
-/// Future commands (Stories 6.3-6.5):
+/// Planned future commands:
 /// - UpdateTaskName: Change task name with reminder sync
 /// - UpdateTaskState: All state transitions with Unity
 /// - UpdateTaskReminderScheduledTime: Reschedule reminder
@@ -132,7 +132,7 @@ public class CommandsController : ControllerBase
         }
 
         // Use consistent lowercase GUID format
-        var taskId = parsedGuid.ToString();
+        var taskId = parsedGuid.ToString().ToLowerInvariant();
 
         // Validate name is provided and not empty
         if (string.IsNullOrWhiteSpace(command.Name))

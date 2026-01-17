@@ -542,6 +542,30 @@ public class CommandsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateTaskAndTaskReminder_WithScheduledTimeExactlyNow_Returns400BadRequest()
+    {
+        // Arrange (AC: #3 - boundary condition: exactly now should be rejected)
+        var taskId = Guid.NewGuid().ToString();
+        var reminderId = Guid.NewGuid().ToString();
+        var exactlyNow = DateTime.UtcNow;
+        var request = CreateCommandRequest("CreateTaskAndTaskReminder", new
+        {
+            taskId,
+            taskReminderId = reminderId,
+            name = "Boundary Test",
+            scheduledTime = exactlyNow
+        });
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
+    }
+
+    [Fact]
     public async Task CreateTaskAndTaskReminder_WithMissingReminderId_Returns400BadRequest()
     {
         // Arrange (AC: #4)

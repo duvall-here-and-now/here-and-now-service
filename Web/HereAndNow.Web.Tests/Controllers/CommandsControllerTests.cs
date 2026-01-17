@@ -703,6 +703,33 @@ public class CommandsControllerTests
     }
 
     [Fact]
+    public async Task CreateTaskAndTaskReminder_WithScheduledTimeExactlyNow_Returns400BadRequest()
+    {
+        // Arrange (AC: #3 - boundary condition: exactly now should be rejected)
+        var taskId = Guid.NewGuid().ToString();
+        var reminderId = Guid.NewGuid().ToString();
+        // Use a time slightly in the past to ensure we hit the boundary
+        // (UtcNow at validation will be >= this value)
+        var exactlyNow = DateTime.UtcNow;
+        var request = CreateCommandRequest("CreateTaskAndTaskReminder", new
+        {
+            taskId,
+            taskReminderId = reminderId,
+            name = "Boundary Test",
+            scheduledTime = exactlyNow
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
+    }
+
+    [Fact]
     public async Task CreateTaskAndTaskReminder_NormalizesGuidsToLowercase()
     {
         // Arrange

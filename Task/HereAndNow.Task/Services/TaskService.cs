@@ -538,7 +538,11 @@ public class TaskService : ITaskService
             "Creating task {TaskId} with reminder {ReminderId} for user {UserId}",
             taskId, taskReminderId, userId);
 
-        // Pre-check for existing task (provides better error message than batch failure)
+        // Pre-checks provide clearer error messages in the common case.
+        // Note: A race condition exists between these checks and the batch execution -
+        // concurrent requests could create documents between check and batch.
+        // The batch operation handles this with proper 409 Conflict detection,
+        // so correctness is guaranteed. Pre-checks are for better UX only.
         var taskExists = await _taskRepository.ExistsAsync(userId, taskId);
         if (taskExists)
         {
