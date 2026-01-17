@@ -53,4 +53,13 @@ public interface ITaskReminderRepository
     /// <returns>The created reminder document</returns>
     /// <exception cref="Models.Exceptions.TaskNotFoundException">If the task does not exist</exception>
     Task<TaskReminderDocument> CreateWithTaskLinkAsync(TaskReminderDocument reminder, string taskId);
+
+    /// <summary>
+    /// Checks if a reminder with the specified ID exists for the given user.
+    /// Uses efficient point read to minimize RU cost.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="reminderId">The reminder ID to check</param>
+    /// <returns>True if the reminder exists, false otherwise</returns>
+    Task<bool> ExistsAsync(string userId, string reminderId);
 }

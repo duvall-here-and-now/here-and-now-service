@@ -17,9 +17,9 @@ namespace HereAndNowService.Controllers;
 /// <remarks>
 /// Available commands:
 /// - CreateTask: Create a new task with a client-generated ID
+/// - CreateTaskAndTaskReminder: Atomic task + reminder creation with client-generated IDs
 ///
-/// Future commands (Stories 6.2-6.5):
-/// - CreateTaskAndTaskReminder: Atomic task + reminder creation
+/// Future commands (Stories 6.3-6.5):
 /// - UpdateTaskName: Change task name with reminder sync
 /// - UpdateTaskState: All state transitions with Unity
 /// - UpdateTaskReminderScheduledTime: Reschedule reminder
@@ -46,15 +46,28 @@ public class CommandsController : ControllerBase
     /// Executes a command to modify system state.
     /// </summary>
     /// <remarks>
-    /// Available commands: CreateTask
+    /// Available commands: CreateTask, CreateTaskAndTaskReminder
     ///
-    /// Request format:
+    /// Request format for CreateTask:
     /// ```json
     /// {
     ///   "command": "CreateTask",
     ///   "payload": {
     ///     "taskId": "550e8400-e29b-41d4-a716-446655440000",
     ///     "name": "My New Task"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for CreateTaskAndTaskReminder:
+    /// ```json
+    /// {
+    ///   "command": "CreateTaskAndTaskReminder",
+    ///   "payload": {
+    ///     "taskId": "550e8400-e29b-41d4-a716-446655440000",
+    ///     "taskReminderId": "660e8400-e29b-41d4-a716-446655440001",
+    ///     "name": "Call dentist",
+    ///     "scheduledTime": "2026-01-20T09:00:00Z"
     ///   }
     /// }
     /// ```
@@ -77,6 +90,7 @@ public class CommandsController : ControllerBase
         return request.Command switch
         {
             "CreateTask" => await HandleCreateTaskAsync(request, userId),
+            "CreateTaskAndTaskReminder" => await HandleCreateTaskAndTaskReminderAsync(request, userId),
             _ => BadRequest(CreateErrorResponse("UNKNOWN_COMMAND", $"Unknown command: {request.Command}"))
         };
     }
@@ -146,6 +160,110 @@ public class CommandsController : ControllerBase
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid CreateTask request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the CreateTaskAndTaskReminder command
+    /// </summary>
+    private async Task<IActionResult> HandleCreateTaskAndTaskReminderAsync(CommandRequest request, string userId)
+    {
+        // Deserialize payload to CreateTaskAndTaskReminderCommand
+        CreateTaskAndTaskReminderCommand? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<CreateTaskAndTaskReminderCommand>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize CreateTaskAndTaskReminder payload");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for CreateTaskAndTaskReminder command"));
+        }
+
+        if (command == null)
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Payload is required for CreateTaskAndTaskReminder command"));
+        }
+
+        // Validate taskId is provided
+        if (string.IsNullOrWhiteSpace(command.TaskId))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskId is required"));
+        }
+
+        // Validate taskId is a valid GUID format
+        if (!Guid.TryParse(command.TaskId, out var parsedTaskGuid))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskId must be a valid GUID format"));
+        }
+
+        // Validate taskReminderId is provided
+        if (string.IsNullOrWhiteSpace(command.TaskReminderId))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskReminderId is required"));
+        }
+
+        // Validate taskReminderId is a valid GUID format
+        if (!Guid.TryParse(command.TaskReminderId, out var parsedReminderGuid))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskReminderId must be a valid GUID format"));
+        }
+
+        // Use consistent lowercase GUID format
+        var taskId = parsedTaskGuid.ToString().ToLowerInvariant();
+        var taskReminderId = parsedReminderGuid.ToString().ToLowerInvariant();
+
+        // Validate name is provided and not empty
+        if (string.IsNullOrWhiteSpace(command.Name))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "name is required and cannot be empty"));
+        }
+
+        // Validate scheduledTime is in the future
+        if (command.ScheduledTime <= DateTime.UtcNow)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_SCHEDULED_TIME", "scheduledTime must be in the future"));
+        }
+
+        _logger.LogDebug(
+            "Creating task with client-generated ID {TaskId} and reminder {ReminderId} for user {UserId}",
+            taskId, taskReminderId, userId);
+
+        try
+        {
+            var (task, reminder) = await _taskService.CreateTaskWithReminderAsync(
+                userId,
+                taskId,
+                taskReminderId,
+                command.Name,
+                command.ScheduledTime);
+
+            var responseDto = new TaskAndReminderDto
+            {
+                Task = TaskMapper.ToDto(task),
+                Reminder = ReminderMapper.ToDto(reminder)
+            };
+
+            return CreatedAtAction(
+                actionName: "GetTask",
+                controllerName: "Tasks",
+                routeValues: new { id = responseDto.Task.Id },
+                value: responseDto);
+        }
+        catch (TaskAlreadyExistsException)
+        {
+            return Conflict(CreateErrorResponse("TASK_ALREADY_EXISTS", $"Task with ID {taskId} already exists"));
+        }
+        catch (TaskReminderAlreadyExistsException)
+        {
+            return Conflict(CreateErrorResponse("TASK_REMINDER_ALREADY_EXISTS", $"TaskReminder with ID {taskReminderId} already exists"));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid CreateTaskAndTaskReminder request");
             return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
         }
     }

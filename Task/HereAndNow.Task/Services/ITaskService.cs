@@ -105,4 +105,24 @@ public interface ITaskService
     /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
     /// <exception cref="Models.Exceptions.UnityTransactionFailedException">Thrown when the transactional batch fails</exception>
     Task DeleteTaskWithUnityAsync(string userId, string taskId);
+
+    /// <summary>
+    /// Creates a new task and its associated reminder atomically with client-generated IDs.
+    /// Both entities are created in a single transactional batch operation - either both
+    /// succeed or both fail.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The client-generated task ID (must be a valid GUID)</param>
+    /// <param name="taskReminderId">The client-generated reminder ID (must be a valid GUID)</param>
+    /// <param name="name">The name of the task</param>
+    /// <param name="scheduledTime">UTC time when the reminder should trigger</param>
+    /// <returns>Tuple containing the created task and reminder documents</returns>
+    /// <exception cref="Models.Exceptions.TaskAlreadyExistsException">Thrown when a task with the given ID already exists</exception>
+    /// <exception cref="Models.Exceptions.TaskReminderAlreadyExistsException">Thrown when a reminder with the given ID already exists</exception>
+    Task<(TaskDocument Task, TaskReminderDocument Reminder)> CreateTaskWithReminderAsync(
+        string userId,
+        string taskId,
+        string taskReminderId,
+        string name,
+        DateTime scheduledTime);
 }

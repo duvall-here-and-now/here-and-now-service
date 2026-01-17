@@ -110,4 +110,21 @@ public interface ITaskRepository
     /// <exception cref="Models.Exceptions.UnityTransactionFailedException">If the transactional batch fails</exception>
     /// <exception cref="InvalidOperationException">If task.UserId != reminder.UserId (partition key mismatch)</exception>
     Task<TaskDocument> UpdateWithReminderSyncAsync(TaskDocument task, TaskReminderDocument reminder);
+
+    /// <summary>
+    /// Atomically creates a task and its associated reminder using Cosmos DB transactional batch.
+    /// This ensures both documents are created together or neither is created.
+    /// </summary>
+    /// <remarks>
+    /// Both documents must have the same userId (partition key) for the transactional batch to work.
+    /// If either document ID already exists, the operation will fail with a 409 Conflict.
+    /// </remarks>
+    /// <param name="task">The task document to create (with reminderId already set)</param>
+    /// <param name="reminder">The reminder document to create (with taskId already set)</param>
+    /// <returns>Tuple containing the created task and reminder documents</returns>
+    /// <exception cref="Models.Exceptions.TaskAlreadyExistsException">If a task with the same ID already exists</exception>
+    /// <exception cref="Models.Exceptions.TaskReminderAlreadyExistsException">If a reminder with the same ID already exists</exception>
+    Task<(TaskDocument Task, TaskReminderDocument Reminder)> CreateTaskWithReminderBatchAsync(
+        TaskDocument task,
+        TaskReminderDocument reminder);
 }
