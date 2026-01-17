@@ -29,7 +29,8 @@ public class TasksController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new task, optionally with an associated reminder
+    /// Creates a new task, optionally with an associated reminder.
+    /// This endpoint is deprecated - use POST /api/v1/commands with CreateTask command instead.
     /// </summary>
     /// <param name="createTaskDto">The task creation request with optional scheduledTime for reminder</param>
     /// <returns>The created task</returns>
@@ -40,9 +41,13 @@ public class TasksController : ControllerBase
     [ProducesResponseType(typeof(TaskDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [Obsolete("Use POST /api/v1/commands with CreateTask command instead")]
     public async Task<ActionResult<TaskDto>> CreateTask([FromBody] CreateTaskDto createTaskDto)
     {
         var userId = GetUserId();
+
+        _logger.LogWarning("Legacy POST /api/v1/tasks endpoint used by user {UserId}. Migrate to POST /api/v1/commands with CreateTask command.",
+            userId);
 
         _logger.LogInformation("Creating task for user {UserId} with reminder: {HasReminder}",
             userId, createTaskDto.ScheduledTime.HasValue);
