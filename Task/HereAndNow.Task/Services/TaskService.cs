@@ -64,6 +64,55 @@ public class TaskService : ITaskService
     }
 
     /// <inheritdoc />
+    public async Task<TaskDocument> CreateTaskWithIdAsync(string userId, string taskId, string name)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        if (string.IsNullOrWhiteSpace(taskId))
+        {
+            throw new ArgumentException("Task ID cannot be empty", nameof(taskId));
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Task name cannot be empty", nameof(name));
+        }
+
+        _logger.LogDebug("Creating task with client ID '{TaskId}' for user {UserId}", taskId, userId);
+
+        // Check if task already exists
+        var exists = await _taskRepository.ExistsAsync(userId, taskId);
+        if (exists)
+        {
+            _logger.LogWarning("Task {TaskId} already exists for user {UserId}", taskId, userId);
+            throw new TaskAlreadyExistsException(taskId);
+        }
+
+        var now = DateTime.UtcNow;
+        var task = new TaskDocument
+        {
+            Id = taskId,
+            UserId = userId,
+            Name = name.Trim(),
+            State = TaskState.OnDeck,
+            CreatedAt = now,
+            CompletedAt = null,
+            ReminderId = null,
+            LastModifiedAt = now
+        };
+
+        var createdTask = await _taskRepository.CreateAsync(task);
+
+        _logger.LogInformation("Created task with client ID {TaskId} '{Name}' for user {UserId}",
+            createdTask.Id, createdTask.Name, userId);
+
+        return createdTask;
+    }
+
+    /// <inheritdoc />
     public async Task<IEnumerable<TaskDocument>> GetTasksAsync(string userId, string? state = null)
     {
         if (string.IsNullOrWhiteSpace(userId))

@@ -51,6 +51,15 @@ public interface ITaskRepository
     Task<TaskDocument?> GetByIdAsync(string userId, string taskId);
 
     /// <summary>
+    /// Checks if a task with the specified ID exists for the given user.
+    /// Uses efficient point read to minimize RU cost.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The task ID to check</param>
+    /// <returns>True if the task exists, false otherwise</returns>
+    Task<bool> ExistsAsync(string userId, string taskId);
+
+    /// <summary>
     /// Updates an existing task document
     /// </summary>
     /// <param name="task">The task document with updated values</param>

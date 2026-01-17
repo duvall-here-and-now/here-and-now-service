@@ -16,6 +16,18 @@ public interface ITaskService
     Task<TaskDocument> CreateTaskAsync(string name, string userId);
 
     /// <summary>
+    /// Creates a new task with a client-generated ID.
+    /// This enables optimistic UI patterns where the client can display the task
+    /// immediately without waiting for server confirmation.
+    /// </summary>
+    /// <param name="userId">The ID of the user creating the task</param>
+    /// <param name="taskId">The client-generated task ID (must be a valid GUID)</param>
+    /// <param name="name">The name of the task</param>
+    /// <returns>The created task document</returns>
+    /// <exception cref="Models.Exceptions.TaskAlreadyExistsException">Thrown when a task with the given ID already exists</exception>
+    Task<TaskDocument> CreateTaskWithIdAsync(string userId, string taskId, string name);
+
+    /// <summary>
     /// Gets all tasks for a user, optionally filtered by state
     /// </summary>
     /// <param name="userId">The ID of the user</param>

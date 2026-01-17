@@ -211,6 +211,29 @@ public class TaskRepository : ITaskRepository
     }
 
     /// <inheritdoc />
+    public async Task<bool> ExistsAsync(string userId, string taskId)
+    {
+        _logger.LogDebug("Checking if task {TaskId} exists for user {UserId}", taskId, userId);
+
+        try
+        {
+            // Use point read which is the most efficient way to check existence
+            // We only need to know if it exists, not the full document
+            await _container.ReadItemAsync<TaskDocument>(
+                taskId,
+                new PartitionKey(userId));
+
+            _logger.LogDebug("Task {TaskId} exists for user {UserId}", taskId, userId);
+            return true;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogDebug("Task {TaskId} does not exist for user {UserId}", taskId, userId);
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<TaskDocument> UpdateAsync(TaskDocument task)
     {
         _logger.LogDebug("Updating task {TaskId} for user {UserId}", task.Id, task.UserId);
