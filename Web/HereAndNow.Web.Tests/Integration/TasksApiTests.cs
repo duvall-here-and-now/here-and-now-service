@@ -451,245 +451,41 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
-    #region Update Task Tests (AC: 1-5)
+    #region Legacy Endpoint Removal Tests (Story 6-7)
 
     [Fact]
-    public async Task UpdateTask_WithValidState_Returns200Ok()
+    public async Task PutTask_ReturnsMethodNotAllowed_EndpointRemoved()
     {
-        // Arrange
-        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
-        var updatedTask = new TaskDocument
-        {
-            Id = "task-123",
-            UserId = TestAuthHandler.TestUserId,
-            Name = "My Task",
-            State = TaskState.InProgress,
-            CreatedAt = DateTime.UtcNow.AddDays(-1)
-        };
-
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, null, TaskState.InProgress))
-            .ReturnsAsync(updatedTask);
+        // Arrange - PUT /api/v1/tasks/{id} was removed in Story 6-7
+        // Use commands API instead (UpdateTaskState, UpdateTaskName)
+        var content = new StringContent(
+            System.Text.Json.JsonSerializer.Serialize(new { name = "Test", state = "OnDeck" }),
+            System.Text.Encoding.UTF8,
+            "application/json");
 
         // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+        var response = await _client.PutAsync($"/api/v1/tasks/{Guid.NewGuid()}", content);
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
-        taskDto!.State.Should().Be(TaskState.InProgress);
+        // Assert - 405 Method Not Allowed because GET still exists on /tasks/{id}
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]
-    public async Task UpdateTask_TransitionToCompleted_SetsCompletedAt()
+    public async Task DeleteTask_ReturnsMethodNotAllowed_EndpointRemoved()
     {
-        // Arrange (AC: 2)
-        var updateDto = new UpdateTaskDto { State = TaskState.Completed };
-        var completedAt = DateTime.UtcNow;
-        var updatedTask = new TaskDocument
-        {
-            Id = "task-123",
-            UserId = TestAuthHandler.TestUserId,
-            Name = "My Task",
-            State = TaskState.Completed,
-            CreatedAt = DateTime.UtcNow.AddDays(-1),
-            CompletedAt = completedAt
-        };
-
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, null, TaskState.Completed))
-            .ReturnsAsync(updatedTask);
+        // Arrange - DELETE /api/v1/tasks/{id} was removed in Story 6-7
+        // Use commands API instead (UpdateTaskState with state: "Deleted")
 
         // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
+        var response = await _client.DeleteAsync($"/api/v1/tasks/{Guid.NewGuid()}");
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
-        taskDto!.State.Should().Be(TaskState.Completed);
-        taskDto.CompletedAt.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task UpdateTask_TransitionFromCompleted_ClearsCompletedAt()
-    {
-        // Arrange (AC: 3)
-        var updateDto = new UpdateTaskDto { State = TaskState.OnDeck };
-        var updatedTask = new TaskDocument
-        {
-            Id = "task-123",
-            UserId = TestAuthHandler.TestUserId,
-            Name = "My Task",
-            State = TaskState.OnDeck,
-            CreatedAt = DateTime.UtcNow.AddDays(-1),
-            CompletedAt = null // cleared
-        };
-
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, null, TaskState.OnDeck))
-            .ReturnsAsync(updatedTask);
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
-        taskDto!.State.Should().Be(TaskState.OnDeck);
-        taskDto.CompletedAt.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task UpdateTask_WithNonExistentId_Returns404()
-    {
-        // Arrange (AC: 4)
-        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
-
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("invalid-id", TestAuthHandler.TestUserId, null, TaskState.InProgress))
-            .ThrowsAsync(new TaskNotFoundException("invalid-id"));
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/invalid-id", updateDto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
-        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
-    }
-
-    [Fact]
-    public async Task UpdateTask_WithInvalidState_Returns400()
-    {
-        // Arrange
-        var updateDto = new UpdateTaskDto { State = "InvalidState" };
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
-        errorResponse!.Error.Code.Should().Be("VALIDATION_ERROR");
-    }
-
-    [Fact]
-    public async Task UpdateTask_WithoutAuthentication_Returns401()
-    {
-        // Arrange
-        _client.DefaultRequestHeaders.Add("X-Test-Unauthenticated", "true");
-        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task UpdateTask_OtherUsersTask_Returns404()
-    {
-        // Arrange (AC: 5 - user isolation)
-        var updateDto = new UpdateTaskDto { State = TaskState.InProgress };
-
-        // Simulate that the task belongs to a different user by having service throw TaskNotFoundException
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("other-users-task", TestAuthHandler.TestUserId, null, TaskState.InProgress))
-            .ThrowsAsync(new TaskNotFoundException("other-users-task"));
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/other-users-task", updateDto);
-
-        // Assert - 404 not 403, to avoid information leakage
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task UpdateTask_PartialUpdateNameOnly_Returns200()
-    {
-        // Arrange
-        var updateDto = new UpdateTaskDto { Name = "Updated Name" };
-        var updatedTask = new TaskDocument
-        {
-            Id = "task-123",
-            UserId = TestAuthHandler.TestUserId,
-            Name = "Updated Name",
-            State = TaskState.OnDeck,
-            CreatedAt = DateTime.UtcNow.AddDays(-1)
-        };
-
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, "Updated Name", null))
-            .ReturnsAsync(updatedTask);
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
-        taskDto!.Name.Should().Be("Updated Name");
-    }
-
-    [Fact]
-    public async Task UpdateTask_FullUpdate_Returns200()
-    {
-        // Arrange
-        var updateDto = new UpdateTaskDto { Name = "New Name", State = TaskState.InProgress };
-        var updatedTask = new TaskDocument
-        {
-            Id = "task-123",
-            UserId = TestAuthHandler.TestUserId,
-            Name = "New Name",
-            State = TaskState.InProgress,
-            CreatedAt = DateTime.UtcNow.AddDays(-1)
-        };
-
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, "New Name", TaskState.InProgress))
-            .ReturnsAsync(updatedTask);
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
-        taskDto!.Name.Should().Be("New Name");
-        taskDto.State.Should().Be(TaskState.InProgress);
+        // Assert - 405 Method Not Allowed because GET still exists on /tasks/{id}
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     #endregion
 
-    #region Soft Delete Tests (Story 2-4: Task Deletion)
-
-    [Fact]
-    public async Task UpdateTask_TransitionToDeleted_Returns200()
-    {
-        // Arrange (Story 2-4, AC: 2 - soft delete via state transition)
-        var updateDto = new UpdateTaskDto { State = TaskState.Deleted };
-        var deletedTask = new TaskDocument
-        {
-            Id = "task-to-delete",
-            UserId = TestAuthHandler.TestUserId,
-            Name = "Task to Delete",
-            State = TaskState.Deleted,
-            CreatedAt = DateTime.UtcNow.AddDays(-1)
-        };
-
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("task-to-delete", TestAuthHandler.TestUserId, null, TaskState.Deleted))
-            .ReturnsAsync(deletedTask);
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-to-delete", updateDto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
-        taskDto!.State.Should().Be(TaskState.Deleted);
-    }
+    #region Soft Delete via Command Tests (Story 2-4: Task Deletion - now via commands)
 
     [Fact]
     public async Task GetTasks_ExcludesDeletedTasksByDefault()
@@ -752,26 +548,6 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
         var pagedDto = await response.Content.ReadFromJsonAsync<PagedTasksDto>();
         pagedDto!.Items.Should().HaveCount(1);
         pagedDto.Items.First().State.Should().Be(TaskState.Deleted);
-    }
-
-    [Fact]
-    public async Task UpdateTask_DeleteOtherUsersTask_Returns404()
-    {
-        // Arrange (Story 2-4, AC related - user isolation for delete operations)
-        var updateDto = new UpdateTaskDto { State = TaskState.Deleted };
-
-        // Simulate that the task belongs to a different user by having service throw TaskNotFoundException
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("other-users-task", TestAuthHandler.TestUserId, null, TaskState.Deleted))
-            .ThrowsAsync(new TaskNotFoundException("other-users-task"));
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/other-users-task", updateDto);
-
-        // Assert - 404 not 403, to avoid information leakage
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
-        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
     }
 
     #endregion
@@ -954,140 +730,6 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
-    #region Delete Task with Unity Tests (Story 3-5: Unity on Delete & Reminder Status Display)
-
-    [Fact]
-    public async Task DeleteTask_WithReminder_Returns204AndDismissesReminder()
-    {
-        // Arrange (Story 3-5, AC: 1, 2 - task is deleted and reminder is dismissed atomically)
-        var taskId = "task-with-reminder-delete";
-
-        _factory.MockTaskService
-            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
-            .Returns(Task.CompletedTask);
-
-        // Act
-        var response = await _client.DeleteAsync($"/api/v1/tasks/{taskId}");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        _factory.MockTaskService.Verify(
-            s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task DeleteTask_WithoutReminder_Returns204()
-    {
-        // Arrange (Story 3-5, Task 1.3 - delete works for tasks without reminders)
-        var taskId = "task-without-reminder-delete";
-
-        _factory.MockTaskService
-            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
-            .Returns(Task.CompletedTask);
-
-        // Act
-        var response = await _client.DeleteAsync($"/api/v1/tasks/{taskId}");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-    }
-
-    [Fact]
-    public async Task DeleteTask_NonExistentTask_Returns404()
-    {
-        // Arrange (Story 3-5, Task 2.5 - not found handling)
-        var invalidTaskId = "invalid-task-id";
-
-        _factory.MockTaskService
-            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, invalidTaskId))
-            .ThrowsAsync(new TaskNotFoundException(invalidTaskId));
-
-        // Act
-        var response = await _client.DeleteAsync($"/api/v1/tasks/{invalidTaskId}");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
-        errorResponse.Should().NotBeNull();
-        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
-    }
-
-    [Fact]
-    public async Task DeleteTask_TransactionFails_Returns500()
-    {
-        // Arrange (Story 3-5, AC: 2 - transaction failure handling)
-        var taskId = "task-unity-delete-fail";
-
-        _factory.MockTaskService
-            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
-            .ThrowsAsync(new UnityTransactionFailedException("Transaction failed", taskId));
-
-        // Act
-        var response = await _client.DeleteAsync($"/api/v1/tasks/{taskId}");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
-        errorResponse.Should().NotBeNull();
-        errorResponse!.Error.Code.Should().Be("UNITY_TRANSACTION_FAILED");
-        errorResponse.Error.Message.Should().Contain("Please try again");
-    }
-
-    [Fact]
-    public async Task DeleteTask_WithoutAuthentication_Returns401()
-    {
-        // Arrange (Story 3-5 - authentication required)
-        _client.DefaultRequestHeaders.Add("X-Test-Unauthenticated", "true");
-
-        // Act
-        var response = await _client.DeleteAsync("/api/v1/tasks/some-task");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task DeleteTask_CallsServiceWithCorrectUserId()
-    {
-        // Arrange (Story 3-5 - user isolation)
-        var taskId = "task-delete-user-isolation";
-
-        _factory.MockTaskService
-            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId))
-            .Returns(Task.CompletedTask);
-
-        // Act
-        await _client.DeleteAsync($"/api/v1/tasks/{taskId}");
-
-        // Assert - verify service was called with correct user ID from auth
-        _factory.MockTaskService.Verify(
-            s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, taskId),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task DeleteTask_OtherUsersTask_Returns404()
-    {
-        // Arrange (Story 3-5 - user isolation for delete operations)
-        var otherUsersTaskId = "other-users-task-delete";
-
-        // Simulate that the task belongs to a different user by having service throw TaskNotFoundException
-        _factory.MockTaskService
-            .Setup(s => s.DeleteTaskWithUnityAsync(TestAuthHandler.TestUserId, otherUsersTaskId))
-            .ThrowsAsync(new TaskNotFoundException(otherUsersTaskId));
-
-        // Act
-        var response = await _client.DeleteAsync($"/api/v1/tasks/{otherUsersTaskId}");
-
-        // Assert - 404 not 403, to avoid information leakage
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
-        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
-    }
-
-    #endregion
-
     #region LastModifiedAt Tests
 
     [Fact]
@@ -1119,38 +761,6 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
         taskDto.Should().NotBeNull();
         taskDto!.LastModifiedAt.Should().BeCloseTo(now, TimeSpan.FromSeconds(1));
         taskDto.LastModifiedAt.Should().Be(taskDto.CreatedAt);
-    }
-
-    [Fact]
-    public async Task UpdateTask_ResponseIncludesUpdatedLastModifiedAt()
-    {
-        // Arrange
-        var originalCreatedAt = DateTime.UtcNow.AddDays(-1);
-        var updatedLastModified = DateTime.UtcNow;
-        var updateDto = new UpdateTaskDto { Name = "Updated Task Name" };
-        var updatedTask = new TaskDocument
-        {
-            Id = "task-123",
-            UserId = TestAuthHandler.TestUserId,
-            Name = "Updated Task Name",
-            State = TaskState.OnDeck,
-            CreatedAt = originalCreatedAt,
-            LastModifiedAt = updatedLastModified
-        };
-
-        _factory.MockTaskService
-            .Setup(s => s.UpdateTaskAsync("task-123", TestAuthHandler.TestUserId, "Updated Task Name", null))
-            .ReturnsAsync(updatedTask);
-
-        // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/tasks/task-123", updateDto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
-        taskDto.Should().NotBeNull();
-        taskDto!.LastModifiedAt.Should().BeCloseTo(updatedLastModified, TimeSpan.FromSeconds(1));
-        taskDto.LastModifiedAt.Should().BeAfter(taskDto.CreatedAt);
     }
 
     #endregion
