@@ -388,4 +388,65 @@ public class TaskRepository : ITaskRepository
 
         return updatedTask;
     }
+
+    /// <inheritdoc />
+    public async Task<(TaskDocument Task, TaskReminderDocument Reminder)> CreateTaskWithReminderBatchAsync(
+        TaskDocument task,
+        TaskReminderDocument reminder)
+    {
+        // Defensive validation - both documents must be in same partition for batch
+        if (task.UserId != reminder.UserId)
+        {
+            throw new InvalidOperationException(
+                $"Cannot create task {task.Id} with reminder {reminder.Id}: partition key mismatch " +
+                $"(task.UserId={task.UserId}, reminder.UserId={reminder.UserId})");
+        }
+
+        _logger.LogDebug(
+            "Creating task {TaskId} and reminder {ReminderId} atomically for user {UserId}",
+            task.Id, reminder.Id, task.UserId);
+
+        // Use transactional batch to atomically create both documents
+        var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
+        batch.CreateItem(task);
+        batch.CreateItem(reminder);
+
+        using var batchResponse = await batch.ExecuteAsync();
+
+        if (!batchResponse.IsSuccessStatusCode)
+        {
+            _logger.LogError(
+                "Transactional batch failed with status {StatusCode} for task {TaskId} and reminder {ReminderId}",
+                batchResponse.StatusCode, task.Id, reminder.Id);
+
+            // Check which operation failed to provide specific exception
+            // Operation 0 = task creation, Operation 1 = reminder creation
+            var taskResult = batchResponse[0];
+            var reminderResult = batchResponse[1];
+
+            if (taskResult.StatusCode == HttpStatusCode.Conflict)
+            {
+                throw new TaskAlreadyExistsException(task.Id);
+            }
+
+            if (reminderResult.StatusCode == HttpStatusCode.Conflict)
+            {
+                throw new TaskReminderAlreadyExistsException(reminder.Id);
+            }
+
+            // Generic failure for other error conditions
+            throw new UnityTransactionFailedException(
+                $"Failed to create task and reminder atomically. Status: {batchResponse.StatusCode}",
+                task.Id);
+        }
+
+        var createdTask = batchResponse.GetOperationResultAtIndex<TaskDocument>(0).Resource;
+        var createdReminder = batchResponse.GetOperationResultAtIndex<TaskReminderDocument>(1).Resource;
+
+        _logger.LogInformation(
+            "Created task {TaskId} and reminder {ReminderId} atomically for user {UserId}",
+            createdTask.Id, createdReminder.Id, task.UserId);
+
+        return (createdTask, createdReminder);
+    }
 }

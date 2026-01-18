@@ -190,4 +190,33 @@ public class TaskReminderRepository : ITaskReminderRepository
 
         return createdReminder;
     }
+
+    /// <inheritdoc />
+    public async Task<bool> ExistsAsync(string userId, string reminderId)
+    {
+        _logger.LogDebug("Checking if reminder {ReminderId} exists for user {UserId}", reminderId, userId);
+
+        try
+        {
+            // Use point read which is the most efficient way to check existence
+            var response = await _container.ReadItemAsync<TaskReminderDocument>(
+                reminderId,
+                new PartitionKey(userId));
+
+            // Verify it's actually a TaskReminder document (not a Task with same ID)
+            if (response.Resource.Type != "TaskReminder")
+            {
+                _logger.LogDebug("Document {ReminderId} exists but is not a TaskReminder", reminderId);
+                return false;
+            }
+
+            _logger.LogDebug("Reminder {ReminderId} exists for user {UserId}", reminderId, userId);
+            return true;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogDebug("Reminder {ReminderId} does not exist for user {UserId}", reminderId, userId);
+            return false;
+        }
+    }
 }

@@ -505,4 +505,97 @@ public class TaskService : ITaskService
             "Deleted task {TaskId} with Unity for user {UserId}, reminderDismissed={ReminderDismissed}",
             taskId, userId, reminder != null);
     }
+
+    /// <inheritdoc />
+    public async Task<(TaskDocument Task, TaskReminderDocument Reminder)> CreateTaskWithReminderAsync(
+        string userId,
+        string taskId,
+        string taskReminderId,
+        string name,
+        DateTime scheduledTime)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        if (string.IsNullOrWhiteSpace(taskId))
+        {
+            throw new ArgumentException("Task ID cannot be empty", nameof(taskId));
+        }
+
+        if (string.IsNullOrWhiteSpace(taskReminderId))
+        {
+            throw new ArgumentException("Reminder ID cannot be empty", nameof(taskReminderId));
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Task name cannot be empty", nameof(name));
+        }
+
+        _logger.LogDebug(
+            "Creating task {TaskId} with reminder {ReminderId} for user {UserId}",
+            taskId, taskReminderId, userId);
+
+        // Pre-checks provide clearer error messages in the common case.
+        // Note: A race condition exists between these checks and the batch execution -
+        // concurrent requests could create documents between check and batch.
+        // The batch operation handles this with proper 409 Conflict detection,
+        // so correctness is guaranteed. Pre-checks are for better UX only.
+        var taskExists = await _taskRepository.ExistsAsync(userId, taskId);
+        if (taskExists)
+        {
+            _logger.LogWarning("Task {TaskId} already exists for user {UserId}", taskId, userId);
+            throw new TaskAlreadyExistsException(taskId);
+        }
+
+        // Pre-check for existing reminder (provides better error message than batch failure)
+        var reminderExists = await _reminderRepository.ExistsAsync(userId, taskReminderId);
+        if (reminderExists)
+        {
+            _logger.LogWarning("Reminder {ReminderId} already exists for user {UserId}", taskReminderId, userId);
+            throw new TaskReminderAlreadyExistsException(taskReminderId);
+        }
+
+        var now = DateTime.UtcNow;
+
+        // Create Task document with reminderId already set for bidirectional link
+        var task = new TaskDocument
+        {
+            Id = taskId,
+            UserId = userId,
+            Name = name.Trim(),
+            State = TaskState.OnDeck,
+            CreatedAt = now,
+            CompletedAt = null,
+            ReminderId = taskReminderId,
+            LastModifiedAt = now
+        };
+
+        // Create TaskReminder document with taskId for bidirectional link
+        var reminder = new TaskReminderDocument
+        {
+            Id = taskReminderId,
+            UserId = userId,
+            TaskId = taskId,
+            TaskName = name.Trim(),
+            // Ensure scheduledTime is stored as UTC
+            ScheduledTime = scheduledTime.Kind == DateTimeKind.Utc
+                ? scheduledTime
+                : scheduledTime.ToUniversalTime(),
+            IsDismissed = false,
+            CreatedAt = now,
+            LastModifiedAt = now
+        };
+
+        // Execute atomic batch creation
+        var (createdTask, createdReminder) = await _taskRepository.CreateTaskWithReminderBatchAsync(task, reminder);
+
+        _logger.LogInformation(
+            "Created task {TaskId} with reminder {ReminderId} for user {UserId}",
+            createdTask.Id, createdReminder.Id, userId);
+
+        return (createdTask, createdReminder);
+    }
 }
