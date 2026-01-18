@@ -125,4 +125,16 @@ public interface ITaskService
         string taskReminderId,
         string name,
         DateTime scheduledTime);
+
+    /// <summary>
+    /// Updates the name of a task. If the task has an associated active reminder,
+    /// the reminder's denormalized TaskName is also updated atomically.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The task ID to update</param>
+    /// <param name="name">The new name for the task</param>
+    /// <returns>The updated task document</returns>
+    /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
+    /// <exception cref="Models.Exceptions.InvalidStateTransitionException">Thrown when task is in Deleted state</exception>
+    Task<TaskDocument> UpdateTaskNameAsync(string userId, string taskId, string name);
 }

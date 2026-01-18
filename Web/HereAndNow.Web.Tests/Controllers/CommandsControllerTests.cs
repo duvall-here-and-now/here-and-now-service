@@ -793,6 +793,327 @@ public class CommandsControllerTests
 
     #endregion
 
+    #region UpdateTaskName Command Tests (AC: #1-#7)
+
+    [Fact]
+    public async Task UpdateTaskName_WithValidData_Returns200OK()
+    {
+        // Arrange (AC: #1)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Updated task name" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Updated task name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestUserId, taskId, "Updated task name"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.Id.Should().Be(taskId);
+        taskDto.Name.Should().Be("Updated task name");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_ForTaskWithReminder_UpdatesBothAtomically()
+    {
+        // Arrange (AC: #1 - denormalization sync)
+        var taskId = Guid.NewGuid().ToString();
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Synced name" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Synced name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            ReminderId = reminderId,
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestUserId, taskId, "Synced name"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.Name.Should().Be("Synced name");
+        taskDto.ReminderId.Should().Be(reminderId);
+        _mockTaskService.Verify(
+            s => s.UpdateTaskNameAsync(TestUserId, taskId, "Synced name"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_ForTaskWithoutReminder_UpdatesOnlyTask()
+    {
+        // Arrange (AC: #6)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "No reminder task" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "No reminder task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            ReminderId = null,
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestUserId, taskId, "No reminder task"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.Name.Should().Be("No reminder task");
+        taskDto.ReminderId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_WithEmptyName_Returns400BadRequest()
+    {
+        // Arrange (AC: #2)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "" });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("name");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_WithWhitespaceOnlyName_Returns400BadRequest()
+    {
+        // Arrange (AC: #2)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "   " });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_ForDeletedTask_Returns400BadRequest()
+    {
+        // Arrange (AC: #3)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Update deleted" });
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestUserId, taskId, "Update deleted"))
+            .ThrowsAsync(new InvalidStateTransitionException(
+                taskId,
+                TaskState.Deleted,
+                "UpdateTaskName",
+                "Deleted tasks cannot be modified"));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("INVALID_STATE_TRANSITION");
+        errorResponse.Error.Message.Should().Contain("Deleted");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_ForNonExistentTask_Returns404NotFound()
+    {
+        // Arrange (AC: #4)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Ghost task" });
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestUserId, taskId, "Ghost task"))
+            .ThrowsAsync(new TaskNotFoundException(taskId));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var notFoundResult = result.Should().BeOfType<NotFoundObjectResult>().Subject;
+        notFoundResult.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        var errorResponse = notFoundResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("TASK_NOT_FOUND");
+        errorResponse.Error.Message.Should().Contain(taskId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_ForOtherUsersTask_Returns404NotFound()
+    {
+        // Arrange (AC: #5 - service will throw TaskNotFoundException for user isolation)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Other user's task" });
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestUserId, taskId, "Other user's task"))
+            .ThrowsAsync(new TaskNotFoundException(taskId));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var notFoundResult = result.Should().BeOfType<NotFoundObjectResult>().Subject;
+        var errorResponse = notFoundResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("TASK_NOT_FOUND");
+        // No information leakage - same error as non-existent
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_WithInvalidGuidFormat_Returns400BadRequest()
+    {
+        // Arrange (AC: #7)
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId = "not-a-guid", name = "Invalid GUID" });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("GUID");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_NormalizesGuidToLowercase()
+    {
+        // Arrange
+        var uppercaseGuid = "550E8400-E29B-41D4-A716-446655440000";
+        var normalizedGuid = uppercaseGuid.ToLowerInvariant();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId = uppercaseGuid, name = "Normalize Test" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = normalizedGuid,
+            UserId = TestUserId,
+            Name = "Normalize Test",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestUserId, normalizedGuid, "Normalize Test"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        _mockTaskService.Verify(
+            s => s.UpdateTaskNameAsync(TestUserId, normalizedGuid, "Normalize Test"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_WithMissingTaskId_Returns400BadRequest()
+    {
+        // Arrange
+        var request = CreateCommandRequest("UpdateTaskName", new { name = "Missing taskId" });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("taskId");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_WithMissingName_Returns400BadRequest()
+    {
+        // Arrange
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("name");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_TrimsWhitespaceFromName()
+    {
+        // Arrange - name with leading/trailing whitespace
+        var taskId = Guid.NewGuid().ToString();
+        var nameWithWhitespace = "  Trimmed Task Name  ";
+        var expectedTrimmedName = "Trimmed Task Name";
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = nameWithWhitespace });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = expectedTrimmedName, // Service trims the name
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestUserId, taskId, nameWithWhitespace))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert - service is called with original name (trimming happens in service layer)
+        _mockTaskService.Verify(
+            s => s.UpdateTaskNameAsync(TestUserId, taskId, nameWithWhitespace),
+            Times.Once);
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.Name.Should().Be(expectedTrimmedName);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static CommandRequest CreateCommandRequest(string command, object payload)

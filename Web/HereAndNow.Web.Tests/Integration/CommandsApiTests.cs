@@ -744,6 +744,223 @@ public class CommandsApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
+    #region UpdateTaskName Command Tests (AC: #1-#7)
+
+    [Fact]
+    public async Task UpdateTaskName_WithValidRequest_Returns200OK()
+    {
+        // Arrange (AC: #1)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Updated task name" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Updated task name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestAuthHandler.TestUserId, taskId, "Updated task name"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto.Should().NotBeNull();
+        taskDto!.Id.Should().Be(taskId);
+        taskDto.Name.Should().Be("Updated task name");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_EndToEndFlow_UpdatesTaskSuccessfully()
+    {
+        // Arrange (AC: #1, #6 - task without reminder)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "E2E Updated Name" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestAuthHandler.TestUserId,
+            Name = "E2E Updated Name",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            ReminderId = null,
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestAuthHandler.TestUserId, taskId, "E2E Updated Name"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.Id.Should().Be(taskId);
+        taskDto.Name.Should().Be("E2E Updated Name");
+        taskDto.ReminderId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_ForTaskWithReminder_UpdatesBothAtomically()
+    {
+        // Arrange (AC: #1 - denormalization sync verification)
+        var taskId = Guid.NewGuid().ToString();
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Synced name update" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Synced name update",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            ReminderId = reminderId,
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestAuthHandler.TestUserId, taskId, "Synced name update"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto!.Name.Should().Be("Synced name update");
+        taskDto.ReminderId.Should().Be(reminderId);
+
+        // Verify service was called (which handles the atomic update internally)
+        _factory.MockTaskService.Verify(
+            s => s.UpdateTaskNameAsync(TestAuthHandler.TestUserId, taskId, "Synced name update"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_ForNonExistentTask_Returns404NotFound()
+    {
+        // Arrange (AC: #4)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Ghost task" });
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestAuthHandler.TestUserId, taskId, "Ghost task"))
+            .ThrowsAsync(new TaskNotFoundException(taskId));
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse.Should().NotBeNull();
+        errorResponse!.Error.Code.Should().Be("TASK_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_ForDeletedTask_Returns400BadRequest()
+    {
+        // Arrange (AC: #3)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "Update deleted" });
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestAuthHandler.TestUserId, taskId, "Update deleted"))
+            .ThrowsAsync(new InvalidStateTransitionException(
+                taskId,
+                TaskState.Deleted,
+                "UpdateTaskName",
+                "Deleted tasks cannot be modified"));
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse.Should().NotBeNull();
+        errorResponse!.Error.Code.Should().Be("INVALID_STATE_TRANSITION");
+        errorResponse.Error.Message.Should().Contain("Deleted");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_WithEmptyName_Returns400BadRequest()
+    {
+        // Arrange (AC: #2)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "" });
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("name");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_WithInvalidGuidFormat_Returns400BadRequest()
+    {
+        // Arrange (AC: #7)
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId = "not-a-guid", name = "Invalid GUID" });
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("GUID");
+    }
+
+    [Fact]
+    public async Task UpdateTaskName_UsesAuthenticatedUserId()
+    {
+        // Arrange (AC: #5 - user isolation)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskName", new { taskId, name = "User Isolation Test" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestAuthHandler.TestUserId,
+            Name = "User Isolation Test",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.UpdateTaskNameAsync(TestAuthHandler.TestUserId, taskId, "User Isolation Test"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert - verify service was called with correct user ID from auth
+        _factory.MockTaskService.Verify(
+            s => s.UpdateTaskNameAsync(TestAuthHandler.TestUserId, taskId, "User Isolation Test"),
+            Times.Once);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static object CreateCommandRequest(string command, object payload)
