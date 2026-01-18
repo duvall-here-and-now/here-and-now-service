@@ -18,9 +18,9 @@ namespace HereAndNowService.Controllers;
 /// Available commands:
 /// - CreateTask: Create a new task with a client-generated ID
 /// - CreateTaskAndTaskReminder: Atomic task + reminder creation with client-generated IDs
+/// - UpdateTaskName: Change task name with automatic reminder denormalization sync
 ///
 /// Planned future commands:
-/// - UpdateTaskName: Change task name with reminder sync
 /// - UpdateTaskState: All state transitions with Unity
 /// - UpdateTaskReminderScheduledTime: Reschedule reminder
 /// - DismissTaskReminder: Dismiss reminder only
@@ -46,7 +46,7 @@ public class CommandsController : ControllerBase
     /// Executes a command to modify system state.
     /// </summary>
     /// <remarks>
-    /// Available commands: CreateTask, CreateTaskAndTaskReminder
+    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName
     ///
     /// Request format for CreateTask:
     /// ```json
@@ -91,6 +91,7 @@ public class CommandsController : ControllerBase
         {
             "CreateTask" => await HandleCreateTaskAsync(request, userId),
             "CreateTaskAndTaskReminder" => await HandleCreateTaskAndTaskReminderAsync(request, userId),
+            "UpdateTaskName" => await HandleUpdateTaskNameAsync(request, userId),
             _ => BadRequest(CreateErrorResponse("UNKNOWN_COMMAND", $"Unknown command: {request.Command}"))
         };
     }
@@ -264,6 +265,75 @@ public class CommandsController : ControllerBase
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid CreateTaskAndTaskReminder request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the UpdateTaskName command
+    /// </summary>
+    private async Task<IActionResult> HandleUpdateTaskNameAsync(CommandRequest request, string userId)
+    {
+        // Deserialize payload to UpdateTaskNameCommand
+        UpdateTaskNameCommand? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<UpdateTaskNameCommand>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize UpdateTaskName payload");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for UpdateTaskName command"));
+        }
+
+        if (command == null)
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Payload is required for UpdateTaskName command"));
+        }
+
+        // Validate taskId is provided
+        if (string.IsNullOrWhiteSpace(command.TaskId))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskId is required"));
+        }
+
+        // Validate taskId is a valid GUID format
+        if (!Guid.TryParse(command.TaskId, out var parsedGuid))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskId must be a valid GUID format"));
+        }
+
+        // Use consistent lowercase GUID format
+        var taskId = parsedGuid.ToString().ToLowerInvariant();
+
+        // Validate name is provided and not empty/whitespace
+        if (string.IsNullOrWhiteSpace(command.Name))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "name is required and cannot be empty"));
+        }
+
+        _logger.LogDebug("Updating task name for task {TaskId} for user {UserId}", taskId, userId);
+
+        try
+        {
+            var task = await _taskService.UpdateTaskNameAsync(userId, taskId, command.Name);
+            var taskDto = TaskMapper.ToDto(task);
+
+            return Ok(taskDto);
+        }
+        catch (TaskNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("TASK_NOT_FOUND", $"Task with ID {taskId} not found"));
+        }
+        catch (InvalidStateTransitionException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid UpdateTaskName request");
             return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
         }
     }

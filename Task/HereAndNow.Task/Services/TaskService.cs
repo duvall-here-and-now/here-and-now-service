@@ -233,6 +233,16 @@ public class TaskService : ITaskService
             throw new TaskNotFoundException(taskId);
         }
 
+        // Check if task is in Deleted state - deleted tasks cannot be modified
+        if (task.State == TaskState.Deleted)
+        {
+            throw new InvalidStateTransitionException(
+                taskId,
+                TaskState.Deleted,
+                "UpdateTask",
+                "Deleted tasks cannot be modified");
+        }
+
         // Capture timestamp once for consistency across all field updates
         var now = DateTime.UtcNow;
 
@@ -273,33 +283,11 @@ public class TaskService : ITaskService
         task.LastModifiedAt = now;
 
         // If name changed and task has a reminder, sync the denormalized TaskName atomically
-        if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrEmpty(task.ReminderId))
+        if (!string.IsNullOrWhiteSpace(name))
         {
-            var reminder = await _reminderRepository.GetByIdAsync(userId, task.ReminderId);
-
-            if (reminder == null)
+            var reminder = await GetReminderForSyncAsync(task, userId);
+            if (reminder != null)
             {
-                // Handle stale reference - reminder was deleted but task still references it
-                _logger.LogWarning(
-                    "Task {TaskId} has reminderId {ReminderId} but reminder not found - clearing stale reference",
-                    taskId, task.ReminderId);
-                task.ReminderId = null;
-                // Fall through to regular update with cleared reference
-            }
-            else if (reminder.IsDismissed)
-            {
-                // Reminder exists but is dismissed - no sync needed
-                _logger.LogDebug(
-                    "Skipping reminder sync for task {TaskId} - reminder {ReminderId} is already dismissed",
-                    taskId, reminder.Id);
-                // Fall through to regular update
-            }
-            else
-            {
-                // Active reminder exists - sync TaskName atomically
-                _logger.LogDebug("Syncing TaskName to reminder {ReminderId} for task {TaskId}",
-                    task.ReminderId, taskId);
-
                 reminder.TaskName = task.Name;
                 reminder.LastModifiedAt = now;
 
@@ -597,5 +585,112 @@ public class TaskService : ITaskService
             createdTask.Id, createdReminder.Id, userId);
 
         return (createdTask, createdReminder);
+    }
+
+    /// <inheritdoc />
+    public async Task<TaskDocument> UpdateTaskNameAsync(string userId, string taskId, string name)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        if (string.IsNullOrWhiteSpace(taskId))
+        {
+            throw new ArgumentException("Task ID cannot be empty", nameof(taskId));
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Task name cannot be empty", nameof(name));
+        }
+
+        _logger.LogDebug("Updating task name for {TaskId} for user {UserId}", taskId, userId);
+
+        // Fetch the existing task
+        var task = await _taskRepository.GetByIdAsync(userId, taskId);
+
+        if (task == null)
+        {
+            throw new TaskNotFoundException(taskId);
+        }
+
+        // Check if task is in Deleted state - deleted tasks cannot be modified
+        if (task.State == TaskState.Deleted)
+        {
+            throw new InvalidStateTransitionException(
+                taskId,
+                TaskState.Deleted,
+                "UpdateTaskName",
+                "Deleted tasks cannot be modified");
+        }
+
+        var now = DateTime.UtcNow;
+        task.Name = name.Trim();
+        task.LastModifiedAt = now;
+
+        // Check if task has an active reminder that needs sync
+        var reminder = await GetReminderForSyncAsync(task, userId);
+        if (reminder != null)
+        {
+            reminder.TaskName = task.Name;
+            reminder.LastModifiedAt = now;
+
+            var updatedTask = await _taskRepository.UpdateWithReminderSyncAsync(task, reminder);
+
+            _logger.LogInformation("Updated task name for {TaskId} with reminder sync for user {UserId}",
+                taskId, userId);
+
+            return updatedTask;
+        }
+
+        // No active reminder - simple update
+        var result = await _taskRepository.UpdateAsync(task);
+
+        _logger.LogInformation("Updated task name for {TaskId} for user {UserId}", taskId, userId);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the reminder for a task if it needs to be synced with updated task name.
+    /// Handles stale references by clearing task.ReminderId if reminder is not found.
+    /// Returns null if no sync is needed (no reminder, stale reference, or dismissed).
+    /// </summary>
+    /// <param name="task">The task document (may be modified to clear stale ReminderId)</param>
+    /// <param name="userId">The user ID for partition key</param>
+    /// <returns>The reminder document if sync is needed, null otherwise</returns>
+    private async Task<TaskReminderDocument?> GetReminderForSyncAsync(TaskDocument task, string userId)
+    {
+        if (string.IsNullOrEmpty(task.ReminderId))
+        {
+            return null;
+        }
+
+        var reminder = await _reminderRepository.GetByIdAsync(userId, task.ReminderId);
+
+        if (reminder == null)
+        {
+            // Handle stale reference - reminder was deleted but task still references it
+            _logger.LogWarning(
+                "Task {TaskId} has reminderId {ReminderId} but reminder not found - clearing stale reference",
+                task.Id, task.ReminderId);
+            task.ReminderId = null;
+            return null;
+        }
+
+        if (reminder.IsDismissed)
+        {
+            // Reminder exists but is dismissed - no sync needed
+            _logger.LogDebug(
+                "Skipping reminder sync for task {TaskId} - reminder {ReminderId} is already dismissed",
+                task.Id, reminder.Id);
+            return null;
+        }
+
+        // Active reminder exists - sync needed
+        _logger.LogDebug("Syncing TaskName to reminder {ReminderId} for task {TaskId}",
+            task.ReminderId, task.Id);
+        return reminder;
     }
 }
