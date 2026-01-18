@@ -17,6 +17,7 @@ namespace HereAndNow.Web.Tests.Controllers;
 public class CommandsControllerTests
 {
     private readonly Mock<ITaskService> _mockTaskService;
+    private readonly Mock<ITaskReminderService> _mockReminderService;
     private readonly Mock<ILogger<CommandsController>> _mockLogger;
     private readonly CommandsController _controller;
     private const string TestUserId = "auth0|test-user-123";
@@ -24,8 +25,12 @@ public class CommandsControllerTests
     public CommandsControllerTests()
     {
         _mockTaskService = new Mock<ITaskService>();
+        _mockReminderService = new Mock<ITaskReminderService>();
         _mockLogger = new Mock<ILogger<CommandsController>>();
-        _controller = new CommandsController(_mockTaskService.Object, _mockLogger.Object);
+        _controller = new CommandsController(
+            _mockTaskService.Object,
+            _mockReminderService.Object,
+            _mockLogger.Object);
 
         // Set up authenticated user
         var claims = new List<Claim>
@@ -1110,6 +1115,344 @@ public class CommandsControllerTests
         var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
         var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
         taskDto.Name.Should().Be(expectedTrimmedName);
+    }
+
+    #endregion
+
+    #region UpdateTaskReminderScheduledTime Command Tests (AC: #1-#4, #7-#9)
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_WithValidData_Returns200OK()
+    {
+        // Arrange (AC: #1)
+        var reminderId = Guid.NewGuid().ToString();
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = reminderId,
+            scheduledTime = newScheduledTime
+        });
+
+        var updatedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = Guid.NewGuid().ToString(),
+            TaskName = "Call dentist",
+            ScheduledTime = newScheduledTime,
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockReminderService
+            .Setup(s => s.SnoozeAsync(TestUserId, reminderId, newScheduledTime))
+            .ReturnsAsync(updatedReminder);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+        var reminderDto = okResult.Value.Should().BeOfType<TaskReminderDto>().Subject;
+        reminderDto.Id.Should().Be(reminderId);
+        reminderDto.ScheduledTime.Should().Be(newScheduledTime);
+    }
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_ForDismissedReminder_Returns400BadRequest()
+    {
+        // Arrange (AC: #2)
+        var reminderId = Guid.NewGuid().ToString();
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = reminderId,
+            scheduledTime = newScheduledTime
+        });
+
+        _mockReminderService
+            .Setup(s => s.SnoozeAsync(TestUserId, reminderId, newScheduledTime))
+            .ThrowsAsync(new ReminderAlreadyDismissedException(reminderId));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("REMINDER_ALREADY_DISMISSED");
+        errorResponse.Error.Message.Should().Contain(reminderId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_WithPastTime_Returns400BadRequest()
+    {
+        // Arrange (AC: #3)
+        var reminderId = Guid.NewGuid().ToString();
+        var pastTime = DateTime.UtcNow.AddHours(-1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = reminderId,
+            scheduledTime = pastTime
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
+        errorResponse.Error.Message.Should().Contain("future");
+    }
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_WithInvalidGuid_Returns400BadRequest()
+    {
+        // Arrange (AC: #4)
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = "not-a-valid-guid",
+            scheduledTime = newScheduledTime
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("GUID");
+    }
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_ForNonExistentReminder_Returns404NotFound()
+    {
+        // Arrange (AC: #7)
+        var reminderId = Guid.NewGuid().ToString();
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = reminderId,
+            scheduledTime = newScheduledTime
+        });
+
+        _mockReminderService
+            .Setup(s => s.SnoozeAsync(TestUserId, reminderId, newScheduledTime))
+            .ThrowsAsync(new ReminderNotFoundException(reminderId));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var notFoundResult = result.Should().BeOfType<NotFoundObjectResult>().Subject;
+        notFoundResult.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        var errorResponse = notFoundResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("REMINDER_NOT_FOUND");
+        errorResponse.Error.Message.Should().Contain(reminderId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_WithMissingReminderId_Returns400BadRequest()
+    {
+        // Arrange (AC: #9)
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            scheduledTime = newScheduledTime
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("taskReminderId");
+    }
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_NormalizesGuidToLowercase()
+    {
+        // Arrange
+        var uppercaseGuid = "660E8400-E29B-41D4-A716-446655440001";
+        var normalizedGuid = uppercaseGuid.ToLowerInvariant();
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = uppercaseGuid,
+            scheduledTime = newScheduledTime
+        });
+
+        var updatedReminder = new TaskReminderDocument
+        {
+            Id = normalizedGuid,
+            UserId = TestUserId,
+            TaskId = Guid.NewGuid().ToString(),
+            TaskName = "Test Task",
+            ScheduledTime = newScheduledTime,
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow,
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockReminderService
+            .Setup(s => s.SnoozeAsync(TestUserId, normalizedGuid, newScheduledTime))
+            .ReturnsAsync(updatedReminder);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        _mockReminderService.Verify(
+            s => s.SnoozeAsync(TestUserId, normalizedGuid, newScheduledTime),
+            Times.Once);
+    }
+
+    #endregion
+
+    #region DismissTaskReminder Command Tests (AC: #5-#9)
+
+    [Fact]
+    public async Task DismissTaskReminder_WithValidData_Returns204NoContent()
+    {
+        // Arrange (AC: #5)
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("DismissTaskReminder", new
+        {
+            taskReminderId = reminderId
+        });
+
+        _mockReminderService
+            .Setup(s => s.DismissAsync(TestUserId, reminderId))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        result.Should().BeOfType<NoContentResult>();
+        var noContentResult = result as NoContentResult;
+        noContentResult!.StatusCode.Should().Be(StatusCodes.Status204NoContent);
+    }
+
+    [Fact]
+    public async Task DismissTaskReminder_ForAlreadyDismissedReminder_Returns204NoContent_Idempotent()
+    {
+        // Arrange (AC: #6 - idempotent operation)
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("DismissTaskReminder", new
+        {
+            taskReminderId = reminderId
+        });
+
+        // Service is now idempotent - does not throw for already dismissed
+        _mockReminderService
+            .Setup(s => s.DismissAsync(TestUserId, reminderId))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        result.Should().BeOfType<NoContentResult>();
+        _mockReminderService.Verify(
+            s => s.DismissAsync(TestUserId, reminderId),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DismissTaskReminder_ForNonExistentReminder_Returns404NotFound()
+    {
+        // Arrange (AC: #7)
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("DismissTaskReminder", new
+        {
+            taskReminderId = reminderId
+        });
+
+        _mockReminderService
+            .Setup(s => s.DismissAsync(TestUserId, reminderId))
+            .ThrowsAsync(new ReminderNotFoundException(reminderId));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var notFoundResult = result.Should().BeOfType<NotFoundObjectResult>().Subject;
+        notFoundResult.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        var errorResponse = notFoundResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("REMINDER_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task DismissTaskReminder_WithInvalidGuid_Returns400BadRequest()
+    {
+        // Arrange
+        var request = CreateCommandRequest("DismissTaskReminder", new
+        {
+            taskReminderId = "not-a-valid-guid"
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("GUID");
+    }
+
+    [Fact]
+    public async Task DismissTaskReminder_WithMissingReminderId_Returns400BadRequest()
+    {
+        // Arrange (AC: #9)
+        var request = CreateCommandRequest("DismissTaskReminder", new { });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("taskReminderId");
+    }
+
+    [Fact]
+    public async Task DismissTaskReminder_NormalizesGuidToLowercase()
+    {
+        // Arrange
+        var uppercaseGuid = "660E8400-E29B-41D4-A716-446655440001";
+        var normalizedGuid = uppercaseGuid.ToLowerInvariant();
+        var request = CreateCommandRequest("DismissTaskReminder", new
+        {
+            taskReminderId = uppercaseGuid
+        });
+
+        _mockReminderService
+            .Setup(s => s.DismissAsync(TestUserId, normalizedGuid))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        _mockReminderService.Verify(
+            s => s.DismissAsync(TestUserId, normalizedGuid),
+            Times.Once);
     }
 
     #endregion

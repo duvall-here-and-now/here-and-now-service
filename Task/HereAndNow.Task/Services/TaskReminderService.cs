@@ -161,6 +161,10 @@ public class TaskReminderService : ITaskReminderService
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// This operation is idempotent - dismissing an already-dismissed reminder
+    /// succeeds without throwing an exception or making any state changes.
+    /// </remarks>
     public async Task DismissAsync(string userId, string reminderId)
     {
         if (string.IsNullOrWhiteSpace(userId))
@@ -182,10 +186,11 @@ public class TaskReminderService : ITaskReminderService
             throw new ReminderNotFoundException(reminderId);
         }
 
-        // 2. Check if already dismissed
+        // 2. Idempotent: already dismissed is success (no-op)
         if (reminder.IsDismissed)
         {
-            throw new ReminderAlreadyDismissedException(reminderId);
+            _logger.LogDebug("Reminder {ReminderId} already dismissed, no-op (idempotent)", reminderId);
+            return;
         }
 
         // 3. Mark as dismissed
