@@ -137,4 +137,22 @@ public interface ITaskService
     /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
     /// <exception cref="Models.Exceptions.InvalidStateTransitionException">Thrown when task is in Deleted state</exception>
     Task<TaskDocument> UpdateTaskNameAsync(string userId, string taskId, string name);
+
+    /// <summary>
+    /// Updates the state of a task. Handles completedAt auto-set/clear and Task-Reminder Unity.
+    /// <list type="bullet">
+    /// <item>Idempotent: transitioning to current state is a no-op success</item>
+    /// <item>Deleted is terminal: cannot transition from Deleted to other states</item>
+    /// <item>CompletedAt: auto-set when transitioning TO Completed, cleared when transitioning FROM Completed</item>
+    /// <item>Unity: when transitioning to Completed or Deleted with a reminder, the reminder is atomically dismissed</item>
+    /// </list>
+    /// </summary>
+    /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="taskId">The task ID to update</param>
+    /// <param name="newState">The target state (OnDeck, InProgress, Completed, Deleted)</param>
+    /// <returns>The updated task document</returns>
+    /// <exception cref="Models.Exceptions.TaskNotFoundException">Thrown when task is not found</exception>
+    /// <exception cref="Models.Exceptions.InvalidStateTransitionException">Thrown when attempting to transition from Deleted state</exception>
+    /// <exception cref="ArgumentException">Thrown when newState is not a valid state value</exception>
+    Task<TaskDocument> UpdateStateAsync(string userId, string taskId, string newState);
 }

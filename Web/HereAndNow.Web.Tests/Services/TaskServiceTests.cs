@@ -1132,6 +1132,461 @@ public class TaskServiceTests
 
     #endregion
 
+    #region UpdateStateAsync Tests (Story 6-5)
+
+    [Fact]
+    public async Task UpdateStateAsync_OnDeckToInProgress_UpdatesState()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.InProgress);
+
+        // Assert
+        result.State.Should().Be(TaskState.InProgress);
+        result.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_InProgressToCompleted_SetsCompletedAt()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = null
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.Completed);
+
+        // Assert
+        result.State.Should().Be(TaskState.Completed);
+        result.CompletedAt.Should().NotBeNull();
+        result.CompletedAt!.Value.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_CompletedToOnDeck_ClearsCompletedAt()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CompletedAt = DateTime.UtcNow.AddHours(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.OnDeck);
+
+        // Assert
+        result.State.Should().Be(TaskState.OnDeck);
+        result.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_SameState_ReturnsWithoutUpdate_Idempotent()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.InProgress);
+
+        // Assert
+        result.State.Should().Be(TaskState.InProgress);
+        // Verify UpdateAsync was never called (idempotent - no change needed)
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_FromDeleted_ThrowsInvalidStateTransitionException()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Deleted Task",
+            State = TaskState.Deleted,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidStateTransitionException>(
+            () => _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.OnDeck));
+
+        exception.TaskId.Should().Be("task-123");
+        exception.CurrentState.Should().Be(TaskState.Deleted);
+        exception.AttemptedAction.Should().Contain("OnDeck");
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_ToDeletedFromDeleted_IsIdempotent()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Already Deleted",
+            State = TaskState.Deleted,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.Deleted);
+
+        // Assert - No exception, returns task as-is
+        result.State.Should().Be(TaskState.Deleted);
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_TaskNotFound_ThrowsTaskNotFoundException()
+    {
+        // Arrange
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "nonexistent"))
+            .ReturnsAsync((TaskDocument?)null);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<TaskNotFoundException>(
+            () => _taskService.UpdateStateAsync(TestUserId, "nonexistent", TaskState.InProgress));
+
+        exception.TaskId.Should().Be("nonexistent");
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_WithInvalidState_ThrowsArgumentException()
+    {
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => _taskService.UpdateStateAsync(TestUserId, "task-123", "InvalidState"));
+
+        exception.Message.Should().Contain("OnDeck");
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_ToCompletedWithReminder_UsesUnityToCompleteAndDismiss()
+    {
+        // Arrange
+        var reminderId = "reminder-123";
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Task with Reminder",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = reminderId
+        };
+
+        var existingReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = "task-123",
+            TaskName = "Task with Reminder",
+            ScheduledTime = DateTime.UtcNow.AddHours(1),
+            IsDismissed = false
+        };
+
+        TaskDocument? capturedTask = null;
+        TaskReminderDocument? capturedReminder = null;
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockReminderRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, reminderId))
+            .ReturnsAsync(existingReminder);
+
+        _mockRepository
+            .Setup(r => r.CompleteWithUnityAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument?>()))
+            .Callback<TaskDocument, TaskReminderDocument?>((t, r) =>
+            {
+                capturedTask = t;
+                capturedReminder = r;
+            })
+            .ReturnsAsync((TaskDocument t, TaskReminderDocument? r) => t);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.Completed);
+
+        // Assert - Task completed
+        capturedTask.Should().NotBeNull();
+        capturedTask!.State.Should().Be(TaskState.Completed);
+        capturedTask.CompletedAt.Should().NotBeNull();
+
+        // Assert - Reminder dismissed
+        capturedReminder.Should().NotBeNull();
+        capturedReminder!.IsDismissed.Should().BeTrue();
+        capturedReminder.DismissedAt.Should().NotBeNull();
+
+        // Assert - Unity path used
+        _mockRepository.Verify(r => r.CompleteWithUnityAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_ToDeletedWithReminder_UsesUnityToDeleteAndDismiss()
+    {
+        // Arrange
+        var reminderId = "reminder-123";
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Task with Reminder",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = reminderId
+        };
+
+        var existingReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = "task-123",
+            TaskName = "Task with Reminder",
+            ScheduledTime = DateTime.UtcNow.AddHours(1),
+            IsDismissed = false
+        };
+
+        TaskDocument? capturedTask = null;
+        TaskReminderDocument? capturedReminder = null;
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockReminderRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, reminderId))
+            .ReturnsAsync(existingReminder);
+
+        _mockRepository
+            .Setup(r => r.DeleteWithUnityAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument?>()))
+            .Callback<TaskDocument, TaskReminderDocument?>((t, r) =>
+            {
+                capturedTask = t;
+                capturedReminder = r;
+            })
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.Deleted);
+
+        // Assert - Task deleted
+        capturedTask.Should().NotBeNull();
+        capturedTask!.State.Should().Be(TaskState.Deleted);
+
+        // Assert - Reminder dismissed
+        capturedReminder.Should().NotBeNull();
+        capturedReminder!.IsDismissed.Should().BeTrue();
+        capturedReminder.DismissedAt.Should().NotBeNull();
+
+        // Assert - Unity path used
+        _mockRepository.Verify(r => r.DeleteWithUnityAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_ToCompletedWithAlreadyDismissedReminder_UsesRegularUpdate()
+    {
+        // Arrange
+        var reminderId = "reminder-123";
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Task with Dismissed Reminder",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = reminderId
+        };
+
+        var dismissedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = "task-123",
+            TaskName = "Task with Dismissed Reminder",
+            ScheduledTime = DateTime.UtcNow.AddHours(-1),
+            IsDismissed = true,
+            DismissedAt = DateTime.UtcNow.AddMinutes(-30)
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockReminderRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, reminderId))
+            .ReturnsAsync(dismissedReminder);
+
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.Completed);
+
+        // Assert - Regular update path used (reminder already dismissed)
+        result.State.Should().Be(TaskState.Completed);
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.CompleteWithUnityAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument?>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_ToCompletedWithoutReminder_UsesRegularUpdate()
+    {
+        // Arrange
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "Task without Reminder",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            ReminderId = null
+        };
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.Completed);
+
+        // Assert - Regular update path used (no reminder)
+        result.State.Should().Be(TaskState.Completed);
+        result.CompletedAt.Should().NotBeNull();
+        _mockRepository.Verify(r => r.UpdateAsync(It.IsAny<TaskDocument>()), Times.Once);
+        _mockRepository.Verify(r => r.CompleteWithUnityAsync(It.IsAny<TaskDocument>(), It.IsAny<TaskReminderDocument?>()), Times.Never);
+        _mockReminderRepository.Verify(r => r.GetByIdAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateStateAsync_UpdatesLastModifiedAt()
+    {
+        // Arrange
+        var originalLastModified = DateTime.UtcNow.AddDays(-1);
+        var existingTask = new TaskDocument
+        {
+            Id = "task-123",
+            UserId = TestUserId,
+            Name = "My Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+            LastModifiedAt = originalLastModified
+        };
+
+        TaskDocument? capturedTask = null;
+
+        _mockRepository
+            .Setup(r => r.GetByIdAsync(TestUserId, "task-123"))
+            .ReturnsAsync(existingTask);
+
+        _mockRepository
+            .Setup(r => r.UpdateAsync(It.IsAny<TaskDocument>()))
+            .Callback<TaskDocument>(t => capturedTask = t)
+            .ReturnsAsync((TaskDocument t) => t);
+
+        // Act
+        var result = await _taskService.UpdateStateAsync(TestUserId, "task-123", TaskState.InProgress);
+
+        // Assert
+        capturedTask.Should().NotBeNull();
+        capturedTask!.LastModifiedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        capturedTask.LastModifiedAt.Should().BeAfter(originalLastModified);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task UpdateStateAsync_WithInvalidUserId_ThrowsArgumentException(string? userId)
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _taskService.UpdateStateAsync(userId!, "task-123", TaskState.InProgress));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task UpdateStateAsync_WithInvalidTaskId_ThrowsArgumentException(string? taskId)
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _taskService.UpdateStateAsync(TestUserId, taskId!, TaskState.InProgress));
+    }
+
+    #endregion
+
     #region DeleteTaskWithUnityAsync Tests
 
     [Fact]
