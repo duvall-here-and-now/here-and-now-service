@@ -652,6 +652,114 @@ public class TaskService : ITaskService
         return result;
     }
 
+    /// <inheritdoc />
+    public async Task<TaskDocument> UpdateStateAsync(string userId, string taskId, string newState)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User ID cannot be empty", nameof(userId));
+        }
+
+        if (string.IsNullOrWhiteSpace(taskId))
+        {
+            throw new ArgumentException("Task ID cannot be empty", nameof(taskId));
+        }
+
+        // Validate newState is one of the valid states
+        if (!TaskState.IsValid(newState))
+        {
+            throw new ArgumentException(
+                $"State must be one of: {string.Join(", ", TaskState.AllStates)}",
+                nameof(newState));
+        }
+
+        _logger.LogDebug("Updating task {TaskId} state to {NewState} for user {UserId}",
+            taskId, newState, userId);
+
+        // Fetch the existing task
+        var task = await _taskRepository.GetByIdAsync(userId, taskId);
+        if (task == null)
+        {
+            throw new TaskNotFoundException(taskId);
+        }
+
+        // Idempotency - same state is no-op success
+        if (task.State == newState)
+        {
+            _logger.LogDebug("Task {TaskId} already in state {State}, no-op", taskId, newState);
+            return task;
+        }
+
+        // Deleted is terminal state - cannot transition from Deleted to other states
+        if (task.State == TaskState.Deleted && newState != TaskState.Deleted)
+        {
+            throw new InvalidStateTransitionException(
+                taskId,
+                TaskState.Deleted,
+                $"UpdateState to {newState}",
+                $"Cannot transition from 'Deleted' to '{newState}'");
+        }
+
+        var now = DateTime.UtcNow;
+        var previousState = task.State;
+
+        // Update state
+        task.State = newState;
+        task.LastModifiedAt = now;
+
+        // CompletedAt handling
+        if (newState == TaskState.Completed)
+        {
+            task.CompletedAt = now;
+            _logger.LogDebug("Task {TaskId} transitioning to Completed, setting completedAt", taskId);
+        }
+        else if (previousState == TaskState.Completed)
+        {
+            task.CompletedAt = null;
+            _logger.LogDebug("Task {TaskId} transitioning from Completed, clearing completedAt", taskId);
+        }
+
+        // Unity: Completed or Deleted with reminder - dismiss reminder atomically
+        if ((newState == TaskState.Completed || newState == TaskState.Deleted) &&
+            !string.IsNullOrEmpty(task.ReminderId))
+        {
+            var reminder = await _reminderRepository.GetByIdAsync(userId, task.ReminderId);
+            if (reminder != null && !reminder.IsDismissed)
+            {
+                reminder.IsDismissed = true;
+                reminder.DismissedAt = now;
+                reminder.LastModifiedAt = now;
+
+                // Use the appropriate Unity method based on the target state
+                TaskDocument result;
+                if (newState == TaskState.Completed)
+                {
+                    result = await _taskRepository.CompleteWithUnityAsync(task, reminder);
+                }
+                else
+                {
+                    await _taskRepository.DeleteWithUnityAsync(task, reminder);
+                    result = task;
+                }
+
+                _logger.LogInformation(
+                    "Updated task {TaskId} state from {PreviousState} to {NewState} with Unity (reminder dismissed) for user {UserId}",
+                    taskId, previousState, newState, userId);
+
+                return result;
+            }
+        }
+
+        // Single document update (no reminder, reminder not found, or reminder already dismissed)
+        var updatedTask = await _taskRepository.UpdateAsync(task);
+
+        _logger.LogInformation(
+            "Updated task {TaskId} state from {PreviousState} to {NewState} for user {UserId}",
+            taskId, previousState, newState, userId);
+
+        return updatedTask;
+    }
+
     /// <summary>
     /// Gets the reminder for a task if it needs to be synced with updated task name.
     /// Handles stale references by clearing task.ReminderId if reminder is not found.

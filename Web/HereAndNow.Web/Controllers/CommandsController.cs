@@ -19,11 +19,9 @@ namespace HereAndNowService.Controllers;
 /// - CreateTask: Create a new task with a client-generated ID
 /// - CreateTaskAndTaskReminder: Atomic task + reminder creation with client-generated IDs
 /// - UpdateTaskName: Change task name with automatic reminder denormalization sync
+/// - UpdateTaskState: Change task state with automatic reminder dismissal (Unity) for Completed/Deleted
 /// - UpdateTaskReminderScheduledTime: Reschedule/snooze a reminder to a new time
 /// - DismissTaskReminder: Dismiss a reminder (idempotent operation)
-///
-/// Planned future commands:
-/// - UpdateTaskState: All state transitions with Unity
 /// </remarks>
 [ApiController]
 [Route("api/v1/[controller]")]
@@ -54,7 +52,7 @@ public class CommandsController : ControllerBase
     /// Executes a command to modify system state.
     /// </summary>
     /// <remarks>
-    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskReminderScheduledTime, DismissTaskReminder
+    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskState, UpdateTaskReminderScheduledTime, DismissTaskReminder
     ///
     /// Request format for CreateTask:
     /// ```json
@@ -79,6 +77,19 @@ public class CommandsController : ControllerBase
     ///   }
     /// }
     /// ```
+    ///
+    /// Request format for UpdateTaskState:
+    /// ```json
+    /// {
+    ///   "command": "UpdateTaskState",
+    ///   "payload": {
+    ///     "taskId": "550e8400-e29b-41d4-a716-446655440000",
+    ///     "state": "Completed"
+    ///   }
+    /// }
+    /// ```
+    /// Valid states: OnDeck, InProgress, Completed, Deleted (case-sensitive)
+    /// Notes: Idempotent (same state = no-op), Deleted is terminal, Unity dismisses reminder on Completed/Deleted
     ///
     /// Request format for UpdateTaskReminderScheduledTime:
     /// ```json
@@ -124,6 +135,7 @@ public class CommandsController : ControllerBase
             "CreateTask" => await HandleCreateTaskAsync(request, userId),
             "CreateTaskAndTaskReminder" => await HandleCreateTaskAndTaskReminderAsync(request, userId),
             "UpdateTaskName" => await HandleUpdateTaskNameAsync(request, userId),
+            "UpdateTaskState" => await HandleUpdateTaskStateAsync(request, userId),
             "UpdateTaskReminderScheduledTime" => await HandleUpdateTaskReminderScheduledTimeAsync(request, userId),
             "DismissTaskReminder" => await HandleDismissTaskReminderAsync(request, userId),
             _ => BadRequest(CreateErrorResponse("UNKNOWN_COMMAND", $"Unknown command: {request.Command}"))
@@ -368,6 +380,82 @@ public class CommandsController : ControllerBase
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid UpdateTaskName request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the UpdateTaskState command
+    /// </summary>
+    private async Task<IActionResult> HandleUpdateTaskStateAsync(CommandRequest request, string userId)
+    {
+        // Deserialize payload to UpdateTaskStateCommand
+        UpdateTaskStateCommand? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<UpdateTaskStateCommand>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize UpdateTaskState payload");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for UpdateTaskState command"));
+        }
+
+        if (command == null)
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Payload is required for UpdateTaskState command"));
+        }
+
+        // Validate taskId is provided
+        if (string.IsNullOrWhiteSpace(command.TaskId))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskId is required"));
+        }
+
+        // Validate taskId is a valid GUID format
+        if (!Guid.TryParse(command.TaskId, out var parsedGuid))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskId must be a valid GUID format"));
+        }
+
+        // Use consistent lowercase GUID format
+        var taskId = parsedGuid.ToString().ToLowerInvariant();
+
+        // Validate state is provided
+        if (string.IsNullOrWhiteSpace(command.State))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "state is required"));
+        }
+
+        // Validate state is one of the valid values (case-sensitive)
+        var validStates = new[] { "OnDeck", "InProgress", "Completed", "Deleted" };
+        if (!validStates.Contains(command.State))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "State must be one of: OnDeck, InProgress, Completed, Deleted"));
+        }
+
+        _logger.LogDebug("Updating task {TaskId} state to {State} for user {UserId}", taskId, command.State, userId);
+
+        try
+        {
+            var task = await _taskService.UpdateStateAsync(userId, taskId, command.State);
+            var taskDto = TaskMapper.ToDto(task);
+
+            return Ok(taskDto);
+        }
+        catch (TaskNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("TASK_NOT_FOUND", $"Task with ID {taskId} not found"));
+        }
+        catch (InvalidStateTransitionException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid UpdateTaskState request");
             return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
         }
     }

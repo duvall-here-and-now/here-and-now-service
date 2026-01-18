@@ -1457,6 +1457,566 @@ public class CommandsControllerTests
 
     #endregion
 
+    #region UpdateTaskState Command Tests - Basic Transitions (AC: #1, #2, #9, #14, #15)
+
+    [Fact]
+    public async Task UpdateTaskState_OnDeckToInProgress_Returns200OK()
+    {
+        // Arrange (AC: #1)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "InProgress" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Test Task",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "InProgress"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.Id.Should().Be(taskId);
+        taskDto.State.Should().Be(TaskState.InProgress);
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_InProgressToOnDeck_Returns200OK()
+    {
+        // Arrange (AC: #2)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "OnDeck" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Test Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "OnDeck"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.State.Should().Be(TaskState.OnDeck);
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_CompletedToOnDeck_ClearsCompletedAt()
+    {
+        // Arrange (AC: #9)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "OnDeck" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Reopened Task",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow.AddHours(-2),
+            CompletedAt = null, // Should be cleared
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "OnDeck"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.State.Should().Be(TaskState.OnDeck);
+        taskDto.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_WithInvalidGuidFormat_Returns400ValidationError()
+    {
+        // Arrange (AC: #14)
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId = "not-a-guid", state = "InProgress" });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("GUID");
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_WithMissingTaskId_Returns400ValidationError()
+    {
+        // Arrange (AC: #15)
+        var request = CreateCommandRequest("UpdateTaskState", new { state = "InProgress" });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("taskId");
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_WithMissingState_Returns400ValidationError()
+    {
+        // Arrange (AC: #15)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("state");
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_NormalizesGuidToLowercase()
+    {
+        // Arrange
+        var uppercaseGuid = "550E8400-E29B-41D4-A716-446655440000";
+        var normalizedGuid = uppercaseGuid.ToLowerInvariant();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId = uppercaseGuid, state = "InProgress" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = normalizedGuid,
+            UserId = TestUserId,
+            Name = "Test Task",
+            State = TaskState.InProgress,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, normalizedGuid, "InProgress"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        _mockTaskService.Verify(
+            s => s.UpdateStateAsync(TestUserId, normalizedGuid, "InProgress"),
+            Times.Once);
+    }
+
+    #endregion
+
+    #region UpdateTaskState Command Tests - Completed/Deleted (AC: #3, #5, #6, #8)
+
+    [Fact]
+    public async Task UpdateTaskState_ToCompleted_SetsCompletedAt()
+    {
+        // Arrange (AC: #3)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "Completed" });
+
+        var now = DateTime.UtcNow;
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Completed Task",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            CompletedAt = now,
+            LastModifiedAt = now
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "Completed"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.State.Should().Be(TaskState.Completed);
+        taskDto.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_AlreadyCompleted_ReturnsSuccess_Idempotent()
+    {
+        // Arrange (AC: #5 - idempotent)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "Completed" });
+
+        var existingTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Already Completed",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddHours(-2),
+            CompletedAt = DateTime.UtcNow.AddHours(-1),
+            LastModifiedAt = DateTime.UtcNow.AddHours(-1)
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "Completed"))
+            .ReturnsAsync(existingTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_ToDeleted_Returns200OK()
+    {
+        // Arrange (AC: #6)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "Deleted" });
+
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Deleted Task",
+            State = TaskState.Deleted,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "Deleted"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.State.Should().Be(TaskState.Deleted);
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_AlreadyDeleted_ReturnsSuccess_Idempotent()
+    {
+        // Arrange (AC: #8 - idempotent)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "Deleted" });
+
+        var existingTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Already Deleted",
+            State = TaskState.Deleted,
+            CreatedAt = DateTime.UtcNow.AddHours(-2),
+            LastModifiedAt = DateTime.UtcNow.AddHours(-1)
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "Deleted"))
+            .ReturnsAsync(existingTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    #endregion
+
+    #region UpdateTaskState Command Tests - Error Cases (AC: #10, #11, #12, #13)
+
+    [Fact]
+    public async Task UpdateTaskState_FromDeletedToOnDeck_Returns400InvalidTransition()
+    {
+        // Arrange (AC: #10)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "OnDeck" });
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "OnDeck"))
+            .ThrowsAsync(new InvalidStateTransitionException(
+                taskId,
+                TaskState.Deleted,
+                "UpdateState to OnDeck",
+                "Cannot transition from 'Deleted' to 'OnDeck'"));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("INVALID_STATE_TRANSITION");
+        errorResponse.Error.Message.Should().Contain("Deleted");
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_FromDeletedToInProgress_Returns400InvalidTransition()
+    {
+        // Arrange (AC: #10)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "InProgress" });
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "InProgress"))
+            .ThrowsAsync(new InvalidStateTransitionException(
+                taskId,
+                TaskState.Deleted,
+                "UpdateState to InProgress",
+                "Cannot transition from 'Deleted' to 'InProgress'"));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("INVALID_STATE_TRANSITION");
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_FromDeletedToCompleted_Returns400InvalidTransition()
+    {
+        // Arrange (AC: #10)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "Completed" });
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "Completed"))
+            .ThrowsAsync(new InvalidStateTransitionException(
+                taskId,
+                TaskState.Deleted,
+                "UpdateState to Completed",
+                "Cannot transition from 'Deleted' to 'Completed'"));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("INVALID_STATE_TRANSITION");
+    }
+
+    [Theory]
+    [InlineData("Invalid")]
+    [InlineData("todo")]
+    [InlineData("COMPLETED")]
+    [InlineData("on_deck")]
+    [InlineData("in-progress")]
+    public async Task UpdateTaskState_WithInvalidStateValue_Returns400ValidationError(string invalidState)
+    {
+        // Arrange (AC: #11)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = invalidState });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("OnDeck").And.Contain("InProgress").And.Contain("Completed").And.Contain("Deleted");
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_ForNonExistentTask_Returns404NotFound()
+    {
+        // Arrange (AC: #12)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "InProgress" });
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "InProgress"))
+            .ThrowsAsync(new TaskNotFoundException(taskId));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var notFoundResult = result.Should().BeOfType<NotFoundObjectResult>().Subject;
+        notFoundResult.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        var errorResponse = notFoundResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("TASK_NOT_FOUND");
+        errorResponse.Error.Message.Should().Contain(taskId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_ForOtherUsersTask_Returns404NotFound()
+    {
+        // Arrange (AC: #13 - security - no information leakage)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "InProgress" });
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "InProgress"))
+            .ThrowsAsync(new TaskNotFoundException(taskId));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var notFoundResult = result.Should().BeOfType<NotFoundObjectResult>().Subject;
+        var errorResponse = notFoundResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("TASK_NOT_FOUND");
+        // Same error as non-existent - no information leakage
+    }
+
+    #endregion
+
+    #region UpdateTaskState Command Tests - Task-Reminder Unity (AC: #4, #7)
+
+    [Fact]
+    public async Task UpdateTaskState_ToCompleted_WithReminder_DismissesReminder()
+    {
+        // Arrange (AC: #4 - Unity: complete task with reminder dismisses reminder)
+        var taskId = Guid.NewGuid().ToString();
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "Completed" });
+
+        var now = DateTime.UtcNow;
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Task With Reminder",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            CompletedAt = now,
+            ReminderId = reminderId,
+            LastModifiedAt = now
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "Completed"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.State.Should().Be(TaskState.Completed);
+        // Service handles Unity internally - we just verify the call was made
+        _mockTaskService.Verify(
+            s => s.UpdateStateAsync(TestUserId, taskId, "Completed"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_ToDeleted_WithReminder_DismissesReminder()
+    {
+        // Arrange (AC: #7 - Unity: delete task with reminder dismisses reminder)
+        var taskId = Guid.NewGuid().ToString();
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "Deleted" });
+
+        var now = DateTime.UtcNow;
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Task With Reminder",
+            State = TaskState.Deleted,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            ReminderId = reminderId,
+            LastModifiedAt = now
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "Deleted"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.State.Should().Be(TaskState.Deleted);
+        _mockTaskService.Verify(
+            s => s.UpdateStateAsync(TestUserId, taskId, "Deleted"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateTaskState_ToCompleted_WithoutReminder_Succeeds()
+    {
+        // Arrange (AC: #3 - no reminder case)
+        var taskId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateTaskState", new { taskId, state = "Completed" });
+
+        var now = DateTime.UtcNow;
+        var updatedTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Task Without Reminder",
+            State = TaskState.Completed,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            CompletedAt = now,
+            ReminderId = null, // No reminder
+            LastModifiedAt = now
+        };
+
+        _mockTaskService
+            .Setup(s => s.UpdateStateAsync(TestUserId, taskId, "Completed"))
+            .ReturnsAsync(updatedTask);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var taskDto = okResult.Value.Should().BeOfType<TaskDto>().Subject;
+        taskDto.State.Should().Be(TaskState.Completed);
+        taskDto.ReminderId.Should().BeNull();
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static CommandRequest CreateCommandRequest(string command, object payload)
