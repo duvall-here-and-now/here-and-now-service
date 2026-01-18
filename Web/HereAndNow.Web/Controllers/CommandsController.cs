@@ -19,11 +19,11 @@ namespace HereAndNowService.Controllers;
 /// - CreateTask: Create a new task with a client-generated ID
 /// - CreateTaskAndTaskReminder: Atomic task + reminder creation with client-generated IDs
 /// - UpdateTaskName: Change task name with automatic reminder denormalization sync
+/// - UpdateTaskReminderScheduledTime: Reschedule/snooze a reminder to a new time
+/// - DismissTaskReminder: Dismiss a reminder (idempotent operation)
 ///
 /// Planned future commands:
 /// - UpdateTaskState: All state transitions with Unity
-/// - UpdateTaskReminderScheduledTime: Reschedule reminder
-/// - DismissTaskReminder: Dismiss reminder only
 /// </remarks>
 [ApiController]
 [Route("api/v1/[controller]")]
@@ -31,14 +31,22 @@ namespace HereAndNowService.Controllers;
 public class CommandsController : ControllerBase
 {
     private readonly ITaskService _taskService;
+    private readonly ITaskReminderService _reminderService;
     private readonly ILogger<CommandsController> _logger;
 
     /// <summary>
     /// Creates a new CommandsController instance
     /// </summary>
-    public CommandsController(ITaskService taskService, ILogger<CommandsController> logger)
+    /// <param name="taskService">The task service for task-related operations</param>
+    /// <param name="reminderService">The reminder service for reminder-related operations</param>
+    /// <param name="logger">The logger instance</param>
+    public CommandsController(
+        ITaskService taskService,
+        ITaskReminderService reminderService,
+        ILogger<CommandsController> logger)
     {
         _taskService = taskService;
+        _reminderService = reminderService;
         _logger = logger;
     }
 
@@ -46,7 +54,7 @@ public class CommandsController : ControllerBase
     /// Executes a command to modify system state.
     /// </summary>
     /// <remarks>
-    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName
+    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskReminderScheduledTime, DismissTaskReminder
     ///
     /// Request format for CreateTask:
     /// ```json
@@ -72,13 +80,37 @@ public class CommandsController : ControllerBase
     /// }
     /// ```
     ///
+    /// Request format for UpdateTaskReminderScheduledTime:
+    /// ```json
+    /// {
+    ///   "command": "UpdateTaskReminderScheduledTime",
+    ///   "payload": {
+    ///     "taskReminderId": "660e8400-e29b-41d4-a716-446655440001",
+    ///     "scheduledTime": "2026-01-25T14:00:00Z"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for DismissTaskReminder:
+    /// ```json
+    /// {
+    ///   "command": "DismissTaskReminder",
+    ///   "payload": {
+    ///     "taskReminderId": "660e8400-e29b-41d4-a716-446655440001"
+    ///   }
+    /// }
+    /// ```
+    ///
     /// See API documentation for full payload structures.
     /// </remarks>
     /// <param name="request">The command request with type and payload</param>
     /// <returns>Command-specific response or error</returns>
     [HttpPost]
     [ProducesResponseType(typeof(TaskDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(TaskReminderDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ExecuteCommand([FromBody] CommandRequest request)
@@ -92,6 +124,8 @@ public class CommandsController : ControllerBase
             "CreateTask" => await HandleCreateTaskAsync(request, userId),
             "CreateTaskAndTaskReminder" => await HandleCreateTaskAndTaskReminderAsync(request, userId),
             "UpdateTaskName" => await HandleUpdateTaskNameAsync(request, userId),
+            "UpdateTaskReminderScheduledTime" => await HandleUpdateTaskReminderScheduledTimeAsync(request, userId),
+            "DismissTaskReminder" => await HandleDismissTaskReminderAsync(request, userId),
             _ => BadRequest(CreateErrorResponse("UNKNOWN_COMMAND", $"Unknown command: {request.Command}"))
         };
     }
@@ -334,6 +368,138 @@ public class CommandsController : ControllerBase
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid UpdateTaskName request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the UpdateTaskReminderScheduledTime command
+    /// </summary>
+    private async Task<IActionResult> HandleUpdateTaskReminderScheduledTimeAsync(CommandRequest request, string userId)
+    {
+        // Deserialize payload to UpdateTaskReminderScheduledTimeCommand
+        UpdateTaskReminderScheduledTimeCommand? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<UpdateTaskReminderScheduledTimeCommand>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize UpdateTaskReminderScheduledTime payload");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for UpdateTaskReminderScheduledTime command"));
+        }
+
+        if (command == null)
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Payload is required for UpdateTaskReminderScheduledTime command"));
+        }
+
+        // Validate taskReminderId is provided
+        if (string.IsNullOrWhiteSpace(command.TaskReminderId))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskReminderId is required"));
+        }
+
+        // Validate taskReminderId is a valid GUID format
+        if (!Guid.TryParse(command.TaskReminderId, out var parsedGuid))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskReminderId must be a valid GUID format"));
+        }
+
+        // Use consistent lowercase GUID format
+        var taskReminderId = parsedGuid.ToString().ToLowerInvariant();
+
+        // Validate scheduledTime is in the future (defense in depth)
+        if (command.ScheduledTime <= DateTime.UtcNow)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_SCHEDULED_TIME", "scheduledTime must be in the future"));
+        }
+
+        _logger.LogDebug("Rescheduling reminder {ReminderId} to {ScheduledTime} for user {UserId}",
+            taskReminderId, command.ScheduledTime, userId);
+
+        try
+        {
+            var reminder = await _reminderService.SnoozeAsync(userId, taskReminderId, command.ScheduledTime);
+            var reminderDto = ReminderMapper.ToDto(reminder);
+
+            return Ok(reminderDto);
+        }
+        catch (ReminderNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("REMINDER_NOT_FOUND", $"Reminder with ID {taskReminderId} not found"));
+        }
+        catch (ReminderAlreadyDismissedException)
+        {
+            return BadRequest(CreateErrorResponse("REMINDER_ALREADY_DISMISSED", $"Reminder {taskReminderId} has already been dismissed"));
+        }
+        catch (InvalidScheduledTimeException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_SCHEDULED_TIME", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid UpdateTaskReminderScheduledTime request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the DismissTaskReminder command (idempotent operation)
+    /// </summary>
+    private async Task<IActionResult> HandleDismissTaskReminderAsync(CommandRequest request, string userId)
+    {
+        // Deserialize payload to DismissTaskReminderCommand
+        DismissTaskReminderCommand? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<DismissTaskReminderCommand>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize DismissTaskReminder payload");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for DismissTaskReminder command"));
+        }
+
+        if (command == null)
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Payload is required for DismissTaskReminder command"));
+        }
+
+        // Validate taskReminderId is provided
+        if (string.IsNullOrWhiteSpace(command.TaskReminderId))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskReminderId is required"));
+        }
+
+        // Validate taskReminderId is a valid GUID format
+        if (!Guid.TryParse(command.TaskReminderId, out var parsedGuid))
+        {
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "taskReminderId must be a valid GUID format"));
+        }
+
+        // Use consistent lowercase GUID format
+        var taskReminderId = parsedGuid.ToString().ToLowerInvariant();
+
+        _logger.LogDebug("Dismissing reminder {ReminderId} for user {UserId}", taskReminderId, userId);
+
+        try
+        {
+            await _reminderService.DismissAsync(userId, taskReminderId);
+
+            return NoContent();
+        }
+        catch (ReminderNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("REMINDER_NOT_FOUND", $"Reminder with ID {taskReminderId} not found"));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid DismissTaskReminder request");
             return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
         }
     }

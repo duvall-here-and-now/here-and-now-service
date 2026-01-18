@@ -961,6 +961,180 @@ public class CommandsApiTests : IClassFixture<TestWebApplicationFactory>
 
     #endregion
 
+    #region UpdateTaskReminderScheduledTime Command Tests (AC: #1, #2, #7)
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_EndToEndFlow_Returns200OK()
+    {
+        // Arrange (AC: #1)
+        var reminderId = Guid.NewGuid().ToString();
+        var taskId = Guid.NewGuid().ToString();
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = reminderId,
+            scheduledTime = newScheduledTime
+        });
+
+        var updatedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestAuthHandler.TestUserId,
+            TaskId = taskId,
+            TaskName = "Call dentist",
+            ScheduledTime = newScheduledTime,
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(TestAuthHandler.TestUserId, reminderId, newScheduledTime))
+            .ReturnsAsync(updatedReminder);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var reminderDto = await response.Content.ReadFromJsonAsync<TaskReminderDto>();
+        reminderDto.Should().NotBeNull();
+        reminderDto!.Id.Should().Be(reminderId);
+        reminderDto.ScheduledTime.Should().Be(newScheduledTime);
+    }
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_ForDismissedReminder_Returns400BadRequest()
+    {
+        // Arrange (AC: #2)
+        var reminderId = Guid.NewGuid().ToString();
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = reminderId,
+            scheduledTime = newScheduledTime
+        });
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(TestAuthHandler.TestUserId, reminderId, newScheduledTime))
+            .ThrowsAsync(new ReminderAlreadyDismissedException(reminderId));
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("REMINDER_ALREADY_DISMISSED");
+    }
+
+    [Fact]
+    public async Task UpdateTaskReminderScheduledTime_ForNonExistentReminder_Returns404NotFound()
+    {
+        // Arrange (AC: #7)
+        var reminderId = Guid.NewGuid().ToString();
+        var newScheduledTime = DateTime.UtcNow.AddDays(1);
+        var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
+        {
+            taskReminderId = reminderId,
+            scheduledTime = newScheduledTime
+        });
+
+        _factory.MockReminderService
+            .Setup(s => s.SnoozeAsync(TestAuthHandler.TestUserId, reminderId, newScheduledTime))
+            .ThrowsAsync(new ReminderNotFoundException(reminderId));
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("REMINDER_NOT_FOUND");
+    }
+
+    #endregion
+
+    #region DismissTaskReminder Command Tests (AC: #5, #6, #7)
+
+    [Fact]
+    public async Task DismissTaskReminder_EndToEndFlow_Returns204NoContent()
+    {
+        // Arrange (AC: #5)
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("DismissTaskReminder", new
+        {
+            taskReminderId = reminderId
+        });
+
+        _factory.MockReminderService
+            .Setup(s => s.DismissAsync(TestAuthHandler.TestUserId, reminderId))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task DismissTaskReminder_Idempotency_DismissTwiceReturns204BothTimes()
+    {
+        // Arrange (AC: #6 - idempotency test)
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("DismissTaskReminder", new
+        {
+            taskReminderId = reminderId
+        });
+
+        // Service is idempotent - always returns successfully
+        _factory.MockReminderService
+            .Setup(s => s.DismissAsync(TestAuthHandler.TestUserId, reminderId))
+            .Returns(Task.CompletedTask);
+
+        // Act - first dismiss
+        var response1 = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Act - second dismiss (idempotent - should succeed)
+        var response2 = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert - both should return 204 No Content
+        response1.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response2.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Verify service was called twice
+        _factory.MockReminderService.Verify(
+            s => s.DismissAsync(TestAuthHandler.TestUserId, reminderId),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task DismissTaskReminder_ForNonExistentReminder_Returns404NotFound()
+    {
+        // Arrange (AC: #7)
+        var reminderId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("DismissTaskReminder", new
+        {
+            taskReminderId = reminderId
+        });
+
+        _factory.MockReminderService
+            .Setup(s => s.DismissAsync(TestAuthHandler.TestUserId, reminderId))
+            .ThrowsAsync(new ReminderNotFoundException(reminderId));
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        errorResponse!.Error.Code.Should().Be("REMINDER_NOT_FOUND");
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static object CreateCommandRequest(string command, object payload)
