@@ -147,50 +147,6 @@ public class TasksController : ControllerBase
     }
 
     /// <summary>
-    /// Updates an existing task
-    /// </summary>
-    /// <param name="id">The task ID</param>
-    /// <param name="updateTaskDto">The update request with optional name and/or state</param>
-    /// <returns>The updated task</returns>
-    /// <response code="200">Returns the updated task</response>
-    /// <response code="400">If the request is invalid</response>
-    /// <response code="404">If the task is not found</response>
-    /// <response code="401">If the user is not authenticated</response>
-    [HttpPut("{id}")]
-    [ProducesResponseType(typeof(TaskDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<TaskDto>> UpdateTask(string id, [FromBody] UpdateTaskDto updateTaskDto)
-    {
-        var userId = GetUserId();
-
-        _logger.LogInformation("Updating task {TaskId} for user {UserId}", id, userId);
-
-        // Validate the DTO
-        if (!updateTaskDto.IsValid(out var validationError))
-        {
-            _logger.LogWarning("Invalid update request for task {TaskId}: {Error}", id, validationError);
-            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", validationError!));
-        }
-
-        try
-        {
-            var task = await _taskService.UpdateTaskAsync(id, userId, updateTaskDto.Name, updateTaskDto.State);
-            return Ok(TaskMapper.ToDto(task));
-        }
-        catch (TaskNotFoundException)
-        {
-            return NotFound(CreateErrorResponse("TASK_NOT_FOUND", $"Task with ID {id} not found"));
-        }
-        catch (ArgumentException ex)
-        {
-            _logger.LogWarning(ex, "Invalid update request for task {TaskId}", id);
-            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
-        }
-    }
-
-    /// <summary>
     /// Completes a task. If the task has an associated reminder, it will be atomically dismissed.
     /// This is the Task-Reminder Unity operation - the core experience of HereAndNow.
     /// </summary>
@@ -226,45 +182,6 @@ public class TasksController : ControllerBase
             return StatusCode(500, CreateErrorResponse(
                 "UNITY_TRANSACTION_FAILED",
                 "Failed to complete task and dismiss reminder. Please try again."));
-        }
-    }
-
-    /// <summary>
-    /// Deletes a task (soft-delete). If the task has an associated reminder, it will be atomically dismissed.
-    /// This is the Task-Reminder Unity operation for deletion.
-    /// </summary>
-    /// <param name="id">The task ID to delete</param>
-    /// <returns>No content on success</returns>
-    /// <response code="204">Task successfully deleted</response>
-    /// <response code="404">If the task is not found</response>
-    /// <response code="500">If the Unity transaction fails</response>
-    /// <response code="401">If the user is not authenticated</response>
-    [HttpDelete("{id}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DeleteTask(string id)
-    {
-        var userId = GetUserId();
-
-        _logger.LogInformation("Deleting task {TaskId} with Unity for user {UserId}", id, userId);
-
-        try
-        {
-            await _taskService.DeleteTaskWithUnityAsync(userId, id);
-            return NoContent();
-        }
-        catch (TaskNotFoundException)
-        {
-            return NotFound(CreateErrorResponse("TASK_NOT_FOUND", $"Task with ID {id} not found"));
-        }
-        catch (UnityTransactionFailedException ex)
-        {
-            _logger.LogError(ex, "Unity transaction failed for task deletion {TaskId}", id);
-            return StatusCode(500, CreateErrorResponse(
-                "UNITY_TRANSACTION_FAILED",
-                "Failed to delete task and dismiss reminder. Please try again."));
         }
     }
 
