@@ -1,17 +1,19 @@
 # Here and Now Service - Architecture
 
-**Date:** 2026-01-15
-**Version:** 3.0
-**Architecture Pattern:** Clean Architecture with Service-Repository Pattern
+**Date:** 2026-01-18
+**Version:** 4.0
+**Architecture Patterns:** Clean Architecture + Command Pattern + Unity Pattern
 
 ## Executive Summary
 
-The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provides task management with reminder functionality. It features Auth0 JWT authentication, Azure Cosmos DB persistence, and implements the "Unity" pattern for atomic Task-Reminder operations.
+The Here and Now Service is a RESTful API built on ASP.NET Core 8.0 that provides task management with reminder functionality. It features Auth0 JWT authentication, Azure Cosmos DB persistence, a **Command Pattern** for mutations, and the "Unity" pattern for atomic Task-Reminder operations.
+
+> **v1.3.0 Evolution:** The API has evolved from traditional REST CRUD to a **Command Pattern** architecture, providing explicit intent, client-generated IDs for optimistic UI, and a single mutation endpoint.
 
 The architecture follows Clean Architecture principles with three assemblies:
 - **Message** - Demo business logic (Auth0 sample)
 - **Task** - Core business logic with CosmosDB (Tasks + Reminders)
-- **Web** - API layer (Controllers, DTOs, Mappers, Validation)
+- **Web** - API layer (Controllers, Commands, DTOs, Mappers, Validation)
 
 ## Technology Stack
 
@@ -32,59 +34,61 @@ The architecture follows Clean Architecture principles with three assemblies:
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              Web Layer                                    │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                         Controllers                                │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐   │  │
-│  │  │  Tasks      │  │  Reminders  │  │  Messages    │  Error   │   │  │
-│  │  │  Controller │  │  Controller │  │  Controller  │  Ctrl    │   │  │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬───────┴──────────┘   │  │
-│  └─────────┼────────────────┼────────────────┼───────────────────────┘  │
-│            │                │                │                           │
-│  ┌─────────┴────────────────┴────────────────┴───────────────────────┐  │
-│  │  DTOs + Mappers + Validation (FutureTimeValidationAttribute)      │  │
-│  └─────────┬────────────────┬────────────────────────────────────────┘  │
-│            │                │                                            │
-│  ┌─────────┴────────────────┴────────────────────────────────────────┐  │
-│  │  Middlewares: ErrorHandler, SecureHeaders                          │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────┬─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Web Layer                                        │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │                         Controllers                                      │ │
+│  │  ┌────────────────┐ ┌─────────────┐ ┌─────────────┐ ┌──────────────────┐│ │
+│  │  │   Commands     │ │   Tasks     │ │  Reminders  │ │Messages │ Error  ││ │
+│  │  │   Controller   │ │  Controller │ │  Controller │ │Ctrl     │ Ctrl   ││ │
+│  │  │ (mutations)    │ │ (queries)   │ │ (queries)   │ │(demo)   │        ││ │
+│  │  └───────┬────────┘ └──────┬──────┘ └──────┬──────┘ └─────────┴────────┘│ │
+│  └──────────┼─────────────────┼───────────────┼────────────────────────────┘ │
+│             │                 │               │                               │
+│  ┌──────────┴─────────────────┴───────────────┴────────────────────────────┐ │
+│  │  Commands (6) + DTOs + Mappers + Validation (FutureTimeValidation)      │ │
+│  └──────────┬──────────────────────────────────────────────────────────────┘ │
+│             │                                                                 │
+│  ┌──────────┴──────────────────────────────────────────────────────────────┐ │
+│  │  Middlewares: ErrorHandler, SecureHeaders                                │ │
+│  └──────────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────┬────────────────────────────────────────────┘
                                  │
                                  │ Dependency Injection
                                  ▼
-┌───────────────────────────────────────────────┬──────────────────────────┐
-│                Task Layer                      │     Message Layer        │
-│  ┌─────────────────────────────────────────┐  │  ┌────────────────────┐  │
-│  │               Services                   │  │  │  IMessageService   │  │
-│  │  ┌────────────────┐ ┌─────────────────┐ │  │  │    ↓               │  │
-│  │  │ ITaskService   │ │ ITaskReminder   │ │  │  │  MessageService    │  │
-│  │  │    ↓           │ │   Service ↓     │ │  │  └────────────────────┘  │
-│  │  │ TaskService    │ │ TaskReminder    │ │  │           │              │
-│  │  │                │ │   Service       │ │  │           ▼              │
-│  │  └───────┬────────┘ └────────┬────────┘ │  │  ┌────────────────────┐  │
-│  └──────────┼───────────────────┼──────────┘  │  │    Message         │  │
-│             │                   │              │  │  (static data)     │  │
-│  ┌──────────┴───────────────────┴──────────┐  │  └────────────────────┘  │
-│  │              Repositories               │  │                          │
-│  │  ┌─────────────────┐ ┌────────────────┐ │  │                          │
-│  │  │ ITaskRepository │ │ ITaskReminder  │ │  │                          │
-│  │  │    ↓            │ │   Repository ↓ │ │  │                          │
-│  │  │ TaskRepository  │ │ TaskReminder   │ │  │                          │
-│  │  │                 │ │   Repository   │ │  │                          │
-│  │  └────────┬────────┘ └───────┬────────┘ │  │                          │
-│  └───────────┼──────────────────┼──────────┘  │                          │
-│              │                  │              │                          │
-│              ▼                  ▼              │                          │
-│  ┌─────────────────────────────────────────┐  │                          │
-│  │           Azure Cosmos DB               │  │                          │
-│  │  ┌─────────────┐  ┌──────────────────┐  │  │                          │
-│  │  │ Task        │  │ TaskReminder     │  │  │                          │
-│  │  │ Documents   │  │ Documents        │  │  │                          │
-│  │  └─────────────┘  └──────────────────┘  │  │                          │
-│  │        Partition Key: /userId           │  │                          │
-│  └─────────────────────────────────────────┘  │                          │
-└───────────────────────────────────────────────┴──────────────────────────┘
+┌───────────────────────────────────────────────┬──────────────────────────────┐
+│                Task Layer                      │       Message Layer          │
+│  ┌─────────────────────────────────────────┐  │  ┌────────────────────────┐  │
+│  │               Services                   │  │  │  IMessageService       │  │
+│  │  ┌────────────────┐ ┌─────────────────┐ │  │  │    ↓                   │  │
+│  │  │ ITaskService   │ │ ITaskReminder   │ │  │  │  MessageService        │  │
+│  │  │    ↓           │ │   Service ↓     │ │  │  └────────────────────────┘  │
+│  │  │ TaskService    │ │ TaskReminder    │ │  │           │                  │
+│  │  │ • State Machine│ │   Service       │ │  │           ▼                  │
+│  │  │ • Unity Ops    │ │                 │ │  │  ┌────────────────────────┐  │
+│  │  └───────┬────────┘ └────────┬────────┘ │  │  │    Message             │  │
+│  └──────────┼───────────────────┼──────────┘  │  │  (static data)         │  │
+│             │                   │              │  └────────────────────────┘  │
+│  ┌──────────┴───────────────────┴──────────┐  │                              │
+│  │              Repositories               │  │                              │
+│  │  ┌─────────────────┐ ┌────────────────┐ │  │                              │
+│  │  │ ITaskRepository │ │ ITaskReminder  │ │  │                              │
+│  │  │    ↓            │ │   Repository ↓ │ │  │                              │
+│  │  │ TaskRepository  │ │ TaskReminder   │ │  │                              │
+│  │  │ • Unity Batches │ │   Repository   │ │  │                              │
+│  │  └────────┬────────┘ └───────┬────────┘ │  │                              │
+│  └───────────┼──────────────────┼──────────┘  │                              │
+│              │                  │              │                              │
+│              ▼                  ▼              │                              │
+│  ┌─────────────────────────────────────────┐  │                              │
+│  │           Azure Cosmos DB               │  │                              │
+│  │  ┌─────────────┐  ┌──────────────────┐  │  │                              │
+│  │  │ Task        │  │ TaskReminder     │  │  │                              │
+│  │  │ Documents   │  │ Documents        │  │  │                              │
+│  │  └─────────────┘  └──────────────────┘  │  │                              │
+│  │        Partition Key: /userId           │  │                              │
+│  └─────────────────────────────────────────┘  │                              │
+└───────────────────────────────────────────────┴──────────────────────────────┘
 ```
 
 ## Assembly Structure
@@ -106,10 +110,13 @@ HereAndNow.sln
 │   │   ├── PagedResult.cs
 │   │   └── Exceptions/
 │   │       ├── TaskNotFoundException.cs
+│   │       ├── TaskAlreadyExistsException.cs       ← NEW
 │   │       ├── ReminderNotFoundException.cs
+│   │       ├── TaskReminderAlreadyExistsException.cs ← NEW
 │   │       ├── ReminderAlreadyExistsException.cs
 │   │       ├── ReminderAlreadyDismissedException.cs
 │   │       ├── InvalidScheduledTimeException.cs
+│   │       ├── InvalidStateTransitionException.cs   ← NEW
 │   │       └── UnityTransactionFailedException.cs
 │   ├── Repositories/
 │   │   ├── ITaskRepository.cs
@@ -125,17 +132,26 @@ HereAndNow.sln
 │
 ├── HereAndNow.Web              (Web API Layer)
 │   ├── Controllers/
+│   │   ├── CommandsController.cs   ← NEW (primary mutations)
 │   │   ├── MessagesController.cs
-│   │   ├── TasksController.cs
-│   │   ├── RemindersController.cs
+│   │   ├── TasksController.cs      (queries + legacy complete)
+│   │   ├── RemindersController.cs  (queries)
 │   │   └── ErrorController.cs
+│   ├── Commands/                   ← NEW (Command Pattern)
+│   │   ├── CommandRequest.cs
+│   │   ├── CommandResponse.cs
+│   │   ├── CreateTaskCommand.cs
+│   │   ├── CreateTaskAndTaskReminderCommand.cs
+│   │   ├── UpdateTaskNameCommand.cs
+│   │   ├── UpdateTaskStateCommand.cs
+│   │   ├── UpdateTaskReminderScheduledTimeCommand.cs
+│   │   └── DismissTaskReminderCommand.cs
 │   ├── DTOs/
 │   │   ├── CreateTaskDto.cs
-│   │   ├── UpdateTaskDto.cs
 │   │   ├── TaskDto.cs
 │   │   ├── PagedTasksDto.cs
+│   │   ├── TaskAndReminderDto.cs   ← NEW
 │   │   ├── CreateReminderDto.cs
-│   │   ├── SnoozeReminderDto.cs
 │   │   ├── TaskReminderDto.cs
 │   │   └── ErrorResponseDto.cs
 │   ├── Mappers/
@@ -149,6 +165,7 @@ HereAndNow.sln
 │
 └── HereAndNow.Web.Tests        (Test Project)
     ├── Controllers/
+    │   ├── CommandsControllerTests.cs  ← NEW
     │   ├── TasksControllerTests.cs
     │   └── RemindersControllerTests.cs
     ├── Services/
@@ -157,6 +174,7 @@ HereAndNow.sln
     ├── Integration/
     │   ├── AuthorizationTests.cs
     │   ├── CorsTests.cs
+    │   ├── CommandsApiTests.cs  ← NEW
     │   ├── TasksApiTests.cs
     │   └── RemindersApiTests.cs
     └── Helpers/
@@ -164,51 +182,129 @@ HereAndNow.sln
         └── TestAuthHandler.cs
 ```
 
-## Dependency Graph
-
-```
-HereAndNow.Web.Tests
-    │
-    ├──► HereAndNow.Web
-    │        │
-    │        ├──► HereAndNow.Task
-    │        │
-    │        └──► HereAndNow.Message
-    │
-    ├──► HereAndNow.Task
-    │
-    └──► HereAndNow.Message
-```
-
 ## Key Architectural Patterns
 
-### 1. Service-Repository Pattern
+### 1. Command Pattern (NEW in v1.3.0)
+
+The Command Pattern provides explicit intent-based operations through a single endpoint:
+
+```
+POST /api/v1/commands
+{
+  "command": "CreateTask",
+  "payload": { "taskId": "...", "name": "..." }
+}
+```
+
+**Why Command Pattern?**
+
+| Benefit | Explanation |
+|---------|-------------|
+| **Explicit Intent** | Commands express what to do, not just HTTP verbs |
+| **Client-Generated IDs** | Enables optimistic UI - UI updates before server responds |
+| **Single Endpoint** | All mutations through `POST /api/v1/commands` |
+| **Idempotency** | Client can retry safely (if ID exists → success) |
+| **Atomic Operations** | Natural fit for Unity pattern |
+
+**Command Flow:**
+
+```
+┌─────────────────────┐
+│ POST /api/v1/commands │
+│ { command, payload }  │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ CommandsController  │
+│ ExecuteCommand()    │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Switch on command   │
+│ type, deserialize   │
+│ payload to Command  │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Call appropriate    │
+│ Service method      │
+│ (TaskService, etc.) │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Return result       │
+│ (TaskDto, etc.)     │
+└─────────────────────┘
+```
+
+**Available Commands:**
+
+| Command | Service Method | Response |
+|---------|---------------|----------|
+| `CreateTask` | `CreateTaskWithIdAsync` | `TaskDto` |
+| `CreateTaskAndTaskReminder` | `CreateTaskWithReminderAsync` | `TaskAndReminderDto` |
+| `UpdateTaskName` | `UpdateTaskNameAsync` | `TaskDto` |
+| `UpdateTaskState` | `UpdateStateAsync` | `TaskDto` |
+| `UpdateTaskReminderScheduledTime` | `SnoozeAsync` | `TaskReminderDto` |
+| `DismissTaskReminder` | `DismissAsync` | 204 No Content |
+
+### 2. Service-Repository Pattern
 
 The Task layer implements the Service-Repository pattern:
-- **Services** contain business logic and orchestrate operations
+- **Services** contain business logic, state machine, and orchestrate operations
 - **Repositories** handle data access (CosmosDB operations)
 - Clear separation enables unit testing with mock repositories
 
-### 2. Unity Pattern
+### 3. Unity Pattern
 
 The "Unity" pattern ensures Task and Reminder are updated atomically using CosmosDB transactional batches:
 
 ```csharp
-// Example: Completing a task with reminder
+// Example: Completing a task with reminder (UpdateTaskState → Completed)
 var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
-batch.ReplaceItem(task.Id, task);       // Task → Completed
+batch.ReplaceItem(task.Id, task);         // Task → Completed
 batch.ReplaceItem(reminder.Id, reminder); // Reminder → Dismissed
 await batch.ExecuteAsync();
 ```
 
 **Unity Operations:**
+
 | Operation | Task Change | Reminder Change |
 |-----------|-------------|-----------------|
-| Complete Task | state → Completed | isDismissed → true |
-| Delete Task | state → Deleted | isDismissed → true |
-| Update Task Name | name updated | taskName synced |
+| CreateTaskAndTaskReminder | Created with reminderId | Created with taskId |
+| UpdateTaskState → Completed | state → Completed | isDismissed → true |
+| UpdateTaskState → Deleted | state → Deleted | isDismissed → true |
+| UpdateTaskName (with reminder) | name updated | taskName synced |
 
-### 3. Denormalization
+### 4. Task State Machine
+
+The TaskService implements a state machine for task lifecycle:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                           │
+│  ┌──────────┐   ┌────────────┐   ┌───────────────────┐  │
+│  │  OnDeck  │ ↔ │ InProgress │ ↔ │    Completed      │  │
+│  └──────────┘   └────────────┘   └───────────────────┘  │
+│       │              │                                   │
+│       │              │         ┌───────────────────────┐│
+│       └──────────────┴───────→ │       Deleted         ││
+│                                │  (terminal - no exit) ││
+│                                └───────────────────────┘│
+└─────────────────────────────────────────────────────────┘
+```
+
+**State Machine Rules:**
+- **Idempotent:** Same state = no-op success
+- **Terminal:** Deleted cannot transition to other states
+- **CompletedAt:** Set on → Completed, cleared on ← Completed
+- **Unity:** → Completed/Deleted with reminder triggers atomic dismiss
+
+### 5. Denormalization
 
 `TaskReminderDocument.TaskName` is denormalized from the parent Task to enable:
 - Reminder lists without joining to tasks
@@ -217,65 +313,67 @@ await batch.ExecuteAsync();
 
 ## Request Flow
 
-### Protected Endpoint Flow (Task/Reminder Operations)
+### Command Request Flow (Mutations)
 
 ```
 HTTP Request (with JWT)
      │
      ▼
-┌─────────────────┐
-│  Kestrel Server │
-└────────┬────────┘
+┌─────────────────────┐
+│  Kestrel Server     │
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│ Error Handler   │ ◄── Catches exceptions, formats ErrorResponseDto
-│ Middleware      │
-└────────┬────────┘
+┌─────────────────────┐
+│ Error Handler       │ ◄── Catches exceptions, formats ErrorResponseDto
+│ Middleware          │
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│ Secure Headers  │ ◄── Adds security headers (HSTS, CSP, etc.)
-│ Middleware      │
-└────────┬────────┘
+┌─────────────────────┐
+│ Secure Headers      │ ◄── Adds security headers (HSTS, CSP, etc.)
+│ Middleware          │
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│     CORS        │ ◄── Validates origin, handles preflight
-└────────┬────────┘
+┌─────────────────────┐
+│     CORS            │ ◄── Validates origin, handles preflight
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│ Authentication  │ ◄── Validates JWT token with Auth0
-└────────┬────────┘
+┌─────────────────────┐
+│ Authentication      │ ◄── Validates JWT token with Auth0
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│ Authorization   │ ◄── Enforces [Authorize] attributes
-└────────┬────────┘
+┌─────────────────────┐
+│ Authorization       │ ◄── Enforces [Authorize] attributes
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│   Controller    │ ◄── TasksController / RemindersController
-│   + Mapper      │     Maps DTOs ↔ Documents
-└────────┬────────┘
+┌─────────────────────┐
+│ CommandsController  │ ◄── POST /api/v1/commands
+│ ExecuteCommand()    │     Dispatch to handler
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│    Service      │ ◄── TaskService / TaskReminderService
-│                 │     Business logic, validation
-└────────┬────────┘
+┌─────────────────────┐
+│    Service          │ ◄── TaskService / TaskReminderService
+│ • State Machine     │     Business logic, validation
+│ • Unity Ops         │
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│   Repository    │ ◄── TaskRepository / TaskReminderRepository
-│                 │     CosmosDB operations, Unity batches
-└────────┬────────┘
+┌─────────────────────┐
+│   Repository        │ ◄── TaskRepository / TaskReminderRepository
+│ • Transactional     │     CosmosDB operations, Unity batches
+│   Batches           │
+└────────┬────────────┘
          │
          ▼
-┌─────────────────┐
-│   Cosmos DB     │ ◄── Document storage, partition key: /userId
-└────────┬────────┘
+┌─────────────────────┐
+│   Cosmos DB         │ ◄── Document storage, partition key: /userId
+└────────┬────────────┘
          │
          ▼
 HTTP Response (TaskDto / TaskReminderDto / ErrorResponseDto)
@@ -308,6 +406,39 @@ Container: Tasks
 ├── Partition: user-456
 │   └── ...
 ```
+
+## API Endpoints Summary
+
+### Commands (Primary Mutation API)
+
+| Endpoint | Method | Commands |
+|----------|--------|----------|
+| /api/v1/commands | POST | CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskState, UpdateTaskReminderScheduledTime, DismissTaskReminder |
+
+### Tasks (Queries + Legacy)
+
+| Endpoint | Method | Auth |
+|----------|--------|------|
+| /api/v1/tasks | GET | JWT |
+| /api/v1/tasks/{id} | GET | JWT |
+| /api/v1/tasks/{id}/complete | PUT | JWT |
+| /api/v1/tasks | POST | JWT (deprecated) |
+
+### Reminders (Queries)
+
+| Endpoint | Method | Auth |
+|----------|--------|------|
+| /api/v1/reminders | GET | JWT |
+| /api/v1/reminders/{id} | GET | JWT |
+| /api/v1/reminders/{id}/dismiss | PUT | JWT |
+
+### Messages (Demo)
+
+| Endpoint | Method | Auth |
+|----------|--------|------|
+| /api/messages/public | GET | None |
+| /api/messages/protected | GET | JWT |
+| /api/messages/admin | GET | JWT |
 
 ## Security Architecture
 
@@ -359,49 +490,6 @@ The `SecureHeadersMiddleware` adds:
 | Content-Security-Policy | default-src 'self'; frame-ancestors 'none'; | Restrict resources |
 | Cache-Control | no-cache, no-store, max-age=0, must-revalidate | Prevent caching |
 
-## API Endpoints Summary
-
-| Controller | Endpoint | Method | Auth |
-|------------|----------|--------|------|
-| Messages | /api/messages/public | GET | None |
-| Messages | /api/messages/protected | GET | JWT |
-| Messages | /api/messages/admin | GET | JWT |
-| Tasks | /api/v1/tasks | POST, GET | JWT |
-| Tasks | /api/v1/tasks/{id} | GET, PUT, DELETE | JWT |
-| Tasks | /api/v1/tasks/{id}/complete | PUT | JWT |
-| Reminders | /api/v1/reminders | POST, GET | JWT |
-| Reminders | /api/v1/reminders/{id} | GET, PUT | JWT |
-| Reminders | /api/v1/reminders/{id}/dismiss | PUT | JWT |
-
-## Dependency Injection
-
-### Service Registration (Program.cs)
-
-```csharp
-// Message services
-builder.Services.AddScoped<IMessageService, MessageService>();
-
-// Cosmos DB (if configured)
-if (!string.IsNullOrEmpty(cosmosConnectionString))
-{
-    builder.Services.AddSingleton(cosmosDbSettings);
-    builder.Services.AddSingleton<CosmosClient>(...);
-    builder.Services.AddSingleton<ITaskRepository, TaskRepository>();
-    builder.Services.AddSingleton<ITaskReminderRepository, TaskReminderRepository>();
-    builder.Services.AddScoped<ITaskService, TaskService>();
-    builder.Services.AddScoped<ITaskReminderService, TaskReminderService>();
-}
-```
-
-### Lifetime Rationale
-
-| Service | Lifetime | Reason |
-|---------|----------|--------|
-| CosmosClient | Singleton | Thread-safe, connection pooling |
-| Repositories | Singleton | Stateless, uses singleton CosmosClient |
-| Services | Scoped | Per-request business operations |
-| IMessageService | Scoped | Per-request (legacy pattern) |
-
 ## Testing Architecture
 
 ### Test Pyramid
@@ -410,11 +498,11 @@ if (!string.IsNullOrEmpty(cosmosConnectionString))
            ┌─────────────┐
            │   Manual    │  Swagger UI
            ├─────────────┤
-           │ Integration │  TasksApiTests, RemindersApiTests,
-           │             │  AuthorizationTests, CorsTests
+           │ Integration │  CommandsApiTests, TasksApiTests,
+           │             │  RemindersApiTests, AuthorizationTests
            ├─────────────┤
-           │    Unit     │  TaskServiceTests, TaskReminderServiceTests,
-           │             │  TasksControllerTests, RemindersControllerTests
+           │    Unit     │  CommandsControllerTests, TaskServiceTests,
+           │             │  TaskReminderServiceTests
            └─────────────┘
 ```
 
@@ -473,4 +561,4 @@ if (!string.IsNullOrEmpty(cosmosConnectionString))
 ---
 
 _Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-15_
+_Last Updated: 2026-01-18_

@@ -1,9 +1,9 @@
 {
   "workflow_version": "1.2.0",
   "timestamps": {
-    "started": "2026-01-15T10:00:00Z",
-    "last_updated": "2026-01-15T11:30:00Z",
-    "completed": "2026-01-15T11:30:00Z"
+    "started": "2026-01-18T10:00:00Z",
+    "last_updated": "2026-01-18T12:00:00Z",
+    "completed": "2026-01-18T12:00:00Z"
   },
   "mode": "full_rescan",
   "scan_level": "exhaustive",
@@ -14,43 +14,43 @@
     {
       "step": "step_1",
       "status": "completed",
-      "timestamp": "2026-01-15T10:15:00Z",
-      "summary": "Classified as monolith backend with 4 assemblies: Message (demo), Task (NEW - CosmosDB), Web (API), Web.Tests"
+      "timestamp": "2026-01-18T10:15:00Z",
+      "summary": "Classified as monolith backend with 4 assemblies. Detected 6 new commits since last scan."
     },
     {
       "step": "step_2",
       "status": "completed",
-      "timestamp": "2026-01-15T10:20:00Z",
-      "summary": "Found 8 existing docs in docs/ (all OUTDATED), 5 project docs outside (3 OUTDATED: CLAUDE.md, copilot-instructions.md, README.md)"
+      "timestamp": "2026-01-18T10:20:00Z",
+      "summary": "Found 8 existing docs in docs/, identified major API changes requiring updates"
     },
     {
       "step": "step_3",
       "status": "completed",
-      "timestamp": "2026-01-15T10:30:00Z",
-      "summary": "Analyzed tech stack: ASP.NET Core 8.0, Azure Cosmos DB 3.46.1, Auth0 JWT, Swagger 6.9.0"
+      "timestamp": "2026-01-18T10:30:00Z",
+      "summary": "Analyzed tech stack: ASP.NET Core 8.0, Azure Cosmos DB, Auth0 JWT, Command Pattern"
     },
     {
       "step": "step_4",
       "status": "completed",
-      "timestamp": "2026-01-15T10:45:00Z",
-      "summary": "Analyzed 14 API endpoints, domain models (TaskDocument, TaskReminderDocument), Unity pattern"
+      "timestamp": "2026-01-18T10:45:00Z",
+      "summary": "Analyzed new CommandsController, 6 commands, new exceptions, state machine"
     },
     {
       "step": "step_5_9",
       "status": "completed",
-      "timestamp": "2026-01-15T11:15:00Z",
-      "summary": "Generated/updated all documentation files"
+      "timestamp": "2026-01-18T11:30:00Z",
+      "summary": "Updated api-contracts.md, data-models.md, source-tree-analysis.md"
     },
     {
       "step": "step_10",
       "status": "completed",
-      "timestamp": "2026-01-15T11:25:00Z",
-      "summary": "Generated master index.md with all references"
+      "timestamp": "2026-01-18T11:45:00Z",
+      "summary": "Updated index.md with Commands API reference"
     },
     {
       "step": "step_11_12",
       "status": "completed",
-      "timestamp": "2026-01-15T11:30:00Z",
+      "timestamp": "2026-01-18T12:00:00Z",
       "summary": "Validated documentation and completed workflow"
     }
   ],
@@ -62,49 +62,117 @@
       "primary_tech": "ASP.NET Core 8.0",
       "assemblies": ["HereAndNow.Message", "HereAndNow.Task", "HereAndNow.Web", "HereAndNow.Web.Tests"]
     },
-    "major_changes": [
-      "NEW: Task module with full CRUD and CosmosDB",
-      "NEW: TaskReminder system with snooze/dismiss",
-      "NEW: Unity pattern - atomic Task+Reminder operations",
-      "NEW: Pagination with sorting",
-      "NEW: TasksController, RemindersController",
-      "NEW: DTOs, Mappers, Validation attributes",
-      "DEPRECATED: Reminders folder (empty)"
+    "major_changes_since_last_scan": [
+      {
+        "commit": "#52",
+        "description": "Removed obsolete legacy endpoints (PUT /tasks/{id}, DELETE /tasks/{id})"
+      },
+      {
+        "commit": "#51",
+        "description": "Implemented UpdateTaskState command"
+      },
+      {
+        "commit": "#50",
+        "description": "Added UpdateTaskReminderScheduledTime and DismissTaskReminder commands"
+      },
+      {
+        "commit": "#49",
+        "description": "Added UpdateTaskNameCommand"
+      },
+      {
+        "commit": "#48",
+        "description": "Added CreateTaskAndTaskReminder atomic command"
+      },
+      {
+        "commit": "#47",
+        "description": "API refactoring - new CommandsController with Command Pattern"
+      }
     ],
-    "existing_docs": {
-      "docs_folder": 8,
-      "project_docs": 5,
-      "outdated_count": 11,
-      "files_needing_manual_update": ["CLAUDE.md", ".github/copilot-instructions.md"]
+    "new_architecture": {
+      "pattern": "Command Pattern",
+      "endpoint": "POST /api/v1/commands",
+      "commands": [
+        "CreateTask",
+        "CreateTaskAndTaskReminder",
+        "UpdateTaskName",
+        "UpdateTaskState",
+        "UpdateTaskReminderScheduledTime",
+        "DismissTaskReminder"
+      ],
+      "benefits": [
+        "Explicit intent over HTTP verbs",
+        "Client-generated IDs for optimistic UI",
+        "Single endpoint for all mutations",
+        "Atomic operations with CosmosDB batches"
+      ]
     },
+    "new_components": {
+      "controllers": ["CommandsController"],
+      "commands": [
+        "CommandRequest",
+        "CommandResponse",
+        "CreateTaskCommand",
+        "CreateTaskAndTaskReminderCommand",
+        "UpdateTaskNameCommand",
+        "UpdateTaskStateCommand",
+        "UpdateTaskReminderScheduledTimeCommand",
+        "DismissTaskReminderCommand"
+      ],
+      "dtos": ["TaskAndReminderDto"],
+      "exceptions": [
+        "TaskAlreadyExistsException",
+        "TaskReminderAlreadyExistsException",
+        "InvalidStateTransitionException"
+      ],
+      "service_methods": [
+        "CreateTaskWithIdAsync",
+        "CreateTaskWithReminderAsync",
+        "UpdateTaskNameAsync",
+        "UpdateStateAsync"
+      ]
+    },
+    "removed_endpoints": [
+      "PUT /api/v1/tasks/{id}",
+      "DELETE /api/v1/tasks/{id}",
+      "PUT /api/v1/reminders/{id} (snooze)"
+    ],
+    "deprecated_endpoints": [
+      "POST /api/v1/tasks"
+    ],
     "api_summary": {
-      "total_endpoints": 14,
-      "controllers": ["MessagesController (3)", "TasksController (6)", "RemindersController (5)"]
+      "total_endpoints": 12,
+      "controllers": [
+        "CommandsController (1 endpoint, 6 commands)",
+        "MessagesController (3)",
+        "TasksController (4 - queries + complete)",
+        "RemindersController (4 - queries + dismiss)"
+      ]
     },
     "architecture_summary": {
       "layers": 3,
-      "pattern": "Clean Architecture",
+      "patterns": ["Clean Architecture", "Command Pattern", "Unity (atomic operations)"],
       "database": "Azure Cosmos DB",
-      "key_patterns": ["Service-Repository", "Unity (atomic operations)", "Type Discriminator"]
+      "key_patterns": ["Service-Repository", "Type Discriminator", "State Machine"]
     }
   },
   "project_types": [
     {
       "part_id": "main",
       "project_type_id": "backend",
-      "display_name": "ASP.NET Core Backend API with CosmosDB"
+      "display_name": "ASP.NET Core Backend API with Command Pattern"
     }
   ],
-  "outputs_generated": [
-    "project-scan-report.json",
+  "outputs_updated": [
     "index.md",
-    "project-overview.md",
-    "architecture.md",
     "api-contracts.md",
     "data-models.md",
     "source-tree-analysis.md",
-    "development-guide.md",
-    "deployment-guide.md"
+    "project-scan-report.json"
   ],
-  "resume_instructions": "Workflow completed. All documentation updated to reflect current implementation."
+  "previous_scan": {
+    "date": "2026-01-15",
+    "scan_level": "exhaustive",
+    "mode": "full_rescan"
+  },
+  "resume_instructions": "Workflow completed. Documentation updated to reflect Command Pattern API evolution."
 }

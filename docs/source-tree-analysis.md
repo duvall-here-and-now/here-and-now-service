@@ -1,6 +1,6 @@
 # Here and Now Service - Source Tree Analysis
 
-**Date:** 2026-01-15
+**Date:** 2026-01-18
 
 ## Overview
 
@@ -43,10 +43,13 @@ here-and-now-service/
 │       │   ├── PagedResult.cs          # Pagination wrapper
 │       │   └── Exceptions/             # Business exceptions
 │       │       ├── TaskNotFoundException.cs
+│       │       ├── TaskAlreadyExistsException.cs      # NEW
 │       │       ├── ReminderNotFoundException.cs
+│       │       ├── TaskReminderAlreadyExistsException.cs  # NEW
 │       │       ├── ReminderAlreadyExistsException.cs
 │       │       ├── ReminderAlreadyDismissedException.cs
 │       │       ├── InvalidScheduledTimeException.cs
+│       │       ├── InvalidStateTransitionException.cs     # NEW
 │       │       └── UnityTransactionFailedException.cs
 │       ├── Repositories/
 │       │   ├── ITaskRepository.cs
@@ -56,7 +59,7 @@ here-and-now-service/
 │       │   └── CosmosDbSettings.cs     # Configuration class
 │       └── Services/
 │           ├── ITaskService.cs
-│           ├── TaskService.cs          # Task business logic
+│           ├── TaskService.cs          # Task business logic + state machine
 │           ├── ITaskReminderService.cs
 │           └── TaskReminderService.cs  # Reminder business logic
 │
@@ -67,15 +70,24 @@ here-and-now-service/
 │   │   ├── Controllers/
 │   │   │   ├── ErrorController.cs
 │   │   │   ├── MessagesController.cs
-│   │   │   ├── TasksController.cs      # Task CRUD + Unity operations
-│   │   │   └── RemindersController.cs  # Reminder CRUD + snooze/dismiss
+│   │   │   ├── CommandsController.cs     # ★ NEW - Command Pattern API
+│   │   │   ├── TasksController.cs        # Queries + legacy complete
+│   │   │   └── RemindersController.cs    # Queries + legacy endpoints
+│   │   ├── Commands/                     # ★ NEW - Command Pattern
+│   │   │   ├── CommandRequest.cs
+│   │   │   ├── CommandResponse.cs
+│   │   │   ├── CreateTaskCommand.cs
+│   │   │   ├── CreateTaskAndTaskReminderCommand.cs
+│   │   │   ├── UpdateTaskNameCommand.cs
+│   │   │   ├── UpdateTaskStateCommand.cs
+│   │   │   ├── UpdateTaskReminderScheduledTimeCommand.cs
+│   │   │   └── DismissTaskReminderCommand.cs
 │   │   ├── DTOs/
 │   │   │   ├── CreateTaskDto.cs
-│   │   │   ├── UpdateTaskDto.cs
 │   │   │   ├── TaskDto.cs
 │   │   │   ├── PagedTasksDto.cs
+│   │   │   ├── TaskAndReminderDto.cs     # NEW - combined response
 │   │   │   ├── CreateReminderDto.cs
-│   │   │   ├── SnoozeReminderDto.cs
 │   │   │   ├── TaskReminderDto.cs
 │   │   │   └── ErrorResponseDto.cs
 │   │   ├── Mappers/
@@ -91,6 +103,7 @@ here-and-now-service/
 │   └── HereAndNow.Web.Tests/       # Test Project
 │       ├── HereAndNow.Web.Tests.csproj
 │       ├── Controllers/
+│       │   ├── CommandsControllerTests.cs  # NEW
 │       │   ├── TasksControllerTests.cs
 │       │   └── RemindersControllerTests.cs
 │       ├── Services/
@@ -99,6 +112,7 @@ here-and-now-service/
 │       ├── Integration/
 │       │   ├── AuthorizationTests.cs
 │       │   ├── CorsTests.cs
+│       │   ├── CommandsApiTests.cs     # NEW
 │       │   ├── TasksApiTests.cs
 │       │   └── RemindersApiTests.cs
 │       └── Helpers/
@@ -148,13 +162,15 @@ here-and-now-service/
 - Service-Repository pattern for separation of concerns
 - Unity pattern for atomic Task-Reminder operations
 - Denormalized `taskName` in reminders for efficient display
+- State machine logic for task lifecycle
 
 ### `Web/HereAndNow.Web/`
 
 **Purpose:** ASP.NET Core Web API project handling HTTP requests, authentication, and API documentation.
 
 **Contains:**
-- REST API controllers (`MessagesController`, `TasksController`, `RemindersController`)
+- **Commands** - Command Pattern implementation for all mutations
+- REST API controllers (`CommandsController`, `MessagesController`, `TasksController`, `RemindersController`)
 - DTOs for request/response shaping
 - Mappers for Document↔DTO conversion
 - Custom validation attributes
@@ -162,12 +178,26 @@ here-and-now-service/
 
 **Entry Point:** `Program.cs` - Application bootstrap and configuration
 
+### `Web/HereAndNow.Web/Commands/` (NEW)
+
+**Purpose:** Command Pattern implementation for intent-based API operations.
+
+**Contains:**
+- `CommandRequest.cs` - Base request structure with `command` and `payload`
+- `CommandResponse.cs` - Base response structure
+- Individual command classes with validation attributes
+
+**Key Design Decisions:**
+- Client-generated IDs for optimistic UI patterns
+- Single endpoint (`POST /api/v1/commands`) for all mutations
+- Explicit intent over HTTP verb semantics
+
 ### `Web/HereAndNow.Web.Tests/`
 
 **Purpose:** Test project containing unit and integration tests.
 
 **Contains:**
-- Unit tests for controllers and services
+- Unit tests for controllers (including CommandsController) and services
 - Integration tests for full HTTP pipeline
 - Test infrastructure (mock auth, factory)
 
@@ -197,7 +227,12 @@ here-and-now-service/
 ### Controllers Pattern
 - **Location:** `Web/HereAndNow.Web/Controllers/`
 - **Pattern:** `{Feature}Controller.cs`
-- **Current:** `MessagesController.cs`, `TasksController.cs`, `RemindersController.cs`, `ErrorController.cs`
+- **Current:** `CommandsController.cs`, `MessagesController.cs`, `TasksController.cs`, `RemindersController.cs`, `ErrorController.cs`
+
+### Commands Pattern (NEW)
+- **Location:** `Web/HereAndNow.Web/Commands/`
+- **Pattern:** `{Action}{Feature}Command.cs`
+- **Current:** `CreateTaskCommand`, `CreateTaskAndTaskReminderCommand`, `UpdateTaskNameCommand`, `UpdateTaskStateCommand`, `UpdateTaskReminderScheduledTimeCommand`, `DismissTaskReminderCommand`
 
 ### Services Pattern
 - **Location:** `Task/HereAndNow.Task/Services/` or `Message/HereAndNow.Message/Services/`
@@ -217,7 +252,7 @@ here-and-now-service/
 ### DTOs Pattern
 - **Location:** `Web/HereAndNow.Web/DTOs/`
 - **Pattern:** `{Action}{Feature}Dto.cs` or `{Feature}Dto.cs`
-- **Current:** `CreateTaskDto`, `UpdateTaskDto`, `TaskDto`, `PagedTasksDto`, etc.
+- **Current:** `CreateTaskDto`, `TaskDto`, `PagedTasksDto`, `TaskAndReminderDto`, etc.
 
 ### Mappers Pattern
 - **Location:** `Web/HereAndNow.Web/Mappers/`
@@ -253,7 +288,16 @@ here-and-now-service/
    Message → (none - independent)
    ```
 
-3. **Adding New Task Features:**
+3. **Adding New Commands:**
+   - Add command class to `Web/HereAndNow.Web/Commands/`
+   - Add handler case to `CommandsController.ExecuteCommand()`
+   - Add service method (if needed) to `Task/HereAndNow.Task/Services/`
+   - Add repository method (if needed) to `Task/HereAndNow.Task/Repositories/`
+   - Add DTO (if needed) to `Web/HereAndNow.Web/DTOs/`
+   - Add unit test to `Web/HereAndNow.Web.Tests/Controllers/CommandsControllerTests.cs`
+   - Add integration test to `Web/HereAndNow.Web.Tests/Integration/CommandsApiTests.cs`
+
+4. **Adding Legacy Features (deprecated approach):**
    - Add domain model to `Task/HereAndNow.Task/Models/`
    - Add exception (if needed) to `Task/HereAndNow.Task/Models/Exceptions/`
    - Add repository interface + implementation to `Task/HereAndNow.Task/Repositories/`
@@ -264,11 +308,11 @@ here-and-now-service/
    - Register services in DI (`Program.cs`)
    - Add tests to `Web/HereAndNow.Web.Tests/`
 
-4. **Configuration:** All configuration is via environment variables loaded by `dotenv.net`.
+5. **Configuration:** All configuration is via environment variables loaded by `dotenv.net`.
 
-5. **Deprecated:** The `Reminders/` folder at root level is empty and no longer used.
+6. **Deprecated:** The `Reminders/` folder at root level is empty and no longer used.
 
 ---
 
 _Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-15_
+_Last Updated: 2026-01-18_

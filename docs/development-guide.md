@@ -1,6 +1,6 @@
 # Here and Now Service - Development Guide
 
-**Date:** 2026-01-15
+**Date:** 2026-01-18
 
 ## Prerequisites
 
@@ -171,9 +171,10 @@ here-and-now-service/
 ├── Task/HereAndNow.Task/             # Core business logic (Tasks + Reminders)
 │   ├── Models/                       # Domain models + Exceptions
 │   ├── Repositories/                 # CosmosDB data access
-│   └── Services/                     # Business logic
+│   └── Services/                     # Business logic + State machine
 ├── Web/HereAndNow.Web/               # API layer
 │   ├── Controllers/                  # REST endpoints
+│   ├── Commands/                     # ★ Command Pattern (NEW)
 │   ├── DTOs/                         # Request/Response objects
 │   ├── Mappers/                      # Document ↔ DTO conversion
 │   ├── Validation/                   # Custom validation attributes
@@ -186,78 +187,113 @@ here-and-now-service/
 
 ## Common Development Tasks
 
-### Adding a New Task Feature
+### Adding a New Command (Preferred Pattern)
 
-1. **Add domain model** (if needed):
-   ```
-   Task/HereAndNow.Task/Models/NewModel.cs
-   ```
+The Command Pattern is the primary way to add mutations. Follow these steps:
 
-2. **Add exception** (if needed):
-   ```
-   Task/HereAndNow.Task/Models/Exceptions/NewException.cs
-   ```
-
-3. **Add repository interface**:
-   ```
-   Task/HereAndNow.Task/Repositories/INewRepository.cs
-   ```
-
-4. **Add repository implementation**:
-   ```
-   Task/HereAndNow.Task/Repositories/NewRepository.cs
-   ```
-
-5. **Add service interface**:
-   ```
-   Task/HereAndNow.Task/Services/INewService.cs
-   ```
-
-6. **Add service implementation**:
-   ```
-   Task/HereAndNow.Task/Services/NewService.cs
-   ```
-
-7. **Add DTOs**:
-   ```
-   Web/HereAndNow.Web/DTOs/CreateNewDto.cs
-   Web/HereAndNow.Web/DTOs/NewDto.cs
-   ```
-
-8. **Add mapper**:
-   ```
-   Web/HereAndNow.Web/Mappers/NewMapper.cs
-   ```
-
-9. **Add controller endpoints**:
-   ```
-   Web/HereAndNow.Web/Controllers/NewController.cs
-   ```
-
-10. **Register in DI** (Program.cs):
-    ```csharp
-    builder.Services.AddSingleton<INewRepository, NewRepository>();
-    builder.Services.AddScoped<INewService, NewService>();
-    ```
-
-11. **Add tests**:
-    ```
-    Web/HereAndNow.Web.Tests/Controllers/NewControllerTests.cs
-    Web/HereAndNow.Web.Tests/Services/NewServiceTests.cs
-    ```
-
-### Adding a Custom Validation Attribute
+#### 1. Create the Command Class
 
 ```csharp
-// Web/HereAndNow.Web/Validation/NewValidationAttribute.cs
-[AttributeUsage(AttributeTargets.Property)]
-public class NewValidationAttribute : ValidationAttribute
+// Web/HereAndNow.Web/Commands/NewFeatureCommand.cs
+namespace HereAndNowService.Commands;
+
+public class NewFeatureCommand
 {
-    protected override ValidationResult? IsValid(object? value, ValidationContext context)
+    [Required]
+    [JsonPropertyName("taskId")]
+    public string TaskId { get; set; } = string.Empty;
+
+    [Required]
+    [JsonPropertyName("someField")]
+    public string SomeField { get; set; } = string.Empty;
+}
+```
+
+#### 2. Add Service Method (if needed)
+
+```csharp
+// Task/HereAndNow.Task/Services/ITaskService.cs
+Task<TaskDocument> NewFeatureAsync(string userId, string taskId, string someField);
+
+// Task/HereAndNow.Task/Services/TaskService.cs
+public async Task<TaskDocument> NewFeatureAsync(string userId, string taskId, string someField)
+{
+    var task = await _taskRepository.GetByIdAsync(userId, taskId)
+        ?? throw new TaskNotFoundException(taskId);
+
+    // Business logic here
+    task.SomeField = someField;
+    task.LastModifiedAt = DateTime.UtcNow;
+
+    return await _taskRepository.UpdateAsync(task);
+}
+```
+
+#### 3. Add Handler in CommandsController
+
+```csharp
+// Web/HereAndNow.Web/Controllers/CommandsController.cs
+// Add case in ExecuteCommand method:
+
+case "NewFeature":
+    var newFeatureCmd = JsonSerializer.Deserialize<NewFeatureCommand>(
+        request.Payload.GetRawText(), _jsonOptions);
+
+    if (newFeatureCmd == null || !TryValidateModel(newFeatureCmd))
+        return BadRequest(new ErrorResponseDto("VALIDATION_ERROR", "Invalid payload"));
+
+    var result = await _taskService.NewFeatureAsync(userId, newFeatureCmd.TaskId, newFeatureCmd.SomeField);
+    return Ok(TaskMapper.ToDto(result));
+```
+
+#### 4. Add Exception Handling (in ErrorHandlerMiddleware if needed)
+
+```csharp
+// Web/HereAndNow.Web/Middlewares/ErrorHandlerMiddleware.cs
+NewFeatureException ex => (StatusCodes.Status400BadRequest, "NEW_FEATURE_ERROR", ex.Message),
+```
+
+#### 5. Add Unit Tests
+
+```csharp
+// Web/HereAndNow.Web.Tests/Controllers/CommandsControllerTests.cs
+[Fact]
+public async Task ExecuteCommand_NewFeature_ReturnsUpdatedTask()
+{
+    // Arrange
+    var command = new CommandRequest
     {
-        // Validation logic
-        return ValidationResult.Success;
-    }
+        Command = "NewFeature",
+        Payload = JsonSerializer.SerializeToElement(new { taskId = "test-id", someField = "value" })
+    };
+
+    _mockTaskService.Setup(s => s.NewFeatureAsync(It.IsAny<string>(), "test-id", "value"))
+        .ReturnsAsync(new TaskDocument { Id = "test-id" });
+
+    // Act
+    var result = await _controller.ExecuteCommand(command);
+
+    // Assert
+    result.Should().BeOfType<OkObjectResult>();
+}
+```
+
+#### 6. Add Integration Tests
+
+```csharp
+// Web/HereAndNow.Web.Tests/Integration/CommandsApiTests.cs
+[Fact]
+public async Task NewFeature_WithValidPayload_ReturnsOk()
+{
+    var request = new
+    {
+        command = "NewFeature",
+        payload = new { taskId = "test-id", someField = "value" }
+    };
+
+    var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
+
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
 }
 ```
 
@@ -283,6 +319,43 @@ public async Task<TaskDocument> NewUnityOperationAsync(
         throw new UnityTransactionFailedException(...);
 
     return response.GetOperationResultAtIndex<TaskDocument>(0).Resource;
+}
+```
+
+### Adding a Legacy REST Endpoint (Deprecated)
+
+> **Note:** Prefer adding Commands instead. Only add REST endpoints for queries.
+
+1. **Add domain model** (if needed):
+   ```
+   Task/HereAndNow.Task/Models/NewModel.cs
+   ```
+
+2. **Add exception** (if needed):
+   ```
+   Task/HereAndNow.Task/Models/Exceptions/NewException.cs
+   ```
+
+3. **Add repository interface + implementation**
+4. **Add service interface + implementation**
+5. **Add DTOs**
+6. **Add mapper**
+7. **Add controller endpoints**
+8. **Register in DI** (Program.cs)
+9. **Add tests**
+
+### Adding a Custom Validation Attribute
+
+```csharp
+// Web/HereAndNow.Web/Validation/NewValidationAttribute.cs
+[AttributeUsage(AttributeTargets.Property)]
+public class NewValidationAttribute : ValidationAttribute
+{
+    protected override ValidationResult? IsValid(object? value, ValidationContext context)
+    {
+        // Validation logic
+        return ValidationResult.Success;
+    }
 }
 ```
 
@@ -315,12 +388,12 @@ Document public APIs with XML comments:
 
 ```csharp
 /// <summary>
-/// Creates a new task, optionally with an associated reminder.
+/// Executes a command to modify system state.
 /// </summary>
-/// <param name="dto">The task creation request</param>
-/// <returns>The created task</returns>
+/// <param name="request">The command request containing command type and payload</param>
+/// <returns>Command-specific response</returns>
 [HttpPost]
-public async Task<ActionResult<TaskDto>> CreateTask([FromBody] CreateTaskDto dto)
+public async Task<IActionResult> ExecuteCommand([FromBody] CommandRequest request)
 ```
 
 ### JSON Property Names
@@ -332,30 +405,109 @@ Use `[JsonPropertyName]` for explicit JSON property names:
 public DateTime ScheduledTime { get; set; }
 ```
 
+### Command Naming Convention
+
+Commands follow `{Action}{Entity}Command` pattern:
+
+| Command | Pattern |
+|---------|---------|
+| `CreateTaskCommand` | Create + Task |
+| `UpdateTaskNameCommand` | Update + TaskName |
+| `UpdateTaskStateCommand` | Update + TaskState |
+| `DismissTaskReminderCommand` | Dismiss + TaskReminder |
+
 ## Testing API Endpoints
 
-### Using curl
+### Using curl (Commands API)
 
 ```bash
-# Public endpoint (no auth)
-curl http://localhost:6060/api/messages/public
-
-# Protected endpoint (requires token)
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:6060/api/messages/protected
-
-# Create a task
-curl -X POST http://localhost:6060/api/v1/tasks \
+# Create a task with client-generated ID
+curl -X POST http://localhost:6060/api/v1/commands \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "Buy groceries", "scheduledTime": "2026-01-20T10:00:00Z"}'
+  -d '{
+    "command": "CreateTask",
+    "payload": {
+      "taskId": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Buy groceries"
+    }
+  }'
 
-# Get all tasks
-curl "http://localhost:6060/api/v1/tasks?orderBy=createdAt&direction=desc" \
+# Create task with reminder atomically
+curl -X POST http://localhost:6060/api/v1/commands \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "CreateTaskAndTaskReminder",
+    "payload": {
+      "taskId": "550e8400-e29b-41d4-a716-446655440000",
+      "taskReminderId": "660e8400-e29b-41d4-a716-446655440001",
+      "name": "Call dentist",
+      "scheduledTime": "2026-01-20T09:00:00Z"
+    }
+  }'
+
+# Update task name
+curl -X POST http://localhost:6060/api/v1/commands \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "UpdateTaskName",
+    "payload": {
+      "taskId": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Buy groceries and milk"
+    }
+  }'
+
+# Update task state (complete)
+curl -X POST http://localhost:6060/api/v1/commands \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "UpdateTaskState",
+    "payload": {
+      "taskId": "550e8400-e29b-41d4-a716-446655440000",
+      "state": "Completed"
+    }
+  }'
+
+# Snooze reminder
+curl -X POST http://localhost:6060/api/v1/commands \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "UpdateTaskReminderScheduledTime",
+    "payload": {
+      "taskReminderId": "660e8400-e29b-41d4-a716-446655440001",
+      "scheduledTime": "2026-01-25T14:00:00Z"
+    }
+  }'
+
+# Dismiss reminder
+curl -X POST http://localhost:6060/api/v1/commands \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "DismissTaskReminder",
+    "payload": {
+      "taskReminderId": "660e8400-e29b-41d4-a716-446655440001"
+    }
+  }'
+```
+
+### Using curl (Query APIs)
+
+```bash
+# Get all tasks (paginated)
+curl "http://localhost:6060/api/v1/tasks?orderBy=createdAt&direction=desc&take=20" \
   -H "Authorization: Bearer YOUR_TOKEN"
 
-# Complete a task (Unity operation)
-curl -X PUT http://localhost:6060/api/v1/tasks/{taskId}/complete \
+# Get task by ID
+curl "http://localhost:6060/api/v1/tasks/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Get all reminders
+curl "http://localhost:6060/api/v1/reminders" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -405,6 +557,7 @@ curl -X PUT http://localhost:6060/api/v1/tasks/{taskId}/complete \
 | Port already in use | Change PORT in `.env` |
 | Task endpoints 500 | Check COSMOS_CONNECTION_STRING is set correctly |
 | "Container not found" | Create the Tasks container in CosmosDB |
+| "UNKNOWN_COMMAND" error | Check command name spelling (case-sensitive) |
 
 ### Running Without CosmosDB
 
@@ -422,7 +575,18 @@ Application logs are written to console. For more detailed logs:
 builder.Logging.SetMinimumLevel(LogLevel.Debug);
 ```
 
+## Command Pattern Quick Reference
+
+| Command | Payload | Response | Notes |
+|---------|---------|----------|-------|
+| `CreateTask` | `{ taskId, name }` | TaskDto | Client-generated ID |
+| `CreateTaskAndTaskReminder` | `{ taskId, taskReminderId, name, scheduledTime }` | TaskAndReminderDto | Atomic creation |
+| `UpdateTaskName` | `{ taskId, name }` | TaskDto | Unity: syncs to reminder |
+| `UpdateTaskState` | `{ taskId, state }` | TaskDto | Unity: dismisses reminder on Complete/Delete |
+| `UpdateTaskReminderScheduledTime` | `{ taskReminderId, scheduledTime }` | TaskReminderDto | Snooze |
+| `DismissTaskReminder` | `{ taskReminderId }` | 204 | Idempotent |
+
 ---
 
 _Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-15_
+_Last Updated: 2026-01-18_

@@ -1,6 +1,6 @@
 # Here and Now Service - Data Models
 
-**Date:** 2026-01-15
+**Date:** 2026-01-18
 
 ## Overview
 
@@ -10,7 +10,7 @@ This document describes the domain models and data structures used in the Here a
 |-------|----------|---------|
 | **Message** | HereAndNow.Message | Demo business logic (static messages) |
 | **Task** | HereAndNow.Task | Core business logic (Tasks, Reminders, CosmosDB) |
-| **Web** | HereAndNow.Web | API layer (Controllers, DTOs, Mappers) |
+| **Web** | HereAndNow.Web | API layer (Controllers, DTOs, Commands, Mappers) |
 
 ## Storage
 
@@ -122,21 +122,6 @@ public class TaskReminderDocument
 }
 ```
 
-**Field Descriptions:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `Id` | string | Unique identifier (GUID) |
-| `Type` | string | Document type discriminator (`"TaskReminder"`) |
-| `UserId` | string | Partition key - user who owns the reminder |
-| `TaskId` | string | Associated task ID |
-| `TaskName` | string | Denormalized task name (for display without join) |
-| `ScheduledTime` | DateTime | UTC time when reminder triggers |
-| `IsDismissed` | bool | Whether reminder has been dismissed |
-| `DismissedAt` | DateTime? | UTC dismissal timestamp |
-| `CreatedAt` | DateTime | UTC creation timestamp |
-| `LastModifiedAt` | DateTime | UTC last modification timestamp |
-
 **Design Notes:**
 - `TaskName` is denormalized to avoid joins when displaying reminders
 - When task name is updated, `TaskName` is synced atomically using transactional batch
@@ -170,12 +155,13 @@ public static class TaskState
 ┌─────────────────────────────────────────────────────┐
 │                                                       │
 │  ┌──────────┐   ┌────────────┐   ┌───────────────┐  │
-│  │  OnDeck  │ → │ InProgress │ → │   Completed   │  │
+│  │  OnDeck  │ ↔ │ InProgress │ → │   Completed   │  │
 │  └──────────┘   └────────────┘   └───────────────┘  │
 │       │              │                               │
 │       │              │         ┌───────────────────┐│
 │       └──────────────┴───────→ │     Deleted       ││
 │                                └───────────────────┘│
+│                                (terminal - no exit) │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -198,6 +184,114 @@ public class PagedResult<T>
 
 ---
 
+## Commands (API Layer)
+
+Located in: `Web/HereAndNow.Web/Commands/`
+
+The Commands namespace implements the **Command Pattern** for explicit intent-based API operations.
+
+### CommandRequest
+
+**File:** `CommandRequest.cs`
+**Purpose:** Base request structure for all commands.
+
+```csharp
+public class CommandRequest
+{
+    [Required(ErrorMessage = "Command type is required")]
+    [JsonPropertyName("command")]
+    public string Command { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Payload is required")]
+    [JsonPropertyName("payload")]
+    public JsonElement Payload { get; set; }
+}
+```
+
+### CommandResponse
+
+**File:** `CommandResponse.cs`
+**Purpose:** Base response structure.
+
+```csharp
+public class CommandResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+}
+```
+
+### Command Payloads
+
+| Command Class | Purpose |
+|---------------|---------|
+| `CreateTaskCommand` | Create task with client-generated ID |
+| `CreateTaskAndTaskReminderCommand` | Atomic task+reminder creation |
+| `UpdateTaskNameCommand` | Update task name (with reminder sync) |
+| `UpdateTaskStateCommand` | Update task state (with Unity) |
+| `UpdateTaskReminderScheduledTimeCommand` | Reschedule/snooze reminder |
+| `DismissTaskReminderCommand` | Dismiss reminder (idempotent) |
+
+#### CreateTaskCommand
+
+```csharp
+public class CreateTaskCommand
+{
+    [Required]
+    [JsonPropertyName("taskId")]
+    public string TaskId { get; set; } = string.Empty;
+
+    [Required]
+    [MinLength(1)]
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+}
+```
+
+#### CreateTaskAndTaskReminderCommand
+
+```csharp
+public class CreateTaskAndTaskReminderCommand
+{
+    [Required]
+    [JsonPropertyName("taskId")]
+    public string TaskId { get; set; } = string.Empty;
+
+    [Required]
+    [JsonPropertyName("taskReminderId")]
+    public string TaskReminderId { get; set; } = string.Empty;
+
+    [Required]
+    [MinLength(1)]
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [Required]
+    [JsonPropertyName("scheduledTime")]
+    public DateTime ScheduledTime { get; set; }
+}
+```
+
+#### UpdateTaskStateCommand
+
+```csharp
+public class UpdateTaskStateCommand
+{
+    [Required]
+    [JsonPropertyName("taskId")]
+    public string TaskId { get; set; } = string.Empty;
+
+    [Required]
+    [JsonPropertyName("state")]
+    public string State { get; set; } = string.Empty;
+}
+```
+
+---
+
 ## DTOs (Data Transfer Objects)
 
 Located in: `Web/HereAndNow.Web/DTOs/`
@@ -206,17 +300,32 @@ Located in: `Web/HereAndNow.Web/DTOs/`
 
 | DTO | Purpose |
 |-----|---------|
-| `CreateTaskDto` | Request body for creating tasks |
-| `UpdateTaskDto` | Request body for updating tasks |
+| `CreateTaskDto` | Request body for creating tasks (legacy endpoint) |
 | `TaskDto` | Response body for task data |
 | `PagedTasksDto` | Response body for paginated tasks |
+| `TaskAndReminderDto` | Response for atomic task+reminder creation |
+
+### TaskAndReminderDto
+
+**File:** `TaskAndReminderDto.cs`
+**Purpose:** Combined response for CreateTaskAndTaskReminder command.
+
+```csharp
+public class TaskAndReminderDto
+{
+    [JsonPropertyName("task")]
+    public TaskDto Task { get; set; } = null!;
+
+    [JsonPropertyName("reminder")]
+    public TaskReminderDto Reminder { get; set; } = null!;
+}
+```
 
 ### Reminder DTOs
 
 | DTO | Purpose |
 |-----|---------|
 | `CreateReminderDto` | Request body for creating reminders |
-| `SnoozeReminderDto` | Request body for snoozing reminders |
 | `TaskReminderDto` | Response body for reminder data |
 
 ### Error DTOs
@@ -235,11 +344,67 @@ Located in: `Task/HereAndNow.Task/Models/Exceptions/`
 | Exception | Thrown When |
 |-----------|-------------|
 | `TaskNotFoundException` | Task with given ID doesn't exist |
+| `TaskAlreadyExistsException` | **NEW:** Task with given ID already exists (client-generated ID collision) |
 | `ReminderNotFoundException` | Reminder with given ID doesn't exist |
+| `TaskReminderAlreadyExistsException` | **NEW:** Reminder with given ID already exists (client-generated ID collision) |
 | `ReminderAlreadyExistsException` | Task already has a reminder attached |
 | `ReminderAlreadyDismissedException` | Attempting to modify a dismissed reminder |
 | `InvalidScheduledTimeException` | Scheduled time is in the past |
+| `InvalidStateTransitionException` | **NEW:** Invalid state transition (e.g., from Deleted) |
 | `UnityTransactionFailedException` | CosmosDB transactional batch failed |
+
+### TaskAlreadyExistsException
+
+```csharp
+public class TaskAlreadyExistsException : Exception
+{
+    public string TaskId { get; }
+
+    public TaskAlreadyExistsException(string taskId)
+        : base($"Task with ID {taskId} already exists")
+    {
+        TaskId = taskId;
+    }
+}
+```
+
+### TaskReminderAlreadyExistsException
+
+```csharp
+public class TaskReminderAlreadyExistsException : Exception
+{
+    public string ReminderId { get; }
+
+    public TaskReminderAlreadyExistsException(string reminderId)
+        : base($"TaskReminder with ID {reminderId} already exists")
+    {
+        ReminderId = reminderId;
+    }
+}
+```
+
+### InvalidStateTransitionException
+
+```csharp
+public class InvalidStateTransitionException : Exception
+{
+    public string TaskId { get; }
+    public string CurrentState { get; }
+    public string AttemptedAction { get; }
+
+    public InvalidStateTransitionException(
+        string taskId,
+        string currentState,
+        string attemptedAction,
+        string? message = null)
+        : base(message ?? $"Cannot perform '{attemptedAction}' on task {taskId} in state '{currentState}'")
+    {
+        TaskId = taskId;
+        CurrentState = currentState;
+        AttemptedAction = attemptedAction;
+    }
+}
+```
 
 ---
 
@@ -251,8 +416,29 @@ Located in: `Task/HereAndNow.Task/Services/`
 
 | Interface | Implementation | Purpose |
 |-----------|----------------|---------|
-| `ITaskService` | `TaskService` | Task CRUD and Unity operations |
+| `ITaskService` | `TaskService` | Task CRUD, Unity operations, state machine |
 | `ITaskReminderService` | `TaskReminderService` | Reminder CRUD, snooze, dismiss |
+
+### Key ITaskService Methods
+
+```csharp
+// Create with client-generated ID (Command Pattern)
+Task<TaskDocument> CreateTaskWithIdAsync(string userId, string taskId, string name);
+
+// Atomic task+reminder creation (Command Pattern)
+Task<(TaskDocument Task, TaskReminderDocument Reminder)> CreateTaskWithReminderAsync(
+    string userId, string taskId, string taskReminderId, string name, DateTime scheduledTime);
+
+// Update name with Unity (syncs to reminder)
+Task<TaskDocument> UpdateTaskNameAsync(string userId, string taskId, string name);
+
+// State machine with Unity
+Task<TaskDocument> UpdateStateAsync(string userId, string taskId, string newState);
+
+// Unity operations
+Task<TaskDocument> CompleteTaskWithUnityAsync(string userId, string taskId);
+Task DeleteTaskWithUnityAsync(string userId, string taskId);
+```
 
 ### Message Services
 
@@ -277,14 +463,18 @@ Located in: `Task/HereAndNow.Task/Repositories/`
 
 ```csharp
 // TaskRepository
+Task<bool> ExistsAsync(string userId, string taskId);  // For collision detection
 Task<TaskDocument> CreateAsync(TaskDocument task);
-Task<IEnumerable<TaskDocument>> GetByUserIdAsync(string userId, string? state = null);
 Task<PagedResult<TaskDocument>> GetByUserIdPagedAsync(...);
 Task<TaskDocument?> GetByIdAsync(string userId, string taskId);
 Task<TaskDocument> UpdateAsync(TaskDocument task);
+
+// Unity (atomic) operations
 Task<TaskDocument> CompleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder);
 Task DeleteWithUnityAsync(TaskDocument task, TaskReminderDocument? reminder);
 Task<TaskDocument> UpdateWithReminderSyncAsync(TaskDocument task, TaskReminderDocument reminder);
+Task<(TaskDocument, TaskReminderDocument)> CreateTaskWithReminderBatchAsync(
+    TaskDocument task, TaskReminderDocument reminder);
 ```
 
 ---
@@ -295,7 +485,7 @@ Located in: `Web/HereAndNow.Web/Mappers/`
 
 | Mapper | Purpose |
 |--------|---------|
-| `TaskMapper` | Convert TaskDocument ↔ TaskDto |
+| `TaskMapper` | Convert TaskDocument ↔ TaskDto, PagedResult ↔ PagedTasksDto |
 | `ReminderMapper` | Convert TaskReminderDocument ↔ TaskReminderDto |
 
 ---
@@ -313,14 +503,6 @@ public class CosmosDbSettings
 }
 ```
 
-**Environment Variables:**
-
-| Variable | Purpose |
-|----------|---------|
-| `COSMOS_CONNECTION_STRING` | CosmosDB connection string |
-| `COSMOS_DATABASE_NAME` | Database name (default: HereAndNow) |
-| `COSMOS_CONTAINER_NAME` | Container name (default: Tasks) |
-
 ---
 
 ## Unity Pattern
@@ -328,17 +510,18 @@ public class CosmosDbSettings
 The "Unity" pattern uses CosmosDB transactional batches to atomically update Task and Reminder documents together:
 
 ```csharp
-// Example: CompleteWithUnityAsync
+// Example: CreateTaskWithReminderBatchAsync
 var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
-batch.ReplaceItem(task.Id, task);
-batch.ReplaceItem(reminder.Id, reminder);
+batch.CreateItem(task);
+batch.CreateItem(reminder);
 var batchResponse = await batch.ExecuteAsync();
 ```
 
 **Operations using Unity:**
-1. **Complete Task** - Task → Completed, Reminder → Dismissed
-2. **Delete Task** - Task → Deleted, Reminder → Dismissed
-3. **Update Task Name** - Task name synced to Reminder's denormalized `TaskName`
+1. **Create Task + Reminder** - Both created atomically
+2. **Complete Task** - Task → Completed, Reminder → Dismissed
+3. **Delete Task** - Task → Deleted, Reminder → Dismissed
+4. **Update Task Name** - Task name synced to Reminder's denormalized `TaskName`
 
 ---
 
@@ -347,45 +530,45 @@ var batchResponse = await batch.ExecuteAsync();
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Web Layer                                │
-│  ┌───────────────┐  ┌────────────────┐  ┌───────────────────┐  │
-│  │ TasksController│  │RemindersController│ │MessagesController│  │
-│  └───────┬───────┘  └───────┬────────┘  └─────────┬─────────┘  │
-│          │                   │                     │             │
-│          ▼                   ▼                     │             │
-│  ┌────────────────────────────────────┐           │             │
-│  │    DTOs + Mappers + Validation     │           │             │
-│  └───────────────┬────────────────────┘           │             │
-└──────────────────┼────────────────────────────────┼─────────────┘
-                   │                                │
-                   ▼                                ▼
-┌──────────────────────────────────┐  ┌────────────────────────────┐
-│          Task Layer              │  │      Message Layer          │
-│  ┌────────────────────────────┐  │  │  ┌──────────────────────┐  │
-│  │ ITaskService ← TaskService │  │  │  │IMessageService       │  │
-│  │ ITaskReminderService ←     │  │  │  │  ← MessageService    │  │
-│  │       TaskReminderService  │  │  │  └──────────────────────┘  │
-│  └─────────────┬──────────────┘  │  │            │               │
-│                │                  │  │            ▼               │
-│                ▼                  │  │  ┌──────────────────────┐  │
-│  ┌────────────────────────────┐  │  │  │     Message          │  │
-│  │ ITaskRepository ←          │  │  │  │  (static data)       │  │
-│  │       TaskRepository       │  │  │  └──────────────────────┘  │
-│  │ ITaskReminderRepository ←  │  │  └────────────────────────────┘
-│  │    TaskReminderRepository  │  │
-│  └─────────────┬──────────────┘  │
-│                │                  │
-│                ▼                  │
-│  ┌────────────────────────────┐  │
-│  │    Azure Cosmos DB         │  │
-│  │  ┌──────────┬───────────┐  │  │
-│  │  │  Task    │TaskReminder│  │  │
-│  │  │Documents │ Documents  │  │  │
-│  │  └──────────┴───────────┘  │  │
-│  └────────────────────────────┘  │
-└──────────────────────────────────┘
+│  ┌────────────────┐ ┌───────────────┐ ┌───────────────────────┐ │
+│  │CommandsController│ │TasksController│ │RemindersController   │ │
+│  └───────┬────────┘ └───────┬───────┘ └─────────┬─────────────┘ │
+│          │                   │                   │               │
+│          ▼                   ▼                   │               │
+│  ┌────────────────────────────────────────────┐  │               │
+│  │    Commands + DTOs + Mappers + Validation  │  │               │
+│  └───────────────────┬────────────────────────┘  │               │
+└──────────────────────┼───────────────────────────┼───────────────┘
+                       │                           │
+                       ▼                           ▼
+┌──────────────────────────────────────┐  ┌────────────────────────────┐
+│          Task Layer                   │  │      Message Layer          │
+│  ┌────────────────────────────────┐  │  │  ┌──────────────────────┐  │
+│  │ ITaskService ← TaskService     │  │  │  │IMessageService       │  │
+│  │ ITaskReminderService ←         │  │  │  │  ← MessageService    │  │
+│  │       TaskReminderService      │  │  │  └──────────────────────┘  │
+│  └─────────────┬──────────────────┘  │  │            │               │
+│                │                      │  │            ▼               │
+│                ▼                      │  │  ┌──────────────────────┐  │
+│  ┌────────────────────────────────┐  │  │  │     Message          │  │
+│  │ ITaskRepository ←              │  │  │  │  (static data)       │  │
+│  │       TaskRepository           │  │  │  └──────────────────────┘  │
+│  │ ITaskReminderRepository ←      │  │  └────────────────────────────┘
+│  │    TaskReminderRepository      │  │
+│  └─────────────┬──────────────────┘  │
+│                │                      │
+│                ▼                      │
+│  ┌────────────────────────────────┐  │
+│  │    Azure Cosmos DB             │  │
+│  │  ┌──────────┬───────────────┐  │  │
+│  │  │  Task    │ TaskReminder  │  │  │
+│  │  │Documents │  Documents    │  │  │
+│  │  └──────────┴───────────────┘  │  │
+│  └────────────────────────────────┘  │
+└──────────────────────────────────────┘
 ```
 
 ---
 
 _Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-15_
+_Last Updated: 2026-01-18_
