@@ -2,29 +2,42 @@
 
 **Type:** Monolith Backend API
 **Primary Language:** C# (.NET 8.0)
-**Architecture:** Clean Architecture (3-Layer)
-**Last Updated:** 2026-01-15
+**Architecture:** Clean Architecture (3-Layer) + Command Pattern
+**Last Updated:** 2026-01-18
 
 ## Project Overview
 
-Here and Now Service is an ASP.NET Core 8.0 REST API for task management with reminders. The service provides CRUD operations for tasks and reminders, with Auth0 JWT authentication and Azure Cosmos DB persistence.
+Here and Now Service is an ASP.NET Core 8.0 REST API for task management with reminders. The service provides task and reminder management through a **Command Pattern** API with Auth0 JWT authentication and Azure Cosmos DB persistence.
+
+> **v1.3.0 Update:** The API has evolved to use a **Command Pattern** for all mutations. Commands provide explicit intent, client-generated IDs for optimistic UI, and atomic operations.
 
 ## Quick Reference
 
 - **Tech Stack:** ASP.NET Core 8.0, Azure Cosmos DB, Auth0 JWT, Swagger
 - **Entry Point:** `Web/HereAndNow.Web/Program.cs`
-- **Architecture Pattern:** Clean Architecture (Message → Task → Web layers)
+- **Architecture Pattern:** Clean Architecture + Command Pattern
 - **Data Storage:** Azure Cosmos DB (NoSQL with `/userId` partition key)
 - **Deployment:** Azure Web Apps via GitHub Actions
 
-### API Endpoints Summary
+### API Overview
 
-| Controller | Endpoints | Key Features |
-|------------|-----------|--------------|
+| Controller | Endpoints | Purpose |
+|------------|-----------|---------|
+| **Commands** | 1 (6 commands) | All mutations - CreateTask, UpdateTaskState, etc. |
 | Messages | 3 | Public/protected/admin demo endpoints |
-| Tasks | 6 | CRUD, complete, delete (Unity operations) |
-| Reminders | 5 | CRUD, snooze, dismiss |
-| **Total** | **14** | |
+| Tasks | 4 | Task queries + legacy complete |
+| Reminders | 4 | Reminder queries + legacy endpoints |
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `CreateTask` | Create task with client-generated ID |
+| `CreateTaskAndTaskReminder` | Atomic task+reminder creation |
+| `UpdateTaskName` | Update name (syncs to reminder) |
+| `UpdateTaskState` | State machine with Unity |
+| `UpdateTaskReminderScheduledTime` | Reschedule reminder |
+| `DismissTaskReminder` | Dismiss reminder (idempotent) |
 
 ### Key Commands
 
@@ -56,8 +69,8 @@ Here and Now Service is an ASP.NET Core 8.0 REST API for task management with re
 ### Technical Documentation
 
 - [Architecture](./architecture.md) - Detailed technical architecture, Unity pattern, CosmosDB design
-- [API Contracts](./api-contracts.md) - Complete REST API documentation with all 14 endpoints
-- [Data Models](./data-models.md) - Domain models, DTOs, exceptions, service/repository patterns
+- [API Contracts](./api-contracts.md) - Complete API documentation with Commands and legacy endpoints
+- [Data Models](./data-models.md) - Domain models, Commands, DTOs, exceptions
 
 ### Operational Documentation
 
@@ -112,6 +125,23 @@ dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj
 dotnet test
 ```
 
+### Example: Create a Task with Reminder
+
+```bash
+curl -X POST http://localhost:6060/api/v1/commands \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "CreateTaskAndTaskReminder",
+    "payload": {
+      "taskId": "550e8400-e29b-41d4-a716-446655440000",
+      "taskReminderId": "660e8400-e29b-41d4-a716-446655440001",
+      "name": "Call dentist",
+      "scheduledTime": "2026-01-20T09:00:00Z"
+    }
+  }'
+```
+
 ## For AI-Assisted Development
 
 This documentation was generated specifically to enable AI agents to understand and extend this codebase.
@@ -121,8 +151,10 @@ This documentation was generated specifically to enable AI agents to understand 
 **Task/Reminder features:**
 → Reference: `architecture.md` (Unity pattern), `data-models.md`, `api-contracts.md`
 
-**Adding new endpoints:**
-→ Follow patterns in `development-guide.md` → "Adding a New Task Feature"
+**Adding new commands:**
+→ Follow patterns in `api-contracts.md` → "Commands Controller"
+→ Add command class in `Web/HereAndNow.Web/Commands/`
+→ Add handler in `CommandsController.ExecuteCommand()`
 
 **CosmosDB operations:**
 → Reference: `architecture.md` → "Unity Pattern", `data-models.md` → "Repository Layer"
@@ -144,15 +176,16 @@ This documentation was generated specifically to enable AI agents to understand 
 6. **Service implementations** go in `Task/HereAndNow.Task/Services/`
 
 **Web Module (API Layer):**
-7. **DTOs** go in `Web/HereAndNow.Web/DTOs/`
-8. **Mappers** go in `Web/HereAndNow.Web/Mappers/`
-9. **Validation attributes** go in `Web/HereAndNow.Web/Validation/`
-10. **Controllers** go in `Web/HereAndNow.Web/Controllers/`
-11. **Tests** go in `Web/HereAndNow.Web.Tests/`
+7. **Commands** go in `Web/HereAndNow.Web/Commands/`
+8. **DTOs** go in `Web/HereAndNow.Web/DTOs/`
+9. **Mappers** go in `Web/HereAndNow.Web/Mappers/`
+10. **Validation attributes** go in `Web/HereAndNow.Web/Validation/`
+11. **Controllers** go in `Web/HereAndNow.Web/Controllers/`
+12. **Tests** go in `Web/HereAndNow.Web.Tests/`
 
 **Message Module (Demo):**
-12. **Message models** go in `Message/HereAndNow.Message/Models/`
-13. **Message services** go in `Message/HereAndNow.Message/Services/`
+13. **Message models** go in `Message/HereAndNow.Message/Models/`
+14. **Message services** go in `Message/HereAndNow.Message/Services/`
 
 ### Code Conventions
 
@@ -162,6 +195,24 @@ This documentation was generated specifically to enable AI agents to understand 
 - Structured logging with ILogger
 - `[JsonPropertyName]` for explicit JSON serialization
 - CosmosDB documents use type discriminator pattern (`"type": "Task"` or `"type": "TaskReminder"`)
+
+### Command Pattern
+
+All mutations use the Command Pattern via `POST /api/v1/commands`:
+
+```csharp
+// CommandRequest structure
+{
+  "command": "CommandName",
+  "payload": { /* command-specific */ }
+}
+```
+
+Benefits:
+- **Explicit intent** - Commands describe what to do, not HTTP verbs
+- **Client-generated IDs** - Enables optimistic UI patterns
+- **Single endpoint** - All mutations through one POST endpoint
+- **Atomic operations** - CosmosDB transactional batches for consistency
 
 ### Unity Pattern (Atomic Operations)
 
@@ -176,6 +227,7 @@ await batch.ExecuteAsync();
 ```
 
 Current Unity operations:
+- **CreateTaskWithReminderBatchAsync** - Create task + reminder atomically
 - **CompleteWithUnityAsync** - Complete task, dismiss reminder
 - **DeleteWithUnityAsync** - Soft-delete task, dismiss reminder
 - **UpdateWithReminderSyncAsync** - Update task name, sync to reminder
@@ -184,4 +236,4 @@ Current Unity operations:
 
 _Documentation generated by BMAD Method `document-project` workflow_
 _Scan Level: Exhaustive | Mode: Full Rescan_
-_Last Updated: 2026-01-15_
+_Last Updated: 2026-01-18_
