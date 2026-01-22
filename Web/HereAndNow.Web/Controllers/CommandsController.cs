@@ -499,11 +499,10 @@ public class CommandsController : ControllerBase
         // Use consistent lowercase GUID format
         var taskReminderId = parsedGuid.ToString().ToLowerInvariant();
 
-        // Validate scheduledTime is in the future (defense in depth)
-        if (command.ScheduledTime <= DateTime.UtcNow)
-        {
-            return BadRequest(CreateErrorResponse("INVALID_SCHEDULED_TIME", "scheduledTime must be in the future"));
-        }
+        // Note: We intentionally do NOT validate scheduledTime is in the future here.
+        // This command may arrive via delayed sync from a mobile client, where the snooze
+        // was valid when performed but the scheduled time has since passed.
+        // The mobile client validates future time at the moment of user interaction.
 
         _logger.LogDebug("Rescheduling reminder {ReminderId} to {ScheduledTime} for user {UserId}",
             taskReminderId, command.ScheduledTime, userId);

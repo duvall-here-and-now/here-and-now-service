@@ -140,14 +140,13 @@ public class TaskReminderService : ITaskReminderService
             throw new ReminderAlreadyDismissedException(reminderId);
         }
 
-        // 3. Validate future time (defense in depth - also validated at DTO level)
-        var now = DateTime.UtcNow;
-        if (newScheduledTime <= now)
-        {
-            throw new InvalidScheduledTimeException("Scheduled time must be in the future");
-        }
+        // Note: We intentionally do NOT validate scheduledTime is in the future here.
+        // This operation may be called via delayed sync from a mobile client, where the
+        // snooze was valid when performed but the scheduled time has since passed.
+        // The mobile client validates future time at the moment of user interaction.
 
-        // 4. Update scheduledTime and LastModifiedAt
+        // 3. Update scheduledTime and LastModifiedAt
+        var now = DateTime.UtcNow;
         reminder.ScheduledTime = DateTime.SpecifyKind(newScheduledTime, DateTimeKind.Utc);
         reminder.LastModifiedAt = now;
 
