@@ -1188,9 +1188,11 @@ public class CommandsControllerTests
     }
 
     [Fact]
-    public async Task UpdateTaskReminderScheduledTime_WithPastTime_Returns400BadRequest()
+    public async Task UpdateTaskReminderScheduledTime_WithPastTime_Returns200OK_ForDelayedSync()
     {
-        // Arrange (AC: #3)
+        // Arrange - Past times are now allowed to support delayed sync scenarios
+        // where the snooze was valid when performed but the command arrives after
+        // the scheduled time has passed
         var reminderId = Guid.NewGuid().ToString();
         var pastTime = DateTime.UtcNow.AddHours(-1);
         var request = CreateCommandRequest("UpdateTaskReminderScheduledTime", new
@@ -1199,15 +1201,28 @@ public class CommandsControllerTests
             scheduledTime = pastTime
         });
 
+        var snoozedReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = "task-123",
+            TaskName = "Test Task",
+            ScheduledTime = pastTime,
+            IsDismissed = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            LastModifiedAt = DateTime.UtcNow
+        };
+
+        _mockReminderService
+            .Setup(s => s.SnoozeAsync(TestUserId, reminderId.ToLowerInvariant(), pastTime))
+            .ReturnsAsync(snoozedReminder);
+
         // Act
         var result = await _controller.ExecuteCommand(request);
 
-        // Assert
-        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
-        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
-        errorResponse.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
-        errorResponse.Error.Message.Should().Contain("future");
+        // Assert - Past times are accepted for delayed sync
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
     [Fact]
