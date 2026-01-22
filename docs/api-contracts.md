@@ -1,6 +1,6 @@
 # Here and Now Service - API Contracts
 
-**Date:** 2026-01-18
+**Date:** 2026-01-21
 **Base URL:** `http://localhost:{PORT}` (local) or `https://here-and-now-service.azurewebsites.net` (production)
 **Authentication:** Auth0 JWT Bearer Token
 
@@ -52,7 +52,7 @@ All errors follow a consistent format:
 | `TASK_REMINDER_ALREADY_EXISTS` | 409 | Reminder with given ID already exists |
 | `REMINDER_ALREADY_EXISTS` | 400 | Task already has a reminder attached |
 | `REMINDER_ALREADY_DISMISSED` | 400 | Cannot modify a dismissed reminder |
-| `INVALID_SCHEDULED_TIME` | 400 | Scheduled time must be in the future |
+| `INVALID_SCHEDULED_TIME` | 400 | Scheduled time must be in the future (CreateTaskAndTaskReminder only) |
 | `INVALID_STATE_TRANSITION` | 400 | Invalid task state transition (e.g., from Deleted) |
 | `VALIDATION_ERROR` | 400 | General validation failure |
 | `UNKNOWN_COMMAND` | 400 | Unrecognized command type |
@@ -261,6 +261,8 @@ Updates a task's state with comprehensive state machine logic.
 
 Reschedules (snoozes) a reminder to a new time.
 
+> **Note (v1.3.1):** This command intentionally does **not** validate that `scheduledTime` is in the future. This supports mobile offline sync scenarios where users snooze reminders while offline, and by the time the sync occurs, the scheduled time may have passed. The mobile client validates future time at the moment of user interaction.
+
 **Request:**
 ```json
 {
@@ -275,7 +277,7 @@ Reschedules (snoozes) a reminder to a new time.
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
 | `taskReminderId` | string | Yes | Valid GUID format |
-| `scheduledTime` | DateTime | Yes | UTC, must be in the future |
+| `scheduledTime` | DateTime | Yes | UTC (no future validation - see note above) |
 
 **Response:** `200 OK` - Returns updated TaskReminderDto
 
@@ -283,7 +285,6 @@ Reschedules (snoozes) a reminder to a new time.
 | Code | Error Code | Description |
 |------|------------|-------------|
 | 200 | - | Reminder rescheduled |
-| 400 | `INVALID_SCHEDULED_TIME` | Time must be in the future |
 | 400 | `REMINDER_ALREADY_DISMISSED` | Cannot snooze dismissed reminder |
 | 404 | `REMINDER_NOT_FOUND` | Reminder not found |
 
@@ -609,4 +610,4 @@ Interactive API documentation is available at:
 ---
 
 _Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-18_
+_Last Updated: 2026-01-21_
