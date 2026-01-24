@@ -844,9 +844,9 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task CreateTask_WithPastScheduledTime_Returns400InvalidScheduledTime()
+    public async Task CreateTask_WithPastScheduledTime_Returns201Created()
     {
-        // Arrange (Story 3-2, AC: 5 - validation prevents past times)
+        // Arrange - past times are now accepted to support delayed sync scenarios
         var pastTime = DateTime.UtcNow.AddHours(-1);
         var createDto = new CreateTaskDto
         {
@@ -854,15 +854,28 @@ public class TasksApiTests : IClassFixture<TestWebApplicationFactory>
             ScheduledTime = pastTime
         };
 
+        var createdTask = new TaskDocument
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserId = TestAuthHandler.TestUserId,
+            Name = "Task with Past Reminder",
+            State = TaskState.OnDeck,
+            CreatedAt = DateTime.UtcNow,
+            ReminderId = "reminder-past-123"
+        };
+
+        _factory.MockTaskService
+            .Setup(s => s.CreateTaskWithOptionalReminderAsync("Task with Past Reminder", TestAuthHandler.TestUserId, pastTime))
+            .ReturnsAsync(createdTask);
+
         // Act
         var response = await _client.PostAsJsonAsync("/api/v1/tasks", createDto);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
-        errorResponse.Should().NotBeNull();
-        errorResponse!.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
-        errorResponse.Error.Message.Should().Contain("future");
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var taskDto = await response.Content.ReadFromJsonAsync<TaskDto>();
+        taskDto.Should().NotBeNull();
+        taskDto!.Name.Should().Be("Task with Past Reminder");
     }
 
     [Fact]
