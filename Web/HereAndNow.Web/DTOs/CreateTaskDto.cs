@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
-using HereAndNowService.Validation;
 
 namespace HereAndNowService.DTOs;
 
@@ -20,10 +19,10 @@ public class CreateTaskDto
 
     /// <summary>
     /// Optional scheduled time for a reminder. When provided, creates both the task
-    /// and an associated reminder. Must be a UTC datetime in the future.
+    /// and an associated reminder. Should be a UTC datetime. Past times are accepted
+    /// to support delayed sync scenarios from mobile clients.
     /// </summary>
     [DataType(DataType.DateTime)]
-    [FutureTimeValidation(ErrorMessage = "Scheduled time must be in the future")]
     [JsonPropertyName("scheduledTime")]
     public DateTime? ScheduledTime { get; set; }
 }

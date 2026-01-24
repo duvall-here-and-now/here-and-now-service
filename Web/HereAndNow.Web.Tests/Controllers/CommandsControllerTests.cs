@@ -534,9 +534,9 @@ public class CommandsControllerTests
     }
 
     [Fact]
-    public async Task CreateTaskAndTaskReminder_WithPastScheduledTime_Returns400BadRequest()
+    public async Task CreateTaskAndTaskReminder_WithPastScheduledTime_Returns201Created()
     {
-        // Arrange (AC: #3)
+        // Arrange - past times are now accepted to support delayed sync scenarios
         var taskId = Guid.NewGuid().ToString();
         var reminderId = Guid.NewGuid().ToString();
         var pastTime = DateTime.UtcNow.AddHours(-1);
@@ -548,15 +548,45 @@ public class CommandsControllerTests
             scheduledTime = pastTime
         });
 
+        var now = DateTime.UtcNow;
+        var createdTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Past Task",
+            State = TaskState.OnDeck,
+            CreatedAt = now,
+            ReminderId = reminderId
+        };
+        var createdReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = taskId,
+            TaskName = "Past Task",
+            ScheduledTime = pastTime,
+            IsDismissed = false,
+            CreatedAt = now
+        };
+
+        _mockTaskService
+            .Setup(s => s.CreateTaskWithReminderAsync(
+                TestUserId,
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                "Past Task",
+                pastTime))
+            .ReturnsAsync((createdTask, createdReminder));
+
         // Act
         var result = await _controller.ExecuteCommand(request);
 
         // Assert
-        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
-        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
-        errorResponse.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
-        errorResponse.Error.Message.Should().Contain("future");
+        var createdResult = result.Should().BeOfType<CreatedAtActionResult>().Subject;
+        createdResult.StatusCode.Should().Be(StatusCodes.Status201Created);
+        var responseDto = createdResult.Value.Should().BeOfType<TaskAndReminderDto>().Subject;
+        responseDto.Task.Name.Should().Be("Past Task");
+        responseDto.Reminder.ScheduledTime.Should().BeCloseTo(pastTime, TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -708,13 +738,11 @@ public class CommandsControllerTests
     }
 
     [Fact]
-    public async Task CreateTaskAndTaskReminder_WithScheduledTimeExactlyNow_Returns400BadRequest()
+    public async Task CreateTaskAndTaskReminder_WithScheduledTimeExactlyNow_Returns201Created()
     {
-        // Arrange (AC: #3 - boundary condition: exactly now should be rejected)
+        // Arrange - "exactly now" times are accepted for delayed sync scenarios
         var taskId = Guid.NewGuid().ToString();
         var reminderId = Guid.NewGuid().ToString();
-        // Use a time slightly in the past to ensure we hit the boundary
-        // (UtcNow at validation will be >= this value)
         var exactlyNow = DateTime.UtcNow;
         var request = CreateCommandRequest("CreateTaskAndTaskReminder", new
         {
@@ -724,14 +752,44 @@ public class CommandsControllerTests
             scheduledTime = exactlyNow
         });
 
+        var now = DateTime.UtcNow;
+        var createdTask = new TaskDocument
+        {
+            Id = taskId,
+            UserId = TestUserId,
+            Name = "Boundary Test",
+            State = TaskState.OnDeck,
+            CreatedAt = now,
+            ReminderId = reminderId
+        };
+        var createdReminder = new TaskReminderDocument
+        {
+            Id = reminderId,
+            UserId = TestUserId,
+            TaskId = taskId,
+            TaskName = "Boundary Test",
+            ScheduledTime = exactlyNow,
+            IsDismissed = false,
+            CreatedAt = now
+        };
+
+        _mockTaskService
+            .Setup(s => s.CreateTaskWithReminderAsync(
+                TestUserId,
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                "Boundary Test",
+                exactlyNow))
+            .ReturnsAsync((createdTask, createdReminder));
+
         // Act
         var result = await _controller.ExecuteCommand(request);
 
         // Assert
-        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
-        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
-        errorResponse.Error.Code.Should().Be("INVALID_SCHEDULED_TIME");
+        var createdResult = result.Should().BeOfType<CreatedAtActionResult>().Subject;
+        createdResult.StatusCode.Should().Be(StatusCodes.Status201Created);
+        var responseDto = createdResult.Value.Should().BeOfType<TaskAndReminderDto>().Subject;
+        responseDto.Task.Name.Should().Be("Boundary Test");
     }
 
     [Fact]
