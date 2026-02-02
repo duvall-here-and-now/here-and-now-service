@@ -27,13 +27,34 @@ public static class TaskState
     public const string Deleted = "Deleted";
 
     /// <summary>
-    /// All valid task states
+    /// Recurring task instance is scheduled but not yet active (recurring tasks only)
+    /// </summary>
+    public const string Scheduled = "Scheduled";
+
+    /// <summary>
+    /// Recurring task instance was skipped (recurring tasks only)
+    /// </summary>
+    public const string Skipped = "Skipped";
+
+    /// <summary>
+    /// All valid task states (regular tasks)
     /// </summary>
     public static readonly string[] AllStates = { OnDeck, InProgress, Completed, Deleted };
 
     /// <summary>
-    /// Validates if the given state is a valid task state
+    /// All valid states for recurring task instances
+    /// </summary>
+    public static readonly string[] RecurringTaskStates = { Scheduled, OnDeck, InProgress, Completed, Skipped };
+
+    /// <summary>
+    /// Validates if the given state is a valid task state (regular tasks)
     /// </summary>
     public static bool IsValid(string? state) =>
         state is OnDeck or InProgress or Completed or Deleted;
+
+    /// <summary>
+    /// Validates if the given state is a valid recurring task state
+    /// </summary>
+    public static bool IsValidRecurringTaskState(string? state) =>
+        state is Scheduled or OnDeck or InProgress or Completed or Skipped;
 }
