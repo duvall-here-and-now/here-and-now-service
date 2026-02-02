@@ -126,6 +126,38 @@ public class RecurringTaskModelsTests
         result1.Should().NotBe(result2);
     }
 
+    [Fact]
+    public void GenerateId_WithLocalDateTime_ThrowsArgumentException()
+    {
+        // Arrange
+        var configId = "config-123";
+        var localDateTime = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Local);
+
+        // Act
+        var act = () => RecurringTaskStateOverrideDocument.GenerateId(configId, localDateTime);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("recurrenceDateAndTime")
+            .WithMessage("*must be UTC*");
+    }
+
+    [Fact]
+    public void GenerateId_WithUnspecifiedDateTime_ThrowsArgumentException()
+    {
+        // Arrange
+        var configId = "config-123";
+        var unspecifiedDateTime = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Unspecified);
+
+        // Act
+        var act = () => RecurringTaskStateOverrideDocument.GenerateId(configId, unspecifiedDateTime);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("recurrenceDateAndTime")
+            .WithMessage("*must be UTC*");
+    }
+
     #endregion
 
     #region RecurringTaskConfigDocument Default Values Tests

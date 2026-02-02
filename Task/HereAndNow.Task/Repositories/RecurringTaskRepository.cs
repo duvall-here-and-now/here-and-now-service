@@ -105,6 +105,11 @@ public class RecurringTaskRepository : IRecurringTaskRepository
         return response.Resource;
     }
 
+    /// <summary>
+    /// Maximum operations per Cosmos DB transactional batch (Cosmos DB limit is 100)
+    /// </summary>
+    private const int MaxBatchOperations = 100;
+
     /// <inheritdoc />
     public async Task DeleteConfigWithOverridesAsync(string userId, string configId)
     {
@@ -120,7 +125,38 @@ public class RecurringTaskRepository : IRecurringTaskRepository
         // Query all state overrides for this config
         var overrideIds = await GetStateOverrideIdsForConfigAsync(userId, configId);
 
-        // Create transactional batch with same partition key
+        // Check if we can fit everything in a single transactional batch (config + overrides <= 100)
+        var totalOperations = 1 + overrideIds.Count; // 1 for config delete
+
+        if (totalOperations <= MaxBatchOperations)
+        {
+            // Use single atomic transactional batch
+            await DeleteConfigWithOverridesBatchAsync(userId, configId, overrideIds);
+        }
+        else
+        {
+            // Too many overrides for single batch - use chunked deletion strategy
+            // Delete overrides first in batches, then delete config last
+            // This ensures orphaned overrides are cleaned up even if config delete fails
+            _logger.LogWarning(
+                "Config {ConfigId} has {OverrideCount} overrides, exceeding single batch limit. Using chunked deletion.",
+                configId, overrideIds.Count);
+
+            await DeleteOverridesInChunksAsync(userId, overrideIds);
+            await DeleteConfigOnlyAsync(userId, configId);
+        }
+
+        _logger.LogInformation(
+            "Deleted recurring task config {ConfigId} and {OverrideCount} overrides for user {UserId}",
+            configId, overrideIds.Count, userId);
+    }
+
+    /// <summary>
+    /// Deletes config and overrides in a single atomic transactional batch.
+    /// Only call when total operations &lt;= 100.
+    /// </summary>
+    private async Task DeleteConfigWithOverridesBatchAsync(string userId, string configId, List<string> overrideIds)
+    {
         var batch = _container.CreateTransactionalBatch(new PartitionKey(userId));
 
         // Add delete for the config
@@ -144,10 +180,58 @@ public class RecurringTaskRepository : IRecurringTaskRepository
             throw new InvalidOperationException(
                 $"Failed to delete recurring task config {configId} with overrides. Status: {batchResponse.StatusCode}");
         }
+    }
 
-        _logger.LogInformation(
-            "Deleted recurring task config {ConfigId} and {OverrideCount} overrides for user {UserId}",
-            configId, overrideIds.Count, userId);
+    /// <summary>
+    /// Deletes overrides in chunks of MaxBatchOperations using transactional batches.
+    /// Each chunk is atomic, but chunks are not atomic relative to each other.
+    /// </summary>
+    private async Task DeleteOverridesInChunksAsync(string userId, List<string> overrideIds)
+    {
+        var chunks = overrideIds.Chunk(MaxBatchOperations).ToList();
+
+        _logger.LogDebug("Deleting {OverrideCount} overrides in {ChunkCount} batches", overrideIds.Count, chunks.Count);
+
+        foreach (var chunk in chunks)
+        {
+            var batch = _container.CreateTransactionalBatch(new PartitionKey(userId));
+
+            foreach (var overrideId in chunk)
+            {
+                batch.DeleteItem(overrideId);
+            }
+
+            using var batchResponse = await batch.ExecuteAsync();
+
+            if (!batchResponse.IsSuccessStatusCode)
+            {
+                _logger.LogError(
+                    "Transactional batch delete for overrides failed with status {StatusCode}",
+                    batchResponse.StatusCode);
+
+                throw new InvalidOperationException(
+                    $"Failed to delete state overrides batch. Status: {batchResponse.StatusCode}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Deletes just the config document (used after overrides are already deleted)
+    /// </summary>
+    private async Task DeleteConfigOnlyAsync(string userId, string configId)
+    {
+        try
+        {
+            await _container.DeleteItemAsync<RecurringTaskConfigDocument>(
+                configId,
+                new PartitionKey(userId));
+        }
+        catch (CosmosException ex)
+        {
+            _logger.LogError(ex, "Failed to delete config {ConfigId} after overrides were deleted", configId);
+            throw new InvalidOperationException(
+                $"Failed to delete recurring task config {configId}. Overrides may have been partially deleted.", ex);
+        }
     }
 
     /// <summary>

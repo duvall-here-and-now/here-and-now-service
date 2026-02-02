@@ -55,10 +55,18 @@ public class RecurringTaskStateOverrideDocument
     /// Format: {configId}_{yyyy-MM-ddTHH:mm:ssZ}
     /// </summary>
     /// <param name="configId">The recurring task config ID</param>
-    /// <param name="recurrenceDateAndTime">The UTC recurrence date/time</param>
+    /// <param name="recurrenceDateAndTime">The UTC recurrence date/time (must have DateTimeKind.Utc)</param>
     /// <returns>The composite ID string</returns>
+    /// <exception cref="ArgumentException">Thrown if recurrenceDateAndTime is not UTC</exception>
     public static string GenerateId(string configId, DateTime recurrenceDateAndTime)
     {
+        if (recurrenceDateAndTime.Kind != DateTimeKind.Utc)
+        {
+            throw new ArgumentException(
+                $"DateTime must be UTC (Kind was {recurrenceDateAndTime.Kind})",
+                nameof(recurrenceDateAndTime));
+        }
+
         return $"{configId}_{recurrenceDateAndTime:yyyy-MM-ddTHH:mm:ssZ}";
     }
 }
