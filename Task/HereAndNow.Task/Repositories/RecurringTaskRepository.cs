@@ -55,6 +55,13 @@ public class RecurringTaskRepository : IRecurringTaskRepository
                 configId,
                 new PartitionKey(userId));
 
+            // Verify it's actually a RecurringTaskConfig document (not another type with same ID)
+            if (response.Resource.Type != "RecurringTaskConfig")
+            {
+                _logger.LogDebug("Document {ConfigId} is not a RecurringTaskConfig", configId);
+                return null;
+            }
+
             return response.Resource;
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
