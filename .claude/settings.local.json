@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(git checkout:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl:*)"
     ]
   },
   "outputStyle": "Learning"
