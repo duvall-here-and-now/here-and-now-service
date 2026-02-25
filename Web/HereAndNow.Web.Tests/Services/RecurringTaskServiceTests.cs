@@ -275,6 +275,82 @@ public class RecurringTaskServiceTests
 
     #endregion
 
+    #region ComputeInstances — Override Fallback (Defensive)
+
+    [Fact]
+    public void ComputeInstances_UnexpectedStoredState_InstanceIncludedWithStoredState()
+    {
+        // Arrange — OnDeck is a computed state that should never be persisted to Cosmos DB.
+        // If it appears in the override store (e.g., a data-migration artifact), the defensive
+        // fallback should pass it through rather than silently dropping the occurrence.
+        var config = CreateConfig();
+        var from = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.OnDeck) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, from, to, UtcNow);
+
+        // Assert — occurrence must not be silently dropped; state passed through as-is
+        result.Should().HaveCount(1);
+        result[0].RecurrenceDateAndTime.Should().Be(Feb15At9);
+        result[0].State.Should().Be(TaskState.OnDeck, "unexpected stored state is passed through as-is");
+    }
+
+    [Fact]
+    public void ComputeInstances_UnexpectedStoredState_Scheduled_InstanceIncludedWithStoredState()
+    {
+        // Arrange — Scheduled is another computed state never legitimately persisted.
+        // Same defensive contract: pass through, do not drop.
+        var config = CreateConfig();
+        var from = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.Scheduled) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, from, to, UtcNow);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].RecurrenceDateAndTime.Should().Be(Feb15At9);
+        result[0].State.Should().Be(TaskState.Scheduled, "unexpected stored state is passed through as-is");
+    }
+
+    [Fact]
+    public void ComputeInstances_UnexpectedStoredState_DoesNotConsumeActiveCandidate()
+    {
+        // Arrange — Critical contract: the fallback branch must NOT set activeCandidate.
+        // If it did, the next older occurrence would become Skipped instead of OnDeck.
+        //
+        // Occurrences: Feb 15 and Feb 14 (both past; utcNow = Feb 15 noon).
+        // Feb 15 has an unexpected OnDeck override (pass-through, no activeCandidate set).
+        // Feb 14 has no override — since activeCandidate is still null, it should become OnDeck.
+        var config = CreateConfig();
+        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
+        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.OnDeck) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, from, to, UtcNow);
+
+        // Assert — both instances are present
+        result.Should().HaveCount(2);
+        var feb15 = result.Single(r => r.RecurrenceDateAndTime == Feb15At9);
+        feb15.State.Should().Be(TaskState.OnDeck, "unexpected state passed through from override");
+
+        var feb14 = result.Single(r => r.RecurrenceDateAndTime == Feb14At9);
+        feb14.State.Should().Be(TaskState.OnDeck,
+            "fallback did not consume activeCandidate, so Feb 14 correctly becomes OnDeck");
+    }
+
+    #endregion
+
     #region ComputeInstances — Instance Properties (AC8, AC9)
 
     [Fact]

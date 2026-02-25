@@ -100,6 +100,19 @@ public class RecurringTaskService : IRecurringTaskService
                             configInstances.Add(new RecurringTaskInstance(config, occurrence, TaskState.Skipped));
                         }
                     }
+                    else
+                    {
+                        // Defensive fallback: unexpected stored state (e.g. data migration artifact or
+                        // a future state added without a corresponding branch here).
+                        // Pass through as-is to prevent silent data loss. In normal operation this
+                        // branch should never execute because only InProgress / Completed / Skipped
+                        // are ever written to Cosmos DB.
+                        _logger.LogWarning(
+                            "RecurringTaskService: unexpected stored override state '{State}' for key '{Key}'. " +
+                            "Passing through as-is.",
+                            storedState, key);
+                        configInstances.Add(new RecurringTaskInstance(config, occurrence, storedState));
+                    }
                 }
                 else if (occurrence > utcNow)
                 {
