@@ -51,6 +51,7 @@ if (!string.IsNullOrEmpty(cosmosConnectionString))
     });
     builder.Services.AddSingleton<ITaskRepository, TaskRepository>();
     builder.Services.AddSingleton<ITaskReminderRepository, TaskReminderRepository>();
+    builder.Services.AddSingleton<IRecurringTaskRepository, RecurringTaskRepository>();
     builder.Services.AddScoped<ITaskService, TaskService>();
     builder.Services.AddScoped<ITaskReminderService, TaskReminderService>();
 }
