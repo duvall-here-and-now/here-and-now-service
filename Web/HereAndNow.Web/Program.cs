@@ -54,6 +54,7 @@ if (!string.IsNullOrEmpty(cosmosConnectionString))
     builder.Services.AddSingleton<IRecurringTaskRepository, RecurringTaskRepository>();
     builder.Services.AddScoped<ITaskService, TaskService>();
     builder.Services.AddScoped<ITaskReminderService, TaskReminderService>();
+    builder.Services.AddScoped<IRecurringTaskService, RecurringTaskService>();
 }
 
 builder.Services.AddCors(options =>
