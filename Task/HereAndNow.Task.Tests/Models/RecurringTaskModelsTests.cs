@@ -1,7 +1,7 @@
 using FluentAssertions;
 using HereAndNowService.Models;
 
-namespace HereAndNow.Web.Tests.Models;
+namespace HereAndNowService.TaskTests.Models;
 
 public class RecurringTaskModelsTests
 {

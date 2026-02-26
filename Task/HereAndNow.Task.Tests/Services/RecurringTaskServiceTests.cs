@@ -5,7 +5,7 @@ using HereAndNowService.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
 
-namespace HereAndNow.Web.Tests.Services;
+namespace HereAndNowService.TaskTests.Services;
 
 public class RecurringTaskServiceTests
 {
