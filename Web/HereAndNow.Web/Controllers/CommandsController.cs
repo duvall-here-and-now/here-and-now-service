@@ -643,6 +643,11 @@ public class CommandsController : ControllerBase
                 userId, configId, command.Text, command.RecurrenceRule, command.StartDateAndTime);
             return StatusCode(StatusCodes.Status201Created, config);
         }
+        catch (RecurringTaskConfigAlreadyExistsException)
+        {
+            return Conflict(CreateErrorResponse("RECURRING_TASK_CONFIG_ALREADY_EXISTS",
+                $"Recurring task config with ID {configId} already exists"));
+        }
         catch (InvalidRecurrenceRuleException ex)
         {
             return BadRequest(CreateErrorResponse("INVALID_RECURRENCE_RULE", ex.Message));

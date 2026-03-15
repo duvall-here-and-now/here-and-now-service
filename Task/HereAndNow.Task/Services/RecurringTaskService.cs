@@ -1,9 +1,11 @@
+using System.Net;
 using HereAndNowService.Models;
 using HereAndNowService.Models.Exceptions;
 using HereAndNowService.Repositories;
 using Ical.Net;
 using Ical.Net.CalendarComponents;
 using Ical.Net.DataTypes;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 
 namespace HereAndNowService.Services;
@@ -155,7 +157,14 @@ public class RecurringTaskService : IRecurringTaskService
             CreatedAt = DateTime.UtcNow
         };
 
-        return await _repository.CreateConfigAsync(config);
+        try
+        {
+            return await _repository.CreateConfigAsync(config);
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        {
+            throw new RecurringTaskConfigAlreadyExistsException(id, ex);
+        }
     }
 
     /// <inheritdoc />

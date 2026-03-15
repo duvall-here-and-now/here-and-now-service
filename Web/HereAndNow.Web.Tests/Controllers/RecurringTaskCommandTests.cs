@@ -230,6 +230,26 @@ public class RecurringTaskCommandTests
         result.Rrule.Should().Be(ValidYearlyRrule);
     }
 
+    [Fact]
+    public async Task CreateConfigAsync_DuplicateId_ThrowsRecurringTaskConfigAlreadyExistsException()
+    {
+        // Arrange — simulate Cosmos DB 409 Conflict on duplicate document ID
+        var configId = Guid.NewGuid().ToString();
+
+        _mockRepo
+            .Setup(r => r.CreateConfigAsync(It.IsAny<RecurringTaskConfigDocument>()))
+            .ThrowsAsync(new Microsoft.Azure.Cosmos.CosmosException(
+                "Conflict", System.Net.HttpStatusCode.Conflict, 0, "", 0));
+
+        // Act
+        var act = () => _service.CreateConfigAsync(
+            TestUserId, configId, "Duplicate", ValidDailyRrule, TestStartDate);
+
+        // Assert
+        await act.Should().ThrowAsync<RecurringTaskConfigAlreadyExistsException>()
+            .Where(e => e.ConfigId == configId);
+    }
+
     #endregion
 
     #region UpdateConfigAsync Tests (AC: #5, #6, #8)

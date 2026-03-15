@@ -2093,6 +2093,41 @@ public class CommandsControllerTests
 
     #endregion
 
+    #region CreateRecurringTaskConfig Command Tests
+
+    [Fact]
+    public async Task CreateRecurringTaskConfig_WithExistingId_Returns409Conflict()
+    {
+        // Arrange
+        var configId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("CreateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Duplicate Config",
+            recurrenceRule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            startDateAndTime = DateTime.UtcNow
+        });
+
+        _mockRecurringTaskService
+            .Setup(s => s.CreateConfigAsync(
+                TestUserId, configId, "Duplicate Config",
+                "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+                It.IsAny<DateTime>()))
+            .ThrowsAsync(new RecurringTaskConfigAlreadyExistsException(configId));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var conflictResult = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflictResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        var errorResponse = conflictResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("RECURRING_TASK_CONFIG_ALREADY_EXISTS");
+        errorResponse.Error.Message.Should().Contain(configId);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static CommandRequest CreateCommandRequest(string command, object payload)
