@@ -18,6 +18,7 @@ public class CommandsControllerTests
 {
     private readonly Mock<ITaskService> _mockTaskService;
     private readonly Mock<ITaskReminderService> _mockReminderService;
+    private readonly Mock<IRecurringTaskService> _mockRecurringTaskService;
     private readonly Mock<ILogger<CommandsController>> _mockLogger;
     private readonly CommandsController _controller;
     private const string TestUserId = "auth0|test-user-123";
@@ -26,10 +27,12 @@ public class CommandsControllerTests
     {
         _mockTaskService = new Mock<ITaskService>();
         _mockReminderService = new Mock<ITaskReminderService>();
+        _mockRecurringTaskService = new Mock<IRecurringTaskService>();
         _mockLogger = new Mock<ILogger<CommandsController>>();
         _controller = new CommandsController(
             _mockTaskService.Object,
             _mockReminderService.Object,
+            _mockRecurringTaskService.Object,
             _mockLogger.Object);
 
         // Set up authenticated user

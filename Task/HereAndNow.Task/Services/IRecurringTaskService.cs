@@ -50,4 +50,47 @@ public interface IRecurringTaskService
         DateTime from,
         DateTime to,
         DateTime utcNow);
+
+    /// <summary>
+    /// Creates a new recurring task configuration after validating the RRULE.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <param name="id">Client-generated config ID.</param>
+    /// <param name="text">Display text for the recurring task.</param>
+    /// <param name="rrule">RRULE string without prefix — validated for supported frequencies.</param>
+    /// <param name="startDateAndTime">UTC start date/time for the recurrence pattern.</param>
+    /// <returns>The created config document.</returns>
+    /// <exception cref="HereAndNowService.Models.Exceptions.InvalidRecurrenceRuleException">
+    /// Thrown if the RRULE is malformed or uses an unsupported frequency (Secondly, Minutely).
+    /// </exception>
+    Task<RecurringTaskConfigDocument> CreateConfigAsync(
+        string userId, string id, string text, string rrule, DateTime startDateAndTime);
+
+    /// <summary>
+    /// Updates an existing recurring task configuration after validating the RRULE.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <param name="id">The config ID to update.</param>
+    /// <param name="text">Updated display text.</param>
+    /// <param name="rrule">Updated RRULE string — validated for supported frequencies.</param>
+    /// <param name="startDateAndTime">Updated UTC start date/time.</param>
+    /// <returns>The updated config document.</returns>
+    /// <exception cref="HereAndNowService.Models.Exceptions.InvalidRecurrenceRuleException">
+    /// Thrown if the RRULE is malformed or uses an unsupported frequency.
+    /// </exception>
+    /// <exception cref="HereAndNowService.Models.Exceptions.RecurringTaskConfigNotFoundException">
+    /// Thrown if no config with the given ID exists for the user.
+    /// </exception>
+    Task<RecurringTaskConfigDocument> UpdateConfigAsync(
+        string userId, string id, string text, string rrule, DateTime startDateAndTime);
+
+    /// <summary>
+    /// Deletes a recurring task configuration and all its state overrides atomically.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <param name="id">The config ID to delete.</param>
+    /// <exception cref="HereAndNowService.Models.Exceptions.RecurringTaskConfigNotFoundException">
+    /// Thrown if no config with the given ID exists for the user.
+    /// </exception>
+    Task DeleteConfigAsync(string userId, string id);
 }
