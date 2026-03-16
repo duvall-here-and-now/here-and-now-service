@@ -6,13 +6,13 @@ using HereAndNowService.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
 
-namespace HereAndNow.Web.Tests.Controllers;
+namespace HereAndNow.Web.Tests.Services;
 
 /// <summary>
 /// Tests for RecurringTaskService CRUD methods (Story 9.3).
 /// Tests service logic with mocked IRecurringTaskRepository.
 /// </summary>
-public class RecurringTaskCommandTests
+public class RecurringTaskServiceTests
 {
     private const string TestUserId = "auth0|test-user-123";
     private const string ValidDailyRrule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0";
@@ -29,7 +29,7 @@ public class RecurringTaskCommandTests
     private readonly Mock<IRecurringTaskRepository> _mockRepo;
     private readonly RecurringTaskService _service;
 
-    public RecurringTaskCommandTests()
+    public RecurringTaskServiceTests()
     {
         _mockRepo = new Mock<IRecurringTaskRepository>();
         var logger = Mock.Of<ILogger<RecurringTaskService>>();
