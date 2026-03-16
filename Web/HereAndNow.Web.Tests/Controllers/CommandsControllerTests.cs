@@ -2096,6 +2096,53 @@ public class CommandsControllerTests
     #region CreateRecurringTaskConfig Command Tests
 
     [Fact]
+    public async Task CreateRecurringTaskConfig_WithDefaultStartDateAndTime_Returns400()
+    {
+        // Arrange — omitted startDateAndTime deserializes as default(DateTime)
+        var configId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("CreateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Missing start date",
+            recurrenceRule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0"
+            // startDateAndTime intentionally omitted → default(DateTime)
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("startDateAndTime");
+    }
+
+    [Fact]
+    public async Task CreateRecurringTaskConfig_WithNonUtcStartDateAndTime_Returns400()
+    {
+        // Arrange — Local kind DateTime should be rejected
+        var configId = Guid.NewGuid().ToString();
+        var localDateTime = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Local);
+        var request = CreateCommandRequest("CreateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Non-UTC start date",
+            recurrenceRule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            startDateAndTime = localDateTime
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("UTC");
+    }
+
+    [Fact]
     public async Task CreateRecurringTaskConfig_WithExistingId_Returns409Conflict()
     {
         // Arrange

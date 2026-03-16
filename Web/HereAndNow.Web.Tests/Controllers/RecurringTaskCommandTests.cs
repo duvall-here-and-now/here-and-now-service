@@ -250,6 +250,22 @@ public class RecurringTaskCommandTests
             .Where(e => e.ConfigId == configId);
     }
 
+    [Fact]
+    public async Task CreateConfigAsync_NonUtcStartDateAndTime_ThrowsArgumentException()
+    {
+        // Arrange — Local kind DateTime should be rejected at the service layer
+        var configId = Guid.NewGuid().ToString();
+        var localDateTime = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Local);
+
+        // Act
+        var act = () => _service.CreateConfigAsync(
+            TestUserId, configId, "Test", ValidDailyRrule, localDateTime);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithParameterName("startDateAndTime");
+    }
+
     #endregion
 
     #region UpdateConfigAsync Tests (AC: #5, #6, #8)
@@ -317,6 +333,23 @@ public class RecurringTaskCommandTests
         // Assert
         await act.Should().ThrowAsync<RecurringTaskConfigNotFoundException>()
             .Where(e => e.ConfigId == configId);
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_NonUtcStartDateAndTime_ThrowsArgumentException()
+    {
+        // Arrange — Unspecified kind DateTime should be rejected at the service layer
+        var configId = Guid.NewGuid().ToString();
+        var unspecifiedDateTime = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Unspecified);
+
+        // Act
+        var act = () => _service.UpdateConfigAsync(
+            TestUserId, configId, "Test", ValidDailyRrule, unspecifiedDateTime);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithParameterName("startDateAndTime");
+        _mockRepo.Verify(r => r.GetConfigByIdAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]

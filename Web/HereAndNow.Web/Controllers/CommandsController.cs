@@ -635,6 +635,12 @@ public class CommandsController : ControllerBase
         if (string.IsNullOrWhiteSpace(command.RecurrenceRule))
             return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "recurrenceRule is required"));
 
+        if (command.StartDateAndTime == default)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "startDateAndTime is required"));
+
+        if (command.StartDateAndTime.Kind != DateTimeKind.Utc)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "startDateAndTime must be a UTC timestamp"));
+
         _logger.LogDebug("Creating recurring task config with ID {ConfigId} for user {UserId}", configId, userId);
 
         try
@@ -693,6 +699,12 @@ public class CommandsController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(command.RecurrenceRule))
             return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "recurrenceRule is required"));
+
+        if (command.StartDateAndTime == default)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "startDateAndTime is required"));
+
+        if (command.StartDateAndTime.Kind != DateTimeKind.Utc)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "startDateAndTime must be a UTC timestamp"));
 
         _logger.LogDebug("Updating recurring task config {ConfigId} for user {UserId}", configId, userId);
 

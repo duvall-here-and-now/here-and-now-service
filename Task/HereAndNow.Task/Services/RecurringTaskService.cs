@@ -145,6 +145,9 @@ public class RecurringTaskService : IRecurringTaskService
     public async Task<RecurringTaskConfigDocument> CreateConfigAsync(
         string userId, string id, string text, string rrule, DateTime startDateAndTime)
     {
+        if (startDateAndTime.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("startDateAndTime must be UTC", nameof(startDateAndTime));
+
         ValidateRrule(rrule);
 
         var config = new RecurringTaskConfigDocument
@@ -171,6 +174,9 @@ public class RecurringTaskService : IRecurringTaskService
     public async Task<RecurringTaskConfigDocument> UpdateConfigAsync(
         string userId, string id, string text, string rrule, DateTime startDateAndTime)
     {
+        if (startDateAndTime.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("startDateAndTime must be UTC", nameof(startDateAndTime));
+
         ValidateRrule(rrule);
 
         var existing = await _repository.GetConfigByIdAsync(userId, id);
