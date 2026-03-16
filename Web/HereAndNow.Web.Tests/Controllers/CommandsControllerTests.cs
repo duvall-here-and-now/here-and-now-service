@@ -2175,6 +2175,57 @@ public class CommandsControllerTests
 
     #endregion
 
+    #region UpdateRecurringTaskConfig Command Tests
+
+    [Fact]
+    public async Task UpdateRecurringTaskConfig_WithDefaultStartDateAndTime_Returns400()
+    {
+        // Arrange — omitted startDateAndTime deserializes as default(DateTime)
+        var configId = Guid.NewGuid().ToString();
+        var request = CreateCommandRequest("UpdateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Missing start date",
+            recurrenceRule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0"
+            // startDateAndTime intentionally omitted → default(DateTime)
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("startDateAndTime");
+    }
+
+    [Fact]
+    public async Task UpdateRecurringTaskConfig_WithNonUtcStartDateAndTime_Returns400()
+    {
+        // Arrange — Unspecified kind DateTime should be rejected
+        var configId = Guid.NewGuid().ToString();
+        var unspecifiedDateTime = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Unspecified);
+        var request = CreateCommandRequest("UpdateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Non-UTC start date",
+            recurrenceRule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            startDateAndTime = unspecifiedDateTime
+        });
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("UTC");
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static CommandRequest CreateCommandRequest(string command, object payload)
