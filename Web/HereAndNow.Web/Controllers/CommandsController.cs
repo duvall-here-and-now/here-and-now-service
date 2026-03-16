@@ -59,7 +59,7 @@ public class CommandsController : ControllerBase
     /// Executes a command to modify system state.
     /// </summary>
     /// <remarks>
-    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskState, UpdateTaskReminderScheduledTime, DismissTaskReminder
+    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskState, UpdateTaskReminderScheduledTime, DismissTaskReminder, CreateRecurringTaskConfig, UpdateRecurringTaskConfig, DeleteRecurringTaskConfig
     ///
     /// Request format for CreateTask:
     /// ```json
