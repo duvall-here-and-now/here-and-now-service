@@ -1,8 +1,11 @@
+using System.Net;
 using HereAndNowService.Models;
+using HereAndNowService.Models.Exceptions;
 using HereAndNowService.Repositories;
 using Ical.Net;
 using Ical.Net.CalendarComponents;
 using Ical.Net.DataTypes;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 
 namespace HereAndNowService.Services;
@@ -136,6 +139,90 @@ public class RecurringTaskService : IRecurringTaskService
         }
 
         return results;
+    }
+
+    /// <inheritdoc />
+    public async Task<RecurringTaskConfigDocument> CreateConfigAsync(
+        string userId, string id, string text, string rrule, DateTime startDateAndTime)
+    {
+        if (startDateAndTime.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("startDateAndTime must be UTC", nameof(startDateAndTime));
+
+        ValidateRrule(rrule);
+
+        var config = new RecurringTaskConfigDocument
+        {
+            Id = id,
+            UserId = userId,
+            Text = text,
+            Rrule = rrule,   // Store as-is, no RRULE: prefix, no re-serialization
+            StartDateAndTime = startDateAndTime,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        try
+        {
+            return await _repository.CreateConfigAsync(config);
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        {
+            throw new RecurringTaskConfigAlreadyExistsException(id, ex);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<RecurringTaskConfigDocument> UpdateConfigAsync(
+        string userId, string id, string text, string rrule, DateTime startDateAndTime)
+    {
+        if (startDateAndTime.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("startDateAndTime must be UTC", nameof(startDateAndTime));
+
+        ValidateRrule(rrule);
+
+        var existing = await _repository.GetConfigByIdAsync(userId, id);
+        if (existing == null)
+            throw new RecurringTaskConfigNotFoundException(id);
+
+        existing.Text = text;
+        existing.Rrule = rrule;
+        existing.StartDateAndTime = startDateAndTime;
+        // Do NOT update CreatedAt — it's the original creation timestamp
+        // Orphaned state overrides are accepted for MVP when RRULE changes
+
+        return await _repository.UpdateConfigAsync(existing);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteConfigAsync(string userId, string id)
+    {
+        await _repository.DeleteConfigWithOverridesAsync(userId, id);
+        // DeleteConfigWithOverridesAsync already throws RecurringTaskConfigNotFoundException
+        // if the config doesn't exist, and handles chunked batch deletion for >99 overrides
+    }
+
+    /// <summary>
+    /// Validates an RRULE string: parses it via Ical.Net and rejects SECONDLY/MINUTELY frequencies.
+    /// </summary>
+    private static void ValidateRrule(string rrule)
+    {
+        RecurrencePattern pattern;
+        try
+        {
+            pattern = new RecurrencePattern(rrule);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidRecurrenceRuleException(rrule,
+                $"Invalid recurrence rule format: {rrule}", ex);
+        }
+
+        if (pattern.Frequency == FrequencyType.Secondly ||
+            pattern.Frequency == FrequencyType.Minutely)
+        {
+            throw new InvalidRecurrenceRuleException(rrule,
+                $"Unsupported frequency: {pattern.Frequency}. " +
+                "Supported frequencies are: Hourly, Daily, Weekly, Monthly, Yearly");
+        }
     }
 
     /// <summary>

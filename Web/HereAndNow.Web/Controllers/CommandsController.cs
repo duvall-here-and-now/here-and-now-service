@@ -22,6 +22,9 @@ namespace HereAndNowService.Controllers;
 /// - UpdateTaskState: Change task state with automatic reminder dismissal (Unity) for Completed/Deleted
 /// - UpdateTaskReminderScheduledTime: Reschedule/snooze a reminder to a new time
 /// - DismissTaskReminder: Dismiss a reminder (idempotent operation)
+/// - CreateRecurringTaskConfig: Create a new recurring task configuration
+/// - UpdateRecurringTaskConfig: Update an existing recurring task configuration
+/// - DeleteRecurringTaskConfig: Delete a recurring task configuration and its state overrides
 /// </remarks>
 [ApiController]
 [Route("api/v1/[controller]")]
@@ -30,6 +33,7 @@ public class CommandsController : ControllerBase
 {
     private readonly ITaskService _taskService;
     private readonly ITaskReminderService _reminderService;
+    private readonly IRecurringTaskService _recurringTaskService;
     private readonly ILogger<CommandsController> _logger;
 
     /// <summary>
@@ -37,14 +41,17 @@ public class CommandsController : ControllerBase
     /// </summary>
     /// <param name="taskService">The task service for task-related operations</param>
     /// <param name="reminderService">The reminder service for reminder-related operations</param>
+    /// <param name="recurringTaskService">The recurring task service for recurring task config operations</param>
     /// <param name="logger">The logger instance</param>
     public CommandsController(
         ITaskService taskService,
         ITaskReminderService reminderService,
+        IRecurringTaskService recurringTaskService,
         ILogger<CommandsController> logger)
     {
         _taskService = taskService;
         _reminderService = reminderService;
+        _recurringTaskService = recurringTaskService;
         _logger = logger;
     }
 
@@ -52,7 +59,7 @@ public class CommandsController : ControllerBase
     /// Executes a command to modify system state.
     /// </summary>
     /// <remarks>
-    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskState, UpdateTaskReminderScheduledTime, DismissTaskReminder
+    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskState, UpdateTaskReminderScheduledTime, DismissTaskReminder, CreateRecurringTaskConfig, UpdateRecurringTaskConfig, DeleteRecurringTaskConfig
     ///
     /// Request format for CreateTask:
     /// ```json
@@ -138,6 +145,9 @@ public class CommandsController : ControllerBase
             "UpdateTaskState" => await HandleUpdateTaskStateAsync(request, userId),
             "UpdateTaskReminderScheduledTime" => await HandleUpdateTaskReminderScheduledTimeAsync(request, userId),
             "DismissTaskReminder" => await HandleDismissTaskReminderAsync(request, userId),
+            "CreateRecurringTaskConfig" => await HandleCreateRecurringTaskConfigAsync(request, userId),
+            "UpdateRecurringTaskConfig" => await HandleUpdateRecurringTaskConfigAsync(request, userId),
+            "DeleteRecurringTaskConfig" => await HandleDeleteRecurringTaskConfigAsync(request, userId),
             _ => BadRequest(CreateErrorResponse("UNKNOWN_COMMAND", $"Unknown command: {request.Command}"))
         };
     }
@@ -586,6 +596,184 @@ public class CommandsController : ControllerBase
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Invalid DismissTaskReminder request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the CreateRecurringTaskConfig command
+    /// </summary>
+    private async Task<IActionResult> HandleCreateRecurringTaskConfigAsync(CommandRequest request, string userId)
+    {
+        CreateRecurringTaskConfigCommand? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<CreateRecurringTaskConfigCommand>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize CreateRecurringTaskConfig payload");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR",
+                "Invalid payload format for CreateRecurringTaskConfig command"));
+        }
+
+        if (command == null)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR",
+                "Payload is required for CreateRecurringTaskConfig command"));
+
+        if (string.IsNullOrWhiteSpace(command.Id))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "id is required"));
+        if (!Guid.TryParse(command.Id, out var parsedGuid))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "id must be a valid GUID format"));
+        var configId = parsedGuid.ToString().ToLowerInvariant();
+
+        if (string.IsNullOrWhiteSpace(command.Text))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "text is required and cannot be empty"));
+
+        if (string.IsNullOrWhiteSpace(command.RecurrenceRule))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "recurrenceRule is required"));
+
+        if (command.StartDateAndTime == default)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "startDateAndTime is required"));
+
+        if (command.StartDateAndTime.Kind != DateTimeKind.Utc)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "startDateAndTime must be a UTC timestamp"));
+
+        _logger.LogDebug("Creating recurring task config with ID {ConfigId} for user {UserId}", configId, userId);
+
+        try
+        {
+            var config = await _recurringTaskService.CreateConfigAsync(
+                userId, configId, command.Text, command.RecurrenceRule, command.StartDateAndTime);
+            return StatusCode(StatusCodes.Status201Created, RecurringTaskConfigMapper.ToDto(config));
+        }
+        catch (RecurringTaskConfigAlreadyExistsException)
+        {
+            return Conflict(CreateErrorResponse("RECURRING_TASK_CONFIG_ALREADY_EXISTS",
+                $"Recurring task config with ID {configId} already exists"));
+        }
+        catch (InvalidRecurrenceRuleException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_RECURRENCE_RULE", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid CreateRecurringTaskConfig request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the UpdateRecurringTaskConfig command
+    /// </summary>
+    private async Task<IActionResult> HandleUpdateRecurringTaskConfigAsync(CommandRequest request, string userId)
+    {
+        UpdateRecurringTaskConfigCommand? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<UpdateRecurringTaskConfigCommand>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize UpdateRecurringTaskConfig payload");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR",
+                "Invalid payload format for UpdateRecurringTaskConfig command"));
+        }
+
+        if (command == null)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR",
+                "Payload is required for UpdateRecurringTaskConfig command"));
+
+        if (string.IsNullOrWhiteSpace(command.Id))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "id is required"));
+        if (!Guid.TryParse(command.Id, out var parsedGuid))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "id must be a valid GUID format"));
+        var configId = parsedGuid.ToString().ToLowerInvariant();
+
+        if (string.IsNullOrWhiteSpace(command.Text))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "text is required and cannot be empty"));
+
+        if (string.IsNullOrWhiteSpace(command.RecurrenceRule))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "recurrenceRule is required"));
+
+        if (command.StartDateAndTime == default)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "startDateAndTime is required"));
+
+        if (command.StartDateAndTime.Kind != DateTimeKind.Utc)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "startDateAndTime must be a UTC timestamp"));
+
+        _logger.LogDebug("Updating recurring task config {ConfigId} for user {UserId}", configId, userId);
+
+        try
+        {
+            var config = await _recurringTaskService.UpdateConfigAsync(
+                userId, configId, command.Text, command.RecurrenceRule, command.StartDateAndTime);
+            return Ok(RecurringTaskConfigMapper.ToDto(config));
+        }
+        catch (RecurringTaskConfigNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("RECURRING_TASK_CONFIG_NOT_FOUND",
+                $"Recurring task config with ID {configId} not found"));
+        }
+        catch (InvalidRecurrenceRuleException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_RECURRENCE_RULE", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid UpdateRecurringTaskConfig request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the DeleteRecurringTaskConfig command
+    /// </summary>
+    private async Task<IActionResult> HandleDeleteRecurringTaskConfigAsync(CommandRequest request, string userId)
+    {
+        DeleteRecurringTaskConfigCommand? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<DeleteRecurringTaskConfigCommand>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize DeleteRecurringTaskConfig payload");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR",
+                "Invalid payload format for DeleteRecurringTaskConfig command"));
+        }
+
+        if (command == null)
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR",
+                "Payload is required for DeleteRecurringTaskConfig command"));
+
+        if (string.IsNullOrWhiteSpace(command.Id))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "id is required"));
+        if (!Guid.TryParse(command.Id, out var parsedGuid))
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "id must be a valid GUID format"));
+        var configId = parsedGuid.ToString().ToLowerInvariant();
+
+        _logger.LogDebug("Deleting recurring task config {ConfigId} for user {UserId}", configId, userId);
+
+        try
+        {
+            await _recurringTaskService.DeleteConfigAsync(userId, configId);
+            return NoContent();
+        }
+        catch (RecurringTaskConfigNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("RECURRING_TASK_CONFIG_NOT_FOUND",
+                $"Recurring task config with ID {configId} not found"));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid DeleteRecurringTaskConfig request");
             return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
         }
     }
