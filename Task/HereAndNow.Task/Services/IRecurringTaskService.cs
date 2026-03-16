@@ -93,4 +93,64 @@ public interface IRecurringTaskService
     /// Thrown if no config with the given ID exists for the user.
     /// </exception>
     Task DeleteConfigAsync(string userId, string id);
+
+    /// <summary>
+    /// Starts a recurring task instance by creating/updating a state override to InProgress.
+    /// Valid from: OnDeck.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <param name="configId">The recurring task config ID.</param>
+    /// <param name="recurrenceDateAndTime">UTC date/time of the specific instance.</param>
+    /// <exception cref="HereAndNowService.Models.Exceptions.RecurringTaskConfigNotFoundException">
+    /// Thrown if no config exists for the given ID.
+    /// </exception>
+    /// <exception cref="HereAndNowService.Models.Exceptions.InvalidStateTransitionException">
+    /// Thrown if the instance is not in OnDeck state.
+    /// </exception>
+    Task StartRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime);
+
+    /// <summary>
+    /// Reverts a recurring task instance from InProgress back to OnDeck by deleting the state override.
+    /// Valid from: InProgress.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <param name="configId">The recurring task config ID.</param>
+    /// <param name="recurrenceDateAndTime">UTC date/time of the specific instance.</param>
+    /// <exception cref="HereAndNowService.Models.Exceptions.RecurringTaskConfigNotFoundException">
+    /// Thrown if no config exists for the given ID.
+    /// </exception>
+    /// <exception cref="HereAndNowService.Models.Exceptions.InvalidStateTransitionException">
+    /// Thrown if the instance is not in InProgress state.
+    /// </exception>
+    Task RevertRecurringTaskToOnDeckAsync(string userId, string configId, DateTime recurrenceDateAndTime);
+
+    /// <summary>
+    /// Completes a recurring task instance by creating/updating a state override to Completed.
+    /// Valid from: OnDeck, InProgress, or Skipped (if no newer active instance).
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <param name="configId">The recurring task config ID.</param>
+    /// <param name="recurrenceDateAndTime">UTC date/time of the specific instance.</param>
+    /// <exception cref="HereAndNowService.Models.Exceptions.RecurringTaskConfigNotFoundException">
+    /// Thrown if no config exists for the given ID.
+    /// </exception>
+    /// <exception cref="HereAndNowService.Models.Exceptions.InvalidStateTransitionException">
+    /// Thrown if the transition is not allowed from the current state, or blocked by a newer active instance.
+    /// </exception>
+    Task CompleteRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime);
+
+    /// <summary>
+    /// Skips a recurring task instance by creating/updating a state override to Skipped.
+    /// Valid from: OnDeck, InProgress, or Completed (if no newer active instance).
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <param name="configId">The recurring task config ID.</param>
+    /// <param name="recurrenceDateAndTime">UTC date/time of the specific instance.</param>
+    /// <exception cref="HereAndNowService.Models.Exceptions.RecurringTaskConfigNotFoundException">
+    /// Thrown if no config exists for the given ID.
+    /// </exception>
+    /// <exception cref="HereAndNowService.Models.Exceptions.InvalidStateTransitionException">
+    /// Thrown if the transition is not allowed from the current state, or blocked by a newer active instance.
+    /// </exception>
+    Task SkipRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime);
 }

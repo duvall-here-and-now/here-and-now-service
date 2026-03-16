@@ -25,6 +25,10 @@ namespace HereAndNowService.Controllers;
 /// - CreateRecurringTaskConfig: Create a new recurring task configuration
 /// - UpdateRecurringTaskConfig: Update an existing recurring task configuration
 /// - DeleteRecurringTaskConfig: Delete a recurring task configuration and its state overrides
+/// - StartRecurringTask: Start a recurring task instance (OnDeck → InProgress)
+/// - RevertRecurringTaskToOnDeck: Revert a recurring task instance (InProgress → OnDeck)
+/// - CompleteRecurringTask: Complete a recurring task instance
+/// - SkipRecurringTask: Skip a recurring task instance
 /// </remarks>
 [ApiController]
 [Route("api/v1/[controller]")]
@@ -148,6 +152,10 @@ public class CommandsController : ControllerBase
             "CreateRecurringTaskConfig" => await HandleCreateRecurringTaskConfigAsync(request, userId),
             "UpdateRecurringTaskConfig" => await HandleUpdateRecurringTaskConfigAsync(request, userId),
             "DeleteRecurringTaskConfig" => await HandleDeleteRecurringTaskConfigAsync(request, userId),
+            "StartRecurringTask" => await HandleStartRecurringTaskAsync(request, userId),
+            "RevertRecurringTaskToOnDeck" => await HandleRevertRecurringTaskToOnDeckAsync(request, userId),
+            "CompleteRecurringTask" => await HandleCompleteRecurringTaskAsync(request, userId),
+            "SkipRecurringTask" => await HandleSkipRecurringTaskAsync(request, userId),
             _ => BadRequest(CreateErrorResponse("UNKNOWN_COMMAND", $"Unknown command: {request.Command}"))
         };
     }
@@ -776,6 +784,165 @@ public class CommandsController : ControllerBase
             _logger.LogWarning(ex, "Invalid DeleteRecurringTaskConfig request");
             return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
         }
+    }
+
+    /// <summary>
+    /// Handles the StartRecurringTask command
+    /// </summary>
+    private async Task<IActionResult> HandleStartRecurringTaskAsync(CommandRequest request, string userId)
+    {
+        var command = DeserializeRecurringTaskStateCommand<StartRecurringTaskCommand>(request, "StartRecurringTask");
+        if (command == null) return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for StartRecurringTask command"));
+
+        var (configId, recurrenceDateAndTime, validationError) = ValidateRecurringTaskStatePayload(command.RecurringTaskConfigId, command.RecurrenceDateAndTime);
+        if (validationError != null) return validationError;
+
+        _logger.LogDebug("Starting recurring task instance config={ConfigId} at {RecurrenceDate} for user {UserId}",
+            configId, recurrenceDateAndTime, userId);
+
+        try
+        {
+            await _recurringTaskService.StartRecurringTaskAsync(userId, configId!, recurrenceDateAndTime);
+            return Ok();
+        }
+        catch (RecurringTaskConfigNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("RECURRING_TASK_CONFIG_NOT_FOUND",
+                $"Recurring task config with ID {configId} not found"));
+        }
+        catch (InvalidStateTransitionException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the RevertRecurringTaskToOnDeck command
+    /// </summary>
+    private async Task<IActionResult> HandleRevertRecurringTaskToOnDeckAsync(CommandRequest request, string userId)
+    {
+        var command = DeserializeRecurringTaskStateCommand<RevertRecurringTaskToOnDeckCommand>(request, "RevertRecurringTaskToOnDeck");
+        if (command == null) return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for RevertRecurringTaskToOnDeck command"));
+
+        var (configId, recurrenceDateAndTime, validationError) = ValidateRecurringTaskStatePayload(command.RecurringTaskConfigId, command.RecurrenceDateAndTime);
+        if (validationError != null) return validationError;
+
+        _logger.LogDebug("Reverting recurring task instance to OnDeck config={ConfigId} at {RecurrenceDate} for user {UserId}",
+            configId, recurrenceDateAndTime, userId);
+
+        try
+        {
+            await _recurringTaskService.RevertRecurringTaskToOnDeckAsync(userId, configId!, recurrenceDateAndTime);
+            return Ok();
+        }
+        catch (RecurringTaskConfigNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("RECURRING_TASK_CONFIG_NOT_FOUND",
+                $"Recurring task config with ID {configId} not found"));
+        }
+        catch (InvalidStateTransitionException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the CompleteRecurringTask command
+    /// </summary>
+    private async Task<IActionResult> HandleCompleteRecurringTaskAsync(CommandRequest request, string userId)
+    {
+        var command = DeserializeRecurringTaskStateCommand<CompleteRecurringTaskCommand>(request, "CompleteRecurringTask");
+        if (command == null) return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for CompleteRecurringTask command"));
+
+        var (configId, recurrenceDateAndTime, validationError) = ValidateRecurringTaskStatePayload(command.RecurringTaskConfigId, command.RecurrenceDateAndTime);
+        if (validationError != null) return validationError;
+
+        _logger.LogDebug("Completing recurring task instance config={ConfigId} at {RecurrenceDate} for user {UserId}",
+            configId, recurrenceDateAndTime, userId);
+
+        try
+        {
+            await _recurringTaskService.CompleteRecurringTaskAsync(userId, configId!, recurrenceDateAndTime);
+            return Ok();
+        }
+        catch (RecurringTaskConfigNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("RECURRING_TASK_CONFIG_NOT_FOUND",
+                $"Recurring task config with ID {configId} not found"));
+        }
+        catch (InvalidStateTransitionException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Handles the SkipRecurringTask command
+    /// </summary>
+    private async Task<IActionResult> HandleSkipRecurringTaskAsync(CommandRequest request, string userId)
+    {
+        var command = DeserializeRecurringTaskStateCommand<SkipRecurringTaskCommand>(request, "SkipRecurringTask");
+        if (command == null) return BadRequest(CreateErrorResponse("VALIDATION_ERROR", "Invalid payload format for SkipRecurringTask command"));
+
+        var (configId, recurrenceDateAndTime, validationError) = ValidateRecurringTaskStatePayload(command.RecurringTaskConfigId, command.RecurrenceDateAndTime);
+        if (validationError != null) return validationError;
+
+        _logger.LogDebug("Skipping recurring task instance config={ConfigId} at {RecurrenceDate} for user {UserId}",
+            configId, recurrenceDateAndTime, userId);
+
+        try
+        {
+            await _recurringTaskService.SkipRecurringTaskAsync(userId, configId!, recurrenceDateAndTime);
+            return Ok();
+        }
+        catch (RecurringTaskConfigNotFoundException)
+        {
+            return NotFound(CreateErrorResponse("RECURRING_TASK_CONFIG_NOT_FOUND",
+                $"Recurring task config with ID {configId} not found"));
+        }
+        catch (InvalidStateTransitionException ex)
+        {
+            return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Deserializes a recurring task state command payload
+    /// </summary>
+    private T? DeserializeRecurringTaskStateCommand<T>(CommandRequest request, string commandName) where T : class
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(
+                request.Payload.GetRawText(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize {Command} payload", commandName);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Validates and normalizes the common payload fields for recurring task state commands.
+    /// Returns the normalized configId, recurrenceDateAndTime, and any validation error.
+    /// </summary>
+    private (string? configId, DateTime recurrenceDateAndTime, IActionResult? error) ValidateRecurringTaskStatePayload(
+        string? recurringTaskConfigId, DateTime recurrenceDateAndTime)
+    {
+        if (string.IsNullOrWhiteSpace(recurringTaskConfigId))
+            return (null, default, BadRequest(CreateErrorResponse("VALIDATION_ERROR", "recurringTaskConfigId is required")));
+
+        if (!Guid.TryParse(recurringTaskConfigId, out var parsedGuid))
+            return (null, default, BadRequest(CreateErrorResponse("VALIDATION_ERROR", "recurringTaskConfigId must be a valid GUID format")));
+
+        var configId = parsedGuid.ToString().ToLowerInvariant();
+
+        if (recurrenceDateAndTime == default)
+            return (configId, default, BadRequest(CreateErrorResponse("VALIDATION_ERROR", "recurrenceDateAndTime is required")));
+
+        return (configId, recurrenceDateAndTime, null);
     }
 
     /// <summary>
