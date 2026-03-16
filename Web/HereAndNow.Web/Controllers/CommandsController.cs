@@ -647,7 +647,7 @@ public class CommandsController : ControllerBase
         {
             var config = await _recurringTaskService.CreateConfigAsync(
                 userId, configId, command.Text, command.RecurrenceRule, command.StartDateAndTime);
-            return StatusCode(StatusCodes.Status201Created, config);
+            return StatusCode(StatusCodes.Status201Created, RecurringTaskConfigMapper.ToDto(config));
         }
         catch (RecurringTaskConfigAlreadyExistsException)
         {
@@ -712,7 +712,7 @@ public class CommandsController : ControllerBase
         {
             var config = await _recurringTaskService.UpdateConfigAsync(
                 userId, configId, command.Text, command.RecurrenceRule, command.StartDateAndTime);
-            return Ok(config);
+            return Ok(RecurringTaskConfigMapper.ToDto(config));
         }
         catch (RecurringTaskConfigNotFoundException)
         {

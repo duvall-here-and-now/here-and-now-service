@@ -4,6 +4,7 @@ using FluentAssertions;
 using HereAndNowService.Commands;
 using HereAndNowService.Controllers;
 using HereAndNowService.DTOs;
+using HereAndNowService.Mappers;
 using HereAndNowService.Models;
 using HereAndNowService.Models.Exceptions;
 using HereAndNowService.Services;
@@ -2171,6 +2172,162 @@ public class CommandsControllerTests
         var errorResponse = conflictResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
         errorResponse.Error.Code.Should().Be("RECURRING_TASK_CONFIG_ALREADY_EXISTS");
         errorResponse.Error.Message.Should().Contain(configId);
+    }
+
+    [Fact]
+    public async Task CreateRecurringTaskConfig_Success_ReturnsDtoWithoutInternalFields()
+    {
+        // Arrange — verify the response is a RecurringTaskConfigDto, not the raw document
+        var configId = Guid.NewGuid().ToString();
+        var startDate = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Utc);
+        var request = CreateCommandRequest("CreateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Daily standup",
+            recurrenceRule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            startDateAndTime = startDate
+        });
+
+        var document = new RecurringTaskConfigDocument
+        {
+            Id = configId,
+            Type = "RecurringTaskConfig",
+            UserId = TestUserId,
+            Text = "Daily standup",
+            Rrule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            StartDateAndTime = startDate,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _mockRecurringTaskService
+            .Setup(s => s.CreateConfigAsync(
+                TestUserId, configId, "Daily standup",
+                "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+                It.IsAny<DateTime>()))
+            .ReturnsAsync(document);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert — response is DTO (no UserId, no Type)
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status201Created);
+        var dto = objectResult.Value.Should().BeOfType<RecurringTaskConfigDto>().Subject;
+        dto.Id.Should().Be(configId);
+        dto.Text.Should().Be("Daily standup");
+        dto.Rrule.Should().Be("FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0");
+    }
+
+    [Fact]
+    public async Task UpdateRecurringTaskConfig_Success_ReturnsDtoWithoutInternalFields()
+    {
+        // Arrange — verify the response is a RecurringTaskConfigDto, not the raw document
+        var configId = Guid.NewGuid().ToString();
+        var startDate = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Utc);
+        var request = CreateCommandRequest("UpdateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Updated standup",
+            recurrenceRule = "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+            startDateAndTime = startDate
+        });
+
+        var document = new RecurringTaskConfigDocument
+        {
+            Id = configId,
+            Type = "RecurringTaskConfig",
+            UserId = TestUserId,
+            Text = "Updated standup",
+            Rrule = "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+            StartDateAndTime = startDate,
+            CreatedAt = DateTime.UtcNow.AddDays(-7)
+        };
+
+        _mockRecurringTaskService
+            .Setup(s => s.UpdateConfigAsync(
+                TestUserId, configId, "Updated standup",
+                "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+                It.IsAny<DateTime>()))
+            .ReturnsAsync(document);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert — response is DTO (no UserId, no Type)
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<RecurringTaskConfigDto>().Subject;
+        dto.Id.Should().Be(configId);
+        dto.Text.Should().Be("Updated standup");
+        dto.Rrule.Should().Be("FREQ=WEEKLY;BYDAY=MO,WE,FR");
+    }
+
+    #endregion
+
+    #region RecurringTaskConfigMapper Tests
+
+    [Fact]
+    public void RecurringTaskConfigMapper_ToDto_MapsAllPublicFields()
+    {
+        // Arrange
+        var document = new RecurringTaskConfigDocument
+        {
+            Id = "config-123",
+            Type = "RecurringTaskConfig",
+            UserId = "user-456",
+            Text = "Daily standup",
+            Rrule = "FREQ=DAILY;BYHOUR=9",
+            StartDateAndTime = new DateTime(2026, 3, 1, 9, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 2, 15, 10, 0, 0, DateTimeKind.Utc)
+        };
+
+        // Act
+        var dto = RecurringTaskConfigMapper.ToDto(document);
+
+        // Assert
+        dto.Id.Should().Be("config-123");
+        dto.Text.Should().Be("Daily standup");
+        dto.Rrule.Should().Be("FREQ=DAILY;BYHOUR=9");
+        dto.StartDateAndTime.Should().Be(new DateTime(2026, 3, 1, 9, 0, 0, DateTimeKind.Utc));
+        dto.CreatedAt.Should().Be(new DateTime(2026, 2, 15, 10, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void RecurringTaskConfigMapper_ToDto_DoesNotExposeInternalFields()
+    {
+        // Arrange — verify the DTO type has no UserId or Type properties
+        var dtoProperties = typeof(RecurringTaskConfigDto).GetProperties()
+            .Select(p => p.Name)
+            .ToList();
+
+        // Assert — internal fields must NOT be in the DTO
+        dtoProperties.Should().NotContain("UserId");
+        dtoProperties.Should().NotContain("Type");
+
+        // Assert — public API fields must be present
+        dtoProperties.Should().Contain("Id");
+        dtoProperties.Should().Contain("Text");
+        dtoProperties.Should().Contain("Rrule");
+        dtoProperties.Should().Contain("StartDateAndTime");
+        dtoProperties.Should().Contain("CreatedAt");
+    }
+
+    [Fact]
+    public void RecurringTaskConfigMapper_ToDtoList_MapsCollection()
+    {
+        // Arrange
+        var documents = new[]
+        {
+            new RecurringTaskConfigDocument { Id = "1", Text = "First", Rrule = "FREQ=DAILY", UserId = "u1", Type = "RecurringTaskConfig" },
+            new RecurringTaskConfigDocument { Id = "2", Text = "Second", Rrule = "FREQ=WEEKLY", UserId = "u1", Type = "RecurringTaskConfig" }
+        };
+
+        // Act
+        var dtos = RecurringTaskConfigMapper.ToDtoList(documents).ToList();
+
+        // Assert
+        dtos.Should().HaveCount(2);
+        dtos[0].Id.Should().Be("1");
+        dtos[1].Id.Should().Be("2");
     }
 
     #endregion
