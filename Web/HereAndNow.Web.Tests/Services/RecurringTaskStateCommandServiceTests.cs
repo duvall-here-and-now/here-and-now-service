@@ -17,16 +17,19 @@ public class RecurringTaskStateCommandServiceTests
     private const string TestUserId = "auth0|test-user-123";
     private const string ValidDailyRrule = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0";
 
-    private static readonly DateTime UtcNow = new DateTime(2026, 3, 15, 12, 0, 0, DateTimeKind.Utc);
+    // Use relative dates so tests remain valid regardless of when they run.
+    // ReferenceDate is "today at noon UTC" — all other dates are relative to it.
+    private static readonly DateTime ReferenceDate = DateTime.UtcNow.Date.AddHours(12);
 
-    // Past occurrence = OnDeck (most recent past, no override)
-    private static readonly DateTime PastOccurrence = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Utc);
-    // Older past occurrence = would be Skipped if there's a more recent active
-    private static readonly DateTime OlderPastOccurrence = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc);
-    // Future occurrence = Scheduled
-    private static readonly DateTime FutureOccurrence = new DateTime(2026, 3, 16, 9, 0, 0, DateTimeKind.Utc);
+    // Past occurrence = OnDeck (most recent past, no override) — 3 hours before reference
+    private static readonly DateTime PastOccurrence = ReferenceDate.AddHours(-3);
+    // Older past occurrence = would be Skipped if there's a more recent active — 1 day before reference
+    private static readonly DateTime OlderPastOccurrence = ReferenceDate.AddDays(-1).AddHours(-3);
+    // Future occurrence = Scheduled — 1 day after reference
+    private static readonly DateTime FutureOccurrence = ReferenceDate.AddDays(1).AddHours(-3);
 
-    private static readonly DateTime ConfigStartDate = new DateTime(2026, 3, 1, 9, 0, 0, DateTimeKind.Utc);
+    // Config start date = well before all occurrences — 30 days before reference
+    private static readonly DateTime ConfigStartDate = ReferenceDate.AddDays(-30);
 
     private readonly Mock<IRecurringTaskRepository> _mockRepo;
     private readonly RecurringTaskService _service;
