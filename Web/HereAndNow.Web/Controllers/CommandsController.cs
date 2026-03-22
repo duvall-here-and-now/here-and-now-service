@@ -814,6 +814,11 @@ public class CommandsController : ControllerBase
         {
             return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
         }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid StartRecurringTask request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
     }
 
     /// <summary>
@@ -843,6 +848,11 @@ public class CommandsController : ControllerBase
         catch (InvalidStateTransitionException ex)
         {
             return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid RevertRecurringTaskToOnDeck request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
         }
     }
 
@@ -874,6 +884,11 @@ public class CommandsController : ControllerBase
         {
             return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
         }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid CompleteRecurringTask request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
+        }
     }
 
     /// <summary>
@@ -903,6 +918,11 @@ public class CommandsController : ControllerBase
         catch (InvalidStateTransitionException ex)
         {
             return BadRequest(CreateErrorResponse("INVALID_STATE_TRANSITION", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid SkipRecurringTask request");
+            return BadRequest(CreateErrorResponse("VALIDATION_ERROR", ex.Message));
         }
     }
 

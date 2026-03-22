@@ -2263,6 +2263,118 @@ public class CommandsControllerTests
 
     #endregion
 
+    #region Recurring Task State Command ArgumentException Tests
+
+    [Fact]
+    public async Task StartRecurringTask_ServiceThrowsArgumentException_Returns400WithValidationError()
+    {
+        // Arrange
+        var configId = Guid.NewGuid().ToString();
+        var recurrenceDate = DateTime.UtcNow;
+        var request = CreateCommandRequest("StartRecurringTask", new
+        {
+            recurringTaskConfigId = configId,
+            recurrenceDateAndTime = recurrenceDate
+        });
+
+        _mockRecurringTaskService
+            .Setup(s => s.StartRecurringTaskAsync(TestUserId, configId, It.IsAny<DateTime>()))
+            .ThrowsAsync(new ArgumentException("recurrenceDateAndTime must be UTC", "recurrenceDateAndTime"));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("UTC");
+    }
+
+    [Fact]
+    public async Task RevertRecurringTaskToOnDeck_ServiceThrowsArgumentException_Returns400WithValidationError()
+    {
+        // Arrange
+        var configId = Guid.NewGuid().ToString();
+        var recurrenceDate = DateTime.UtcNow;
+        var request = CreateCommandRequest("RevertRecurringTaskToOnDeck", new
+        {
+            recurringTaskConfigId = configId,
+            recurrenceDateAndTime = recurrenceDate
+        });
+
+        _mockRecurringTaskService
+            .Setup(s => s.RevertRecurringTaskToOnDeckAsync(TestUserId, configId, It.IsAny<DateTime>()))
+            .ThrowsAsync(new ArgumentException("recurrenceDateAndTime must be UTC", "recurrenceDateAndTime"));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("UTC");
+    }
+
+    [Fact]
+    public async Task CompleteRecurringTask_ServiceThrowsArgumentException_Returns400WithValidationError()
+    {
+        // Arrange
+        var configId = Guid.NewGuid().ToString();
+        var recurrenceDate = DateTime.UtcNow;
+        var request = CreateCommandRequest("CompleteRecurringTask", new
+        {
+            recurringTaskConfigId = configId,
+            recurrenceDateAndTime = recurrenceDate
+        });
+
+        _mockRecurringTaskService
+            .Setup(s => s.CompleteRecurringTaskAsync(TestUserId, configId, It.IsAny<DateTime>()))
+            .ThrowsAsync(new ArgumentException("recurrenceDateAndTime must be UTC", "recurrenceDateAndTime"));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("UTC");
+    }
+
+    [Fact]
+    public async Task SkipRecurringTask_ServiceThrowsArgumentException_Returns400WithValidationError()
+    {
+        // Arrange
+        var configId = Guid.NewGuid().ToString();
+        var recurrenceDate = DateTime.UtcNow;
+        var request = CreateCommandRequest("SkipRecurringTask", new
+        {
+            recurringTaskConfigId = configId,
+            recurrenceDateAndTime = recurrenceDate
+        });
+
+        _mockRecurringTaskService
+            .Setup(s => s.SkipRecurringTaskAsync(TestUserId, configId, It.IsAny<DateTime>()))
+            .ThrowsAsync(new ArgumentException("recurrenceDateAndTime must be UTC", "recurrenceDateAndTime"));
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        var badRequestResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("UTC");
+    }
+
+    #endregion
+
     #region RecurringTaskConfigMapper Tests
 
     [Fact]
