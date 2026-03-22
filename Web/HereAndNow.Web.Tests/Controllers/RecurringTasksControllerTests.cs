@@ -144,6 +144,39 @@ public class RecurringTasksControllerTests
     }
 
     [Fact]
+    public async Task GetInstances_ReversedDateRange_Returns400ValidationError()
+    {
+        // Arrange — from is AFTER to
+        var from = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+        var to = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        // Act
+        var result = await _controller.GetInstances(from, to);
+
+        // Assert
+        var badRequestResult = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequestResult.StatusCode.Should().Be(400);
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+        errorResponse.Error.Message.Should().Contain("before");
+    }
+
+    [Fact]
+    public async Task GetInstances_EqualFromAndTo_Returns400ValidationError()
+    {
+        // Arrange — from == to (zero-width range)
+        var date = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+
+        // Act
+        var result = await _controller.GetInstances(date, date);
+
+        // Assert
+        var badRequestResult = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var errorResponse = badRequestResult.Value.Should().BeOfType<ErrorResponseDto>().Subject;
+        errorResponse.Error.Code.Should().Be("VALIDATION_ERROR");
+    }
+
+    [Fact]
     public async Task GetInstances_EmptyResult_Returns200WithEmptyArray()
     {
         // Arrange

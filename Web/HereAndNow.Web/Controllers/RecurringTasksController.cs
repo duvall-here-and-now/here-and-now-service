@@ -63,6 +63,16 @@ public class RecurringTasksController : ControllerBase
         var fromUtc = DateTime.SpecifyKind(from.Value, DateTimeKind.Utc);
         var toUtc = DateTime.SpecifyKind(to.Value, DateTimeKind.Utc);
 
+        if (fromUtc >= toUtc)
+        {
+            _logger.LogWarning(
+                "Invalid date range: from ({From}) must be before to ({To}), user={UserId}",
+                fromUtc, toUtc, userId);
+            return BadRequest(CreateErrorResponse(
+                "VALIDATION_ERROR",
+                "'from' must be before 'to'"));
+        }
+
         _logger.LogInformation(
             "Getting computed recurring task instances for user {UserId}: from={From}, to={To}",
             userId, fromUtc, toUtc);
