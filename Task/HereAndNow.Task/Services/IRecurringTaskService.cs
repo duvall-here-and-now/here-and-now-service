@@ -10,6 +10,24 @@ namespace HereAndNowService.Services;
 public interface IRecurringTaskService
 {
     /// <summary>
+    /// Gets all recurring task configurations for a user.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <returns>All configs for the user.</returns>
+    Task<IReadOnlyList<RecurringTaskConfigDocument>> GetAllConfigsAsync(string userId);
+
+    /// <summary>
+    /// Gets a specific recurring task configuration by ID within user partition.
+    /// </summary>
+    /// <param name="userId">The user ID (partition key).</param>
+    /// <param name="configId">The configuration ID.</param>
+    /// <returns>The configuration document.</returns>
+    /// <exception cref="HereAndNowService.Models.Exceptions.RecurringTaskConfigNotFoundException">
+    /// Thrown if no config with the given ID exists for the user.
+    /// </exception>
+    Task<RecurringTaskConfigDocument> GetConfigByIdAsync(string userId, string configId);
+
+    /// <summary>
     /// Fetches all configs and in-range state overrides from the repository,
     /// then computes instances in memory using <see cref="ComputeInstances"/>.
     /// Enforces a 365-day date range cap (NFR43).
