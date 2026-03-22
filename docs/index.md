@@ -2,44 +2,49 @@
 
 **Type:** Monolith Backend API
 **Primary Language:** C# (.NET 8.0)
-**Architecture:** Clean Architecture (3-Layer) + Command Pattern
-**Last Updated:** 2026-01-21
+**Architecture:** Clean Architecture (3-Layer) + Command Pattern + Unity Pattern + Computed Instance Model
+**Last Updated:** 2026-03-19
 
 ## Project Overview
 
-Here and Now Service is an ASP.NET Core 8.0 REST API for task management with reminders. The service provides task and reminder management through a **Command Pattern** API with Auth0 JWT authentication and Azure Cosmos DB persistence.
+Here and Now Service is an ASP.NET Core 8.0 REST API for task management with reminders and recurring tasks. The service provides task, reminder, and recurring task management through a **Command Pattern** API with Auth0 JWT authentication and Azure Cosmos DB persistence.
 
-> **v1.3.0 Update:** The API has evolved to use a **Command Pattern** for all mutations. Commands provide explicit intent, client-generated IDs for optimistic UI, and atomic operations.
->
-> **v1.3.1 Update:** `UpdateTaskReminderScheduledTime` no longer validates future time, supporting mobile offline sync scenarios.
+> **v2.0 Update:** Added **Recurring Tasks** — RRULE-based recurrence patterns (RFC 5545/iCal) with computed instances, state overrides, and one-active-at-a-time constraint. 7 new commands, 2 new document types, and a computed instance model.
 
 ## Quick Reference
 
-- **Tech Stack:** ASP.NET Core 8.0, Azure Cosmos DB, Auth0 JWT, Swagger
+- **Tech Stack:** ASP.NET Core 8.0, Azure Cosmos DB, Auth0 JWT, Ical.Net 5.2.0, Swagger
 - **Entry Point:** `Web/HereAndNow.Web/Program.cs`
-- **Architecture Pattern:** Clean Architecture + Command Pattern
-- **Data Storage:** Azure Cosmos DB (NoSQL with `/userId` partition key)
+- **Architecture Pattern:** Clean Architecture + Command Pattern + Unity Pattern
+- **Data Storage:** Azure Cosmos DB (NoSQL with `/userId` partition key, 4 document types)
 - **Deployment:** Azure Web Apps via GitHub Actions
 
 ### API Overview
 
 | Controller | Endpoints | Purpose |
 |------------|-----------|---------|
-| **Commands** | 1 (6 commands) | All mutations - CreateTask, UpdateTaskState, etc. |
+| **Commands** | 1 (13 commands) | All mutations — tasks, reminders, recurring tasks |
 | Messages | 3 | Public/protected/admin demo endpoints |
 | Tasks | 4 | Task queries + legacy complete |
 | Reminders | 4 | Reminder queries + legacy endpoints |
 
-### Available Commands
+### All 13 Commands
 
 | Command | Description |
 |---------|-------------|
 | `CreateTask` | Create task with client-generated ID |
 | `CreateTaskAndTaskReminder` | Atomic task+reminder creation |
-| `UpdateTaskName` | Update name (syncs to reminder) |
-| `UpdateTaskState` | State machine with Unity |
+| `UpdateTaskName` | Update name (syncs to reminder via Unity) |
+| `UpdateTaskState` | State machine with Unity for Complete/Delete |
 | `UpdateTaskReminderScheduledTime` | Reschedule reminder |
 | `DismissTaskReminder` | Dismiss reminder (idempotent) |
+| `CreateRecurringTaskConfig` | Create recurrence pattern (RRULE validated) |
+| `UpdateRecurringTaskConfig` | Update recurrence pattern |
+| `DeleteRecurringTaskConfig` | Cascade delete config + all overrides |
+| `StartRecurringTask` | OnDeck → InProgress |
+| `RevertRecurringTaskToOnDeck` | InProgress → OnDeck |
+| `CompleteRecurringTask` | Complete instance (idempotent) |
+| `SkipRecurringTask` | Skip instance (idempotent) |
 
 ### Key Commands
 
@@ -57,7 +62,7 @@ Here and Now Service is an ASP.NET Core 8.0 REST API for task management with re
 | CLIENT_ORIGIN_URL | Yes | CORS origins (comma-separated) |
 | AUTH0_DOMAIN | Yes | Auth0 tenant domain |
 | AUTH0_AUDIENCE | Yes | Auth0 API identifier |
-| COSMOS_CONNECTION_STRING | No* | CosmosDB connection (required for Task features) |
+| COSMOS_CONNECTION_STRING | No* | CosmosDB connection (required for Task/Reminder/Recurring features) |
 | COSMOS_DATABASE_NAME | No | Database name (default: HereAndNow) |
 | COSMOS_CONTAINER_NAME | No | Container name (default: Tasks) |
 
@@ -65,19 +70,19 @@ Here and Now Service is an ASP.NET Core 8.0 REST API for task management with re
 
 ### Core Documentation
 
-- [Project Overview](./project-overview.md) - Executive summary and high-level architecture
-- [Source Tree Analysis](./source-tree-analysis.md) - Annotated directory structure
+- [Project Overview](./project-overview.md) - Executive summary, tech stack, architecture summary
+- [Source Tree Analysis](./source-tree-analysis.md) - Annotated directory structure with assembly dependencies
 
 ### Technical Documentation
 
-- [Architecture](./architecture.md) - Detailed technical architecture, Unity pattern, CosmosDB design
-- [API Contracts](./api-contracts.md) - Complete API documentation with Commands and legacy endpoints
-- [Data Models](./data-models.md) - Domain models, Commands, DTOs, exceptions
+- [Architecture](./architecture.md) - Assembly architecture, command pattern catalog (13 commands), Unity pattern, recurring task computation, state machines, Cosmos DB design
+- [API Contracts](./api-contracts.md) - Complete API documentation with all 13 commands, query endpoints, error codes, DTO reference
+- [Data Models](./data-models.md) - 4 document types, computed model, state constants, 12 domain exceptions, service layer, repository layer
 
 ### Operational Documentation
 
-- [Development Guide](./development-guide.md) - Local setup, CosmosDB emulator, testing, coding conventions
-- [Deployment Guide](./deployment-guide.md) - CI/CD pipeline, Azure deployment, CosmosDB configuration
+- [Development Guide](./development-guide.md) - Local setup, testing, coding conventions, adding new commands/features
+- [Deployment Guide](./deployment-guide.md) - CI/CD pipeline, Azure deployment, monitoring, troubleshooting
 
 ## Existing Documentation (Outside docs/)
 
@@ -127,6 +132,23 @@ dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj
 dotnet test
 ```
 
+### Example: Create a Recurring Task
+
+```bash
+curl -X POST http://localhost:6060/api/v1/commands \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "CreateRecurringTaskConfig",
+    "payload": {
+      "id": "770e8400-e29b-41d4-a716-446655440002",
+      "text": "Daily standup",
+      "recurrenceRule": "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+      "startDateAndTime": "2026-01-01T09:00:00Z"
+    }
+  }'
+```
+
 ### Example: Create a Task with Reminder
 
 ```bash
@@ -153,6 +175,10 @@ This documentation was generated specifically to enable AI agents to understand 
 **Task/Reminder features:**
 → Reference: `architecture.md` (Unity pattern), `data-models.md`, `api-contracts.md`
 
+**Recurring task features:**
+→ Reference: `architecture.md` (Computed Instance Model), `data-models.md` (RecurringTaskInstance)
+→ Key: instances are computed in-memory, only configs and overrides are persisted
+
 **Adding new commands:**
 → Follow patterns in `api-contracts.md` → "Commands Controller"
 → Add command class in `Web/HereAndNow.Web/Commands/`
@@ -162,7 +188,7 @@ This documentation was generated specifically to enable AI agents to understand 
 → Reference: `architecture.md` → "Unity Pattern", `data-models.md` → "Repository Layer"
 
 **Deployment changes:**
-→ Reference: `deployment-guide.md` → "CosmosDB Setup"
+→ Reference: `deployment-guide.md`
 
 **Understanding codebase structure:**
 → Reference: `source-tree-analysis.md`
@@ -183,11 +209,7 @@ This documentation was generated specifically to enable AI agents to understand 
 9. **Mappers** go in `Web/HereAndNow.Web/Mappers/`
 10. **Validation attributes** go in `Web/HereAndNow.Web/Validation/`
 11. **Controllers** go in `Web/HereAndNow.Web/Controllers/`
-12. **Tests** go in `Web/HereAndNow.Web.Tests/`
-
-**Message Module (Demo):**
-13. **Message models** go in `Message/HereAndNow.Message/Models/`
-14. **Message services** go in `Message/HereAndNow.Message/Services/`
+12. **Tests** go in `Web/HereAndNow.Web.Tests/` and `Task/HereAndNow.Task.Tests/`
 
 ### Code Conventions
 
@@ -196,14 +218,13 @@ This documentation was generated specifically to enable AI agents to understand 
 - XML documentation for public APIs
 - Structured logging with ILogger
 - `[JsonPropertyName]` for explicit JSON serialization
-- CosmosDB documents use type discriminator pattern (`"type": "Task"` or `"type": "TaskReminder"`)
+- CosmosDB documents use type discriminator pattern (`"type": "Task"`, `"TaskReminder"`, `"RecurringTaskConfig"`, `"RecurringTaskStateOverride"`)
 
 ### Command Pattern
 
 All mutations use the Command Pattern via `POST /api/v1/commands`:
 
-```csharp
-// CommandRequest structure
+```json
 {
   "command": "CommandName",
   "payload": { /* command-specific */ }
@@ -211,31 +232,40 @@ All mutations use the Command Pattern via `POST /api/v1/commands`:
 ```
 
 Benefits:
-- **Explicit intent** - Commands describe what to do, not HTTP verbs
-- **Client-generated IDs** - Enables optimistic UI patterns
-- **Single endpoint** - All mutations through one POST endpoint
-- **Atomic operations** - CosmosDB transactional batches for consistency
+- **Explicit intent** — Commands describe what to do, not HTTP verbs
+- **Client-generated IDs** — Enables optimistic UI patterns
+- **Single endpoint** — All mutations through one POST endpoint
+- **Atomic operations** — CosmosDB transactional batches for consistency
 
 ### Unity Pattern (Atomic Operations)
 
-For operations that must update Task and Reminder together atomically:
+For operations that must update multiple documents atomically:
 
 ```csharp
-// Use transactional batch
 var batch = _container.CreateTransactionalBatch(new PartitionKey(task.UserId));
 batch.ReplaceItem(task.Id, task);
 batch.ReplaceItem(reminder.Id, reminder);
 await batch.ExecuteAsync();
 ```
 
-Current Unity operations:
-- **CreateTaskWithReminderBatchAsync** - Create task + reminder atomically
-- **CompleteWithUnityAsync** - Complete task, dismiss reminder
-- **DeleteWithUnityAsync** - Soft-delete task, dismiss reminder
-- **UpdateWithReminderSyncAsync** - Update task name, sync to reminder
+Unity operations:
+- **CreateTaskWithReminderBatchAsync** — Create task + reminder atomically
+- **CompleteWithUnityAsync** — Complete task, dismiss reminder
+- **DeleteWithUnityAsync** — Soft-delete task, dismiss reminder
+- **UpdateWithReminderSyncAsync** — Update task name, sync to reminder
+- **CreateWithTaskLinkAsync** — Create reminder, link to task
+- **DeleteConfigWithOverridesAsync** — Delete config + all state overrides
+
+### Recurring Task Computation
+
+Recurring task instances are **computed, not persisted**. Only two things are stored:
+1. `RecurringTaskConfig` — RRULE pattern + text + start date
+2. `RecurringTaskStateOverride` — explicit state changes for specific instances
+
+`RecurringTaskService.ComputeInstances()` is a pure function that generates `RecurringTaskInstance` objects by expanding RRULE occurrences and applying overrides + one-active-at-a-time rules.
 
 ---
 
 _Documentation generated by BMAD Method `document-project` workflow_
 _Scan Level: Exhaustive | Mode: Full Rescan_
-_Last Updated: 2026-01-21_
+_Last Updated: 2026-03-19_

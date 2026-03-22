@@ -1,174 +1,81 @@
 # Here and Now Service - Project Overview
 
-**Date:** 2026-01-15
+**Date:** 2026-03-19
 **Type:** Backend API Service
-**Architecture:** Clean Architecture (3-Layer)
+**Architecture:** Clean Architecture (3-Layer) + Command Pattern + Unity Pattern
 
 ## Executive Summary
 
-Here and Now Service is an ASP.NET Core 8.0 REST API for task management with optional reminders. The service provides a complete CRUD API for tasks and reminders, with Auth0 JWT authentication and Azure Cosmos DB for persistence. It evolved from an Auth0 demo to a production-ready task management backend.
+Here and Now Service is an ASP.NET Core 8.0 REST API for personal task management with reminders and recurring tasks. It serves web (SPA) and Android mobile clients via Auth0 JWT-authenticated endpoints backed by Azure Cosmos DB.
 
-## Project Classification
+## Key Capabilities
 
-- **Repository Type:** Monolith (.NET Solution)
-- **Project Type:** Backend API
-- **Primary Language:** C# (.NET 8.0)
-- **Architecture Pattern:** Clean Architecture with 3 layers (Message, Task, Web)
-- **Data Storage:** Azure Cosmos DB (NoSQL)
-- **Authentication:** Auth0 JWT Bearer tokens
-- **Deployment:** Azure Web Apps via GitHub Actions
+- **Task Management:** Create, update, complete, and soft-delete tasks with state machine (OnDeck → InProgress → Completed/Deleted)
+- **Reminders:** Time-based reminders attached to tasks, with snooze/dismiss and denormalized task name sync
+- **Recurring Tasks:** RRULE-based recurrence patterns (RFC 5545/iCal) with computed instances, state overrides, and one-active-at-a-time constraint
+- **Command Pattern API:** Single mutation endpoint (`POST /api/v1/commands`) handling 13 command types with client-generated IDs for optimistic UI
+- **Atomic Operations:** Cosmos DB transactional batches (Unity pattern) ensure Task↔Reminder consistency
+- **Mobile Sync Support:** Offline-first patterns — no future-time validation on synced snoozes
 
-## Technology Stack Summary
+## Technology Stack
 
-| Category | Technology | Version | Purpose |
-|----------|------------|---------|---------|
-| Framework | ASP.NET Core | 8.0 | Web API framework |
-| Language | C# | 12 | Primary language |
-| Database | Azure Cosmos DB | 3.46.1 | NoSQL document storage |
-| Authentication | Auth0 JWT | - | Identity & access management |
-| API Docs | Swashbuckle | 6.9.0 | Swagger/OpenAPI generation |
-| Environment | dotenv.net | 3.2.1 | Environment variable loading |
-| Testing | xUnit | 2.9.2 | Unit testing framework |
-| Testing | Moq | 4.20.72 | Mocking framework |
-| Testing | FluentAssertions | 6.12.2 | Assertion library |
-| Testing | Mvc.Testing | 8.0.11 | Integration testing |
-| CI/CD | GitHub Actions | - | Build, test, deploy pipeline |
-| Hosting | Azure Web Apps | - | Production hosting |
+| Category | Technology | Version |
+|----------|-----------|---------|
+| Framework | ASP.NET Core | 8.0 |
+| Language | C# | .NET 8 |
+| Database | Azure Cosmos DB | 3.46.1 |
+| Recurrence Engine | Ical.Net (RFC 5545) | 5.2.0 |
+| Authentication | Auth0 JWT Bearer | 8.0.11 |
+| API Documentation | Swashbuckle/Swagger | 6.9.0 |
+| Serialization | Newtonsoft.Json | 13.0.3 |
+| Environment Config | dotenv.net | 3.2.1 |
+| Testing | xUnit + Moq + FluentAssertions | 2.9.2 / 4.20.72 / 6.12.0 |
+| CI/CD | GitHub Actions → Azure Web App | — |
 
-## Key Features
+## Architecture Summary
 
-1. **Task Management API**: Full CRUD for tasks with state management
-   - Create, read, update, delete tasks
-   - State transitions: OnDeck → InProgress → Completed/Deleted
-   - Pagination, sorting, and filtering support
+**Clean Architecture** with three assemblies:
 
-2. **Reminder System**: Optional task reminders
-   - Associate reminders with tasks
-   - Snooze and dismiss functionality
-   - Denormalized task names for efficient display
+1. **HereAndNow.Message** — Demo/sample business logic (Auth0 integration sample)
+2. **HereAndNow.Task** — Core domain: models, services, repositories (pure business logic + Cosmos DB persistence)
+3. **HereAndNow.Web** — API controllers, commands, DTOs, middleware, DI configuration
 
-3. **Unity Operations**: Atomic Task-Reminder updates
-   - Complete task → auto-dismiss reminder
-   - Delete task → auto-dismiss reminder
-   - Update task name → sync to reminder
+**Key Architectural Patterns:**
+- **Service-Repository** with constructor-injected dependencies
+- **Command Pattern** — single POST endpoint with discriminated payloads for all mutations
+- **Unity Pattern** — Cosmos DB transactional batches for atomic multi-document operations
+- **Type Discriminator** — 4 document types (Task, TaskReminder, RecurringTaskConfig, RecurringTaskStateOverride) in single Cosmos DB container
+- **Computed Instance Model** — recurring task instances generated in-memory from RRULE + state overrides (not persisted)
 
-4. **Message API**: Demo endpoints for access levels
-   - `/api/messages/public` - No authentication required
-   - `/api/messages/protected` - JWT required
-   - `/api/messages/admin` - JWT required
+## API Surface
 
-5. **JWT Authentication**: Auth0-based token validation
-6. **CORS Support**: Configurable cross-origin resource sharing
-7. **Security Headers**: Comprehensive security headers middleware
-8. **Swagger UI**: Interactive API documentation at `/swagger`
+| Category | Endpoint(s) | Count | Description |
+|----------|-------------|-------|-------------|
+| Commands | POST /api/v1/commands | 13 types | All mutations (task, reminder, recurring) |
+| Tasks | GET /api/v1/tasks[/{id}] | 4 | Paginated queries, get by ID, complete |
+| Reminders | GET /api/v1/reminders[/{id}] | 4 | List active, get by ID, create, dismiss |
+| Messages | GET /api/messages/* | 3 | Demo public/protected/admin |
 
-## Architecture Highlights
+## Data Storage
 
-The solution follows Clean Architecture principles with three main assemblies:
+- **Database:** HereAndNow (Azure Cosmos DB)
+- **Container:** Tasks (single container, `/userId` partition key)
+- **Document Types:** Task, TaskReminder, RecurringTaskConfig, RecurringTaskStateOverride
+- **Design:** All user data co-located by userId for efficient partition-scoped queries
 
-1. **HereAndNow.Message** (Demo Business Logic)
-   - Simple domain model (`Message`)
-   - Service interface and implementation
-   - Static messages for Auth0 demonstration
+## Deployment
 
-2. **HereAndNow.Task** (Core Business Logic)
-   - Domain models (`TaskDocument`, `TaskReminderDocument`, `TaskState`, `PagedResult`)
-   - Custom exceptions for business rule violations
-   - Repository interfaces and CosmosDB implementations
-   - Service interfaces and implementations
-   - Unity pattern for atomic operations
+- **Hosting:** Azure Web App
+- **CI/CD:** GitHub Actions (build → test → publish → deploy)
+- **Quality Gate:** Tests must pass before deployment proceeds
+- **Coverage:** Code coverage reports uploaded as workflow artifacts
 
-3. **HereAndNow.Web** (Web API Layer)
-   - REST controllers (`MessagesController`, `TasksController`, `RemindersController`)
-   - DTOs for request/response shaping
-   - Mappers for Document↔DTO conversion
-   - Custom validation attributes
-   - Middlewares for error handling and security
+## Repository Info
 
-## API Summary
-
-| Controller | Endpoints | Description |
-|------------|-----------|-------------|
-| Messages | 3 | Demo endpoints (public, protected, admin) |
-| Tasks | 6 | Task CRUD + complete/delete Unity operations |
-| Reminders | 5 | Reminder CRUD + snooze/dismiss |
-| **Total** | **14** | |
-
-## Development Overview
-
-### Prerequisites
-
-- .NET 8.0 SDK
-- Auth0 account (for authentication)
-- Azure Cosmos DB account or emulator (for Task features)
-
-### Getting Started
-
-```bash
-# Clone and navigate to project
-cd here-and-now-service
-
-# Restore dependencies
-dotnet restore
-
-# Configure environment (.env file)
-# PORT=6060
-# CLIENT_ORIGIN_URL=http://localhost:3000
-# AUTH0_DOMAIN=your-domain.auth0.com
-# AUTH0_AUDIENCE=https://your-api
-# COSMOS_CONNECTION_STRING=AccountEndpoint=...
-# COSMOS_DATABASE_NAME=HereAndNow
-# COSMOS_CONTAINER_NAME=Tasks
-
-# Run the API
-dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj
-```
-
-### Key Commands
-
-- **Build:** `dotnet build HereAndNow.sln`
-- **Test:** `dotnet test`
-- **Run:** `dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj`
-- **Publish:** `dotnet publish -c Release`
-
-## Repository Structure
-
-```
-here-and-now-service/
-├── HereAndNow.sln              # Solution file
-├── Message/                    # Demo business logic assembly
-│   └── HereAndNow.Message/
-│       ├── Models/
-│       └── Services/
-├── Task/                       # Core business logic assembly
-│   └── HereAndNow.Task/
-│       ├── Models/             # TaskDocument, TaskReminderDocument, Exceptions
-│       ├── Repositories/       # CosmosDB data access
-│       └── Services/           # Business logic
-├── Web/                        # Web layer assemblies
-│   ├── HereAndNow.Web/         # API project
-│   │   ├── Controllers/
-│   │   ├── DTOs/
-│   │   ├── Mappers/
-│   │   └── Validation/
-│   └── HereAndNow.Web.Tests/   # Test project
-├── .github/workflows/          # CI/CD pipeline
-└── docs/                       # Project documentation
-```
-
-## Documentation Map
-
-For detailed information, see:
-
-- [index.md](./index.md) - Master documentation index
-- [architecture.md](./architecture.md) - Detailed architecture, Unity pattern
-- [source-tree-analysis.md](./source-tree-analysis.md) - Directory structure
-- [api-contracts.md](./api-contracts.md) - All 14 API endpoints
-- [data-models.md](./data-models.md) - Domain models, DTOs, exceptions
-- [development-guide.md](./development-guide.md) - Development workflow
-- [deployment-guide.md](./deployment-guide.md) - Azure deployment, CosmosDB setup
+- **Type:** Monolith (single .NET solution)
+- **Active Assemblies:** 5 (Message, Task, Task.Tests, Web, Web.Tests)
+- **Stale:** Reminders/ (abandoned scaffold from Dec 2025)
 
 ---
 
-_Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-15_
+_Generated by BMAD document-project workflow | Exhaustive Scan | 2026-03-19_

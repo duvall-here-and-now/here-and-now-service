@@ -1,0 +1,111 @@
+{
+  "workflow_version": "1.2.0",
+  "timestamps": {
+    "started": "2026-01-21T20:10:00Z",
+    "last_updated": "2026-01-21T20:25:00Z",
+    "completed": "2026-01-21T20:25:00Z"
+  },
+  "mode": "full_rescan",
+  "scan_level": "exhaustive",
+  "project_root": "D:/workspace/here-and-now/here-and-now-bmad-top-level/here-and-now-service",
+  "output_folder": "D:/workspace/here-and-now/here-and-now-bmad-top-level/here-and-now-service/docs",
+  "status": "completed",
+  "completed_steps": [
+    {
+      "step": "step_1",
+      "status": "completed",
+      "timestamp": "2026-01-21T20:12:00Z",
+      "summary": "Confirmed monolith backend classification with 4 assemblies. Detected 2 new commits since last scan."
+    },
+    {
+      "step": "step_2",
+      "status": "completed",
+      "timestamp": "2026-01-21T20:13:00Z",
+      "summary": "Found 8 existing docs in docs/, identified api-contracts.md needing updates for commit #54"
+    },
+    {
+      "step": "step_3",
+      "status": "completed",
+      "timestamp": "2026-01-21T20:14:00Z",
+      "summary": "Tech stack unchanged: ASP.NET Core 8.0, Azure Cosmos DB 3.46.1, Auth0 JWT"
+    },
+    {
+      "step": "step_4",
+      "status": "completed",
+      "timestamp": "2026-01-21T20:18:00Z",
+      "summary": "Analyzed commit #54: UpdateTaskReminderScheduledTime no longer validates future time for mobile sync"
+    },
+    {
+      "step": "step_5_9",
+      "status": "completed",
+      "timestamp": "2026-01-21T20:22:00Z",
+      "summary": "Updated api-contracts.md (v1.3.1 note, removed future time validation), index.md (v1.3.1 note)"
+    },
+    {
+      "step": "step_10_12",
+      "status": "completed",
+      "timestamp": "2026-01-21T20:25:00Z",
+      "summary": "Validated documentation and completed workflow"
+    }
+  ],
+  "current_step": "completed",
+  "findings": {
+    "project_classification": {
+      "repository_type": "monolith",
+      "parts_count": 1,
+      "primary_tech": "ASP.NET Core 8.0",
+      "assemblies": ["HereAndNow.Message", "HereAndNow.Task", "HereAndNow.Web", "HereAndNow.Web.Tests"]
+    },
+    "changes_since_last_scan": [
+      {
+        "commit": "#54",
+        "description": "Updated to not prevent scheduledTime being in the past when syncing from Android"
+      },
+      {
+        "commit": "#53",
+        "description": "Updated documentation (previous document-project run)"
+      }
+    ],
+    "v1_3_1_changes": {
+      "description": "Mobile offline sync support for reminder rescheduling",
+      "affected_components": [
+        "TaskReminderService.SnoozeAsync - Removed future time validation",
+        "CommandsController.HandleUpdateTaskReminderScheduledTimeAsync - Removed future time validation"
+      ],
+      "rationale": "Mobile clients may sync reminder snoozes after the scheduled time has passed due to offline operation. Client validates at interaction time."
+    },
+    "architecture_summary": {
+      "layers": 3,
+      "patterns": ["Clean Architecture", "Command Pattern", "Unity (atomic operations)"],
+      "database": "Azure Cosmos DB",
+      "key_patterns": ["Service-Repository", "Type Discriminator", "State Machine"]
+    },
+    "api_summary": {
+      "total_endpoints": 12,
+      "controllers": [
+        "CommandsController (1 endpoint, 6 commands)",
+        "MessagesController (3)",
+        "TasksController (4 - queries + complete)",
+        "RemindersController (4 - queries + dismiss)"
+      ]
+    }
+  },
+  "project_types": [
+    {
+      "part_id": "main",
+      "project_type_id": "backend",
+      "display_name": "ASP.NET Core Backend API with Command Pattern"
+    }
+  ],
+  "outputs_updated": [
+    "index.md",
+    "api-contracts.md",
+    "project-scan-report.json"
+  ],
+  "previous_scan": {
+    "date": "2026-01-18",
+    "scan_level": "exhaustive",
+    "mode": "full_rescan"
+  },
+  "resume_instructions": "Workflow completed. Documentation updated for v1.3.1 mobile sync support."
+}

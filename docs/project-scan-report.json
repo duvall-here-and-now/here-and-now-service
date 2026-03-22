@@ -1,51 +1,84 @@
 {
   "workflow_version": "1.2.0",
   "timestamps": {
-    "started": "2026-01-21T20:10:00Z",
-    "last_updated": "2026-01-21T20:25:00Z",
-    "completed": "2026-01-21T20:25:00Z"
+    "started": "2026-03-19T12:00:00Z",
+    "last_updated": "2026-03-19T13:00:00Z",
+    "completed": "2026-03-19T13:00:00Z"
   },
   "mode": "full_rescan",
   "scan_level": "exhaustive",
   "project_root": "D:/workspace/here-and-now/here-and-now-bmad-top-level/here-and-now-service",
-  "output_folder": "D:/workspace/here-and-now/here-and-now-bmad-top-level/here-and-now-service/docs",
-  "status": "completed",
+  "project_knowledge": "D:/workspace/here-and-now/here-and-now-bmad-top-level/here-and-now-service/docs",
   "completed_steps": [
     {
       "step": "step_1",
       "status": "completed",
-      "timestamp": "2026-01-21T20:12:00Z",
-      "summary": "Confirmed monolith backend classification with 4 assemblies. Detected 2 new commits since last scan."
+      "summary": "Classified as monolith backend with 5 active assemblies. Reminders/ stale scaffold excluded."
     },
     {
       "step": "step_2",
       "status": "completed",
-      "timestamp": "2026-01-21T20:13:00Z",
-      "summary": "Found 8 existing docs in docs/, identified api-contracts.md needing updates for commit #54"
+      "summary": "Found 8 existing docs in docs/ (all from Jan 2026), plus README.md and CLAUDE.md at root."
     },
     {
       "step": "step_3",
       "status": "completed",
-      "timestamp": "2026-01-21T20:14:00Z",
-      "summary": "Tech stack unchanged: ASP.NET Core 8.0, Azure Cosmos DB 3.46.1, Auth0 JWT"
+      "summary": "Tech stack: ASP.NET Core 8.0, Cosmos DB 3.46.1, Auth0 JWT, Ical.Net 5.2.0 (new), xUnit/Moq/FluentAssertions."
     },
     {
       "step": "step_4",
       "status": "completed",
-      "timestamp": "2026-01-21T20:18:00Z",
-      "summary": "Analyzed commit #54: UpdateTaskReminderScheduledTime no longer validates future time for mobile sync"
+      "summary": "Exhaustive scan: 25 API operations (13 commands + 12 queries), 4 Cosmos DB document types + 1 computed model, 12 custom exceptions, 3 services, 3 repositories, 2 middleware, command pattern architecture."
     },
     {
-      "step": "step_5_9",
+      "step": "step_5",
       "status": "completed",
-      "timestamp": "2026-01-21T20:22:00Z",
-      "summary": "Updated api-contracts.md (v1.3.1 note, removed future time validation), index.md (v1.3.1 note)"
+      "summary": "Generated source-tree-analysis.md with annotated directory tree, assembly dependency graph, ★ NEW markers for recurring task additions."
     },
     {
-      "step": "step_10_12",
+      "step": "step_8",
       "status": "completed",
-      "timestamp": "2026-01-21T20:25:00Z",
-      "summary": "Validated documentation and completed workflow"
+      "summary": "Generated architecture.md covering assembly architecture, 4 document types, state machines, command catalog (13 commands), Unity operations, recurring task computation, DI registration, middleware pipeline, Cosmos DB design."
+    },
+    {
+      "step": "step_9_overview",
+      "status": "completed",
+      "summary": "Generated project-overview.md with executive summary, tech stack table, architecture summary, API surface overview."
+    },
+    {
+      "step": "step_9_api",
+      "status": "completed",
+      "summary": "Generated api-contracts.md with all 13 commands, query endpoints, error codes, DTO reference."
+    },
+    {
+      "step": "step_9_data",
+      "status": "completed",
+      "summary": "Generated data-models.md with all 4 document types, computed model, state constants, 12 exceptions, service and repository layer documentation."
+    },
+    {
+      "step": "step_9_dev",
+      "status": "completed",
+      "summary": "Generated development-guide.md with prerequisites, environment setup, build/test commands, adding commands and recurring task features, coding conventions, curl examples for all command categories."
+    },
+    {
+      "step": "step_9_deploy",
+      "status": "completed",
+      "summary": "Generated deployment-guide.md with CI/CD pipeline, Azure configuration, document types in container, monitoring, security headers, troubleshooting."
+    },
+    {
+      "step": "step_10",
+      "status": "completed",
+      "summary": "Generated index.md with all 13 commands listed, recurring task documentation links, updated AI-assisted development section covering recurring task computation model."
+    },
+    {
+      "step": "step_11",
+      "status": "completed",
+      "summary": "Validation passed: no TODO/PLACEHOLDER/TBD/FIXME markers found across all 8 documentation files."
+    },
+    {
+      "step": "step_12",
+      "status": "completed",
+      "summary": "All documentation finalized. 8 files generated/updated."
     }
   ],
   "current_step": "completed",
@@ -54,58 +87,50 @@
       "repository_type": "monolith",
       "parts_count": 1,
       "primary_tech": "ASP.NET Core 8.0",
-      "assemblies": ["HereAndNow.Message", "HereAndNow.Task", "HereAndNow.Web", "HereAndNow.Web.Tests"]
+      "assemblies": ["HereAndNow.Message", "HereAndNow.Task", "HereAndNow.Task.Tests", "HereAndNow.Web", "HereAndNow.Web.Tests"]
     },
-    "changes_since_last_scan": [
-      {
-        "commit": "#54",
-        "description": "Updated to not prevent scheduledTime being in the past when syncing from Android"
-      },
-      {
-        "commit": "#53",
-        "description": "Updated documentation (previous document-project run)"
-      }
-    ],
-    "v1_3_1_changes": {
-      "description": "Mobile offline sync support for reminder rescheduling",
-      "affected_components": [
-        "TaskReminderService.SnoozeAsync - Removed future time validation",
-        "CommandsController.HandleUpdateTaskReminderScheduledTimeAsync - Removed future time validation"
-      ],
-      "rationale": "Mobile clients may sync reminder snoozes after the scheduled time has passed due to offline operation. Client validates at interaction time."
-    },
-    "architecture_summary": {
-      "layers": 3,
-      "patterns": ["Clean Architecture", "Command Pattern", "Unity (atomic operations)"],
-      "database": "Azure Cosmos DB",
-      "key_patterns": ["Service-Repository", "Type Discriminator", "State Machine"]
+    "technology_stack": {
+      "framework": "ASP.NET Core 8.0",
+      "language": "C#",
+      "database": "Azure Cosmos DB 3.46.1",
+      "recurrence_engine": "Ical.Net 5.2.0",
+      "new_since_last_scan": ["Ical.Net 5.2.0"]
     },
     "api_summary": {
-      "total_endpoints": 12,
-      "controllers": [
-        "CommandsController (1 endpoint, 6 commands)",
-        "MessagesController (3)",
-        "TasksController (4 - queries + complete)",
-        "RemindersController (4 - queries + dismiss)"
-      ]
+      "total_operations": 25,
+      "commands": 13,
+      "query_endpoints": 12
+    },
+    "data_models": {
+      "document_types": 4,
+      "computed_models": 1,
+      "exceptions": 12
+    },
+    "changes_since_last_scan": {
+      "new_feature": "RecurringTask system (RRULE-based recurrence with computed instances)",
+      "new_document_types": ["RecurringTaskConfigDocument", "RecurringTaskStateOverrideDocument"],
+      "new_computed_model": "RecurringTaskInstance",
+      "new_commands": 7,
+      "new_exceptions": 3,
+      "new_dependency": "Ical.Net 5.2.0"
     }
   },
   "project_types": [
     {
       "part_id": "main",
       "project_type_id": "backend",
-      "display_name": "ASP.NET Core Backend API with Command Pattern"
+      "display_name": "ASP.NET Core Backend API with Command Pattern + Recurring Tasks"
     }
   ],
-  "outputs_updated": [
-    "index.md",
+  "outputs_generated": [
+    "project-scan-report.json",
+    "source-tree-analysis.md",
+    "project-overview.md",
+    "architecture.md",
     "api-contracts.md",
-    "project-scan-report.json"
-  ],
-  "previous_scan": {
-    "date": "2026-01-18",
-    "scan_level": "exhaustive",
-    "mode": "full_rescan"
-  },
-  "resume_instructions": "Workflow completed. Documentation updated for v1.3.1 mobile sync support."
+    "data-models.md",
+    "development-guide.md",
+    "deployment-guide.md",
+    "index.md"
+  ]
 }
