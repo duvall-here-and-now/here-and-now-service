@@ -34,6 +34,22 @@ public class RecurringTaskService : IRecurringTaskService
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<RecurringTaskConfigDocument>> GetAllConfigsAsync(string userId)
+    {
+        var configs = await _repository.GetAllConfigsAsync(userId);
+        return configs.ToList().AsReadOnly();
+    }
+
+    /// <inheritdoc />
+    public async Task<RecurringTaskConfigDocument> GetConfigByIdAsync(string userId, string configId)
+    {
+        var config = await _repository.GetConfigByIdAsync(userId, configId);
+        if (config == null)
+            throw new RecurringTaskConfigNotFoundException(configId);
+        return config;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<RecurringTaskInstance>> GetComputedInstancesAsync(
         string userId, DateTime from, DateTime to)
     {
