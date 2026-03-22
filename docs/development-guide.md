@@ -1,6 +1,6 @@
 # Here and Now Service - Development Guide
 
-**Date:** 2026-01-18
+**Date:** 2026-03-19
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ You need an Auth0 account to test authenticated endpoints:
 
 ### Azure Cosmos DB (Optional for Full Features)
 
-For Task and Reminder functionality, you need Azure Cosmos DB:
+For Task, Reminder, and Recurring Task functionality, you need Azure Cosmos DB:
 1. Create an Azure Cosmos DB account (or use the emulator)
 2. Create a database named `HereAndNow`
 3. Create a container named `Tasks` with partition key `/userId`
@@ -58,7 +58,7 @@ CLIENT_ORIGIN_URL=http://localhost:3000
 AUTH0_DOMAIN=your-tenant.auth0.com
 AUTH0_AUDIENCE=https://your-api-identifier
 
-# Cosmos DB (optional - enables Task/Reminder features)
+# Cosmos DB (optional - enables Task/Reminder/RecurringTask features)
 COSMOS_CONNECTION_STRING=AccountEndpoint=https://...
 COSMOS_DATABASE_NAME=HereAndNow
 COSMOS_CONTAINER_NAME=Tasks
@@ -147,6 +147,16 @@ dotnet test --collect:"XPlat Code Coverage"
 
 Coverage reports are generated in `TestResults/` directories.
 
+### Run Specific Test Project
+
+```bash
+# Task service unit tests
+dotnet test Task/HereAndNow.Task.Tests/HereAndNow.Task.Tests.csproj
+
+# Web controller and integration tests
+dotnet test Web/HereAndNow.Web.Tests/HereAndNow.Web.Tests.csproj
+```
+
 ### Watch Mode for Testing
 
 ```bash
@@ -157,9 +167,9 @@ dotnet watch test --project Web/HereAndNow.Web.Tests/HereAndNow.Web.Tests.csproj
 
 | Category | Location | Description |
 |----------|----------|-------------|
-| Controller Unit Tests | `Controllers/` | Test controller logic with mocked services |
-| Service Unit Tests | `Services/` | Test service logic with mocked repositories |
-| Integration Tests | `Integration/` | Test full HTTP pipeline |
+| Controller Unit Tests | `Web.Tests/Controllers/` | Test controller logic with mocked services |
+| Service Unit Tests | `Task.Tests/Services/` | Test service logic with mocked repositories |
+| Integration Tests | `Web.Tests/Integration/` | Test full HTTP pipeline |
 
 ## Project Structure
 
@@ -168,21 +178,19 @@ here-and-now-service/
 ├── Message/HereAndNow.Message/       # Demo business logic (Auth0 sample)
 │   ├── Models/                       # Domain models
 │   └── Services/                     # Service interfaces + implementations
-├── Task/HereAndNow.Task/             # Core business logic (Tasks + Reminders)
-│   ├── Models/                       # Domain models + Exceptions
-│   ├── Repositories/                 # CosmosDB data access
-│   └── Services/                     # Business logic + State machine
+├── Task/HereAndNow.Task/             # Core business logic
+│   ├── Models/                       # Domain models + Exceptions (12 exception types)
+│   ├── Repositories/                 # CosmosDB data access (3 repositories)
+│   └── Services/                     # Business logic (3 services)
+├── Task/HereAndNow.Task.Tests/       # Task service unit tests
 ├── Web/HereAndNow.Web/               # API layer
-│   ├── Controllers/                  # REST endpoints
-│   ├── Commands/                     # ★ Command Pattern (NEW)
+│   ├── Controllers/                  # REST endpoints (4 controllers)
+│   ├── Commands/                     # Command Pattern (13 command types)
 │   ├── DTOs/                         # Request/Response objects
 │   ├── Mappers/                      # Document ↔ DTO conversion
 │   ├── Validation/                   # Custom validation attributes
-│   └── Middlewares/                  # Custom middleware
-└── Web/HereAndNow.Web.Tests/         # Tests
-    ├── Controllers/                  # Controller unit tests
-    ├── Services/                     # Service unit tests
-    └── Integration/                  # API integration tests
+│   └── Middlewares/                  # Error handling + security headers
+└── Web/HereAndNow.Web.Tests/         # Web layer tests
 ```
 
 ## Common Development Tasks
@@ -256,7 +264,6 @@ NewFeatureException ex => (StatusCodes.Status400BadRequest, "NEW_FEATURE_ERROR",
 #### 5. Add Unit Tests
 
 ```csharp
-// Web/HereAndNow.Web.Tests/Controllers/CommandsControllerTests.cs
 [Fact]
 public async Task ExecuteCommand_NewFeature_ReturnsUpdatedTask()
 {
@@ -278,28 +285,39 @@ public async Task ExecuteCommand_NewFeature_ReturnsUpdatedTask()
 }
 ```
 
-#### 6. Add Integration Tests
+### Adding a Recurring Task Feature
+
+For recurring task extensions, the pattern differs from regular tasks:
+
+#### 1. Compute Logic Goes in RecurringTaskService
+
+The `ComputeInstances()` method is a pure function — no I/O, fully testable.
+
+#### 2. State Changes Use Override Upserts
+
+Instead of modifying documents directly, recurring task state changes create/update `RecurringTaskStateOverrideDocument` entries:
 
 ```csharp
-// Web/HereAndNow.Web.Tests/Integration/CommandsApiTests.cs
-[Fact]
-public async Task NewFeature_WithValidPayload_ReturnsOk()
+var overrideDoc = new RecurringTaskStateOverrideDocument
 {
-    var request = new
-    {
-        command = "NewFeature",
-        payload = new { taskId = "test-id", someField = "value" }
-    };
-
-    var response = await _client.PostAsJsonAsync("/api/v1/commands", request);
-
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-}
+    Id = RecurringTaskStateOverrideDocument.GenerateId(configId, recurrenceDateAndTime),
+    Type = "RecurringTaskStateOverride",
+    UserId = userId,
+    ConfigId = configId,
+    RecurrenceDateAndTime = recurrenceDateAndTime,
+    State = TaskState.Completed,
+    UpdatedAt = DateTime.UtcNow
+};
+await _repository.UpsertStateOverrideAsync(overrideDoc);
 ```
+
+#### 3. RRULE Validation
+
+When accepting recurrence rules, validate using `RecurringTaskService` which rejects `Secondly` and `Minutely` frequencies.
 
 ### Adding a Unity Operation
 
-Unity operations atomically update Task and Reminder together:
+Unity operations atomically update multiple documents in the same partition:
 
 ```csharp
 // In TaskRepository
@@ -326,16 +344,8 @@ public async Task<TaskDocument> NewUnityOperationAsync(
 
 > **Note:** Prefer adding Commands instead. Only add REST endpoints for queries.
 
-1. **Add domain model** (if needed):
-   ```
-   Task/HereAndNow.Task/Models/NewModel.cs
-   ```
-
-2. **Add exception** (if needed):
-   ```
-   Task/HereAndNow.Task/Models/Exceptions/NewException.cs
-   ```
-
+1. **Add domain model** in `Task/HereAndNow.Task/Models/`
+2. **Add exception** in `Task/HereAndNow.Task/Models/Exceptions/`
 3. **Add repository interface + implementation**
 4. **Add service interface + implementation**
 5. **Add DTOs**
@@ -343,21 +353,6 @@ public async Task<TaskDocument> NewUnityOperationAsync(
 7. **Add controller endpoints**
 8. **Register in DI** (Program.cs)
 9. **Add tests**
-
-### Adding a Custom Validation Attribute
-
-```csharp
-// Web/HereAndNow.Web/Validation/NewValidationAttribute.cs
-[AttributeUsage(AttributeTargets.Property)]
-public class NewValidationAttribute : ValidationAttribute
-{
-    protected override ValidationResult? IsValid(object? value, ValidationContext context)
-    {
-        // Validation logic
-        return ValidationResult.Success;
-    }
-}
-```
 
 ## Code Style and Conventions
 
@@ -390,8 +385,6 @@ Document public APIs with XML comments:
 /// <summary>
 /// Executes a command to modify system state.
 /// </summary>
-/// <param name="request">The command request containing command type and payload</param>
-/// <returns>Command-specific response</returns>
 [HttpPost]
 public async Task<IActionResult> ExecuteCommand([FromBody] CommandRequest request)
 ```
@@ -413,15 +406,27 @@ Commands follow `{Action}{Entity}Command` pattern:
 |---------|---------|
 | `CreateTaskCommand` | Create + Task |
 | `UpdateTaskNameCommand` | Update + TaskName |
-| `UpdateTaskStateCommand` | Update + TaskState |
-| `DismissTaskReminderCommand` | Dismiss + TaskReminder |
+| `CreateRecurringTaskConfigCommand` | Create + RecurringTaskConfig |
+| `StartRecurringTaskCommand` | Start + RecurringTask |
+| `SkipRecurringTaskCommand` | Skip + RecurringTask |
+
+### Cosmos DB Type Discriminator
+
+All documents include a `type` field:
+
+| Type Value | Document Class |
+|------------|---------------|
+| `"Task"` | TaskDocument |
+| `"TaskReminder"` | TaskReminderDocument |
+| `"RecurringTaskConfig"` | RecurringTaskConfigDocument |
+| `"RecurringTaskStateOverride"` | RecurringTaskStateOverrideDocument |
 
 ## Testing API Endpoints
 
 ### Using curl (Commands API)
 
 ```bash
-# Create a task with client-generated ID
+# Create a task
 curl -X POST http://localhost:6060/api/v1/commands \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
@@ -447,19 +452,33 @@ curl -X POST http://localhost:6060/api/v1/commands \
     }
   }'
 
-# Update task name
+# Create recurring task config
 curl -X POST http://localhost:6060/api/v1/commands \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "command": "UpdateTaskName",
+    "command": "CreateRecurringTaskConfig",
     "payload": {
-      "taskId": "550e8400-e29b-41d4-a716-446655440000",
-      "name": "Buy groceries and milk"
+      "id": "770e8400-e29b-41d4-a716-446655440002",
+      "text": "Morning standup",
+      "recurrenceRule": "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+      "startDateAndTime": "2026-01-01T09:00:00Z"
     }
   }'
 
-# Update task state (complete)
+# Complete a recurring task instance
+curl -X POST http://localhost:6060/api/v1/commands \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "CompleteRecurringTask",
+    "payload": {
+      "recurringTaskConfigId": "770e8400-e29b-41d4-a716-446655440002",
+      "recurrenceDateAndTime": "2026-01-15T09:00:00Z"
+    }
+  }'
+
+# Update task state
 curl -X POST http://localhost:6060/api/v1/commands \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
@@ -468,29 +487,6 @@ curl -X POST http://localhost:6060/api/v1/commands \
     "payload": {
       "taskId": "550e8400-e29b-41d4-a716-446655440000",
       "state": "Completed"
-    }
-  }'
-
-# Snooze reminder
-curl -X POST http://localhost:6060/api/v1/commands \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "command": "UpdateTaskReminderScheduledTime",
-    "payload": {
-      "taskReminderId": "660e8400-e29b-41d4-a716-446655440001",
-      "scheduledTime": "2026-01-25T14:00:00Z"
-    }
-  }'
-
-# Dismiss reminder
-curl -X POST http://localhost:6060/api/v1/commands \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "command": "DismissTaskReminder",
-    "payload": {
-      "taskReminderId": "660e8400-e29b-41d4-a716-446655440001"
     }
   }'
 ```
@@ -506,7 +502,7 @@ curl "http://localhost:6060/api/v1/tasks?orderBy=createdAt&direction=desc&take=2
 curl "http://localhost:6060/api/v1/tasks/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_TOKEN"
 
-# Get all reminders
+# Get all active reminders
 curl "http://localhost:6060/api/v1/reminders" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
@@ -556,13 +552,14 @@ curl "http://localhost:6060/api/v1/reminders" \
 | CORS errors | Check CLIENT_ORIGIN_URL matches your frontend |
 | Port already in use | Change PORT in `.env` |
 | Task endpoints 500 | Check COSMOS_CONNECTION_STRING is set correctly |
-| "Container not found" | Create the Tasks container in CosmosDB |
+| "Container not found" | Container auto-created on startup; check connection string |
 | "UNKNOWN_COMMAND" error | Check command name spelling (case-sensitive) |
+| RRULE validation error | Check frequency is not Secondly or Minutely |
 
 ### Running Without CosmosDB
 
 If `COSMOS_CONNECTION_STRING` is not set:
-- Task and Reminder endpoints will not be available
+- Task, Reminder, and Recurring Task endpoints will not be available
 - Message endpoints will work (static data)
 - This is useful for testing Auth0 integration only
 
@@ -577,16 +574,39 @@ builder.Logging.SetMinimumLevel(LogLevel.Debug);
 
 ## Command Pattern Quick Reference
 
+### Task Commands
+
 | Command | Payload | Response | Notes |
 |---------|---------|----------|-------|
 | `CreateTask` | `{ taskId, name }` | TaskDto | Client-generated ID |
 | `CreateTaskAndTaskReminder` | `{ taskId, taskReminderId, name, scheduledTime }` | TaskAndReminderDto | Atomic creation |
 | `UpdateTaskName` | `{ taskId, name }` | TaskDto | Unity: syncs to reminder |
 | `UpdateTaskState` | `{ taskId, state }` | TaskDto | Unity: dismisses reminder on Complete/Delete |
-| `UpdateTaskReminderScheduledTime` | `{ taskReminderId, scheduledTime }` | TaskReminderDto | Snooze |
+
+### Reminder Commands
+
+| Command | Payload | Response | Notes |
+|---------|---------|----------|-------|
+| `UpdateTaskReminderScheduledTime` | `{ taskReminderId, scheduledTime }` | TaskReminderDto | No future-time validation |
 | `DismissTaskReminder` | `{ taskReminderId }` | 204 | Idempotent |
+
+### Recurring Task Config Commands
+
+| Command | Payload | Response | Notes |
+|---------|---------|----------|-------|
+| `CreateRecurringTaskConfig` | `{ id, text, recurrenceRule, startDateAndTime }` | RecurringTaskConfigDto | RRULE validated |
+| `UpdateRecurringTaskConfig` | `{ id, text, recurrenceRule, startDateAndTime }` | RecurringTaskConfigDto | RRULE re-validated |
+| `DeleteRecurringTaskConfig` | `{ id }` | 204 | Cascade deletes overrides |
+
+### Recurring Task State Commands
+
+| Command | Payload | Response | Notes |
+|---------|---------|----------|-------|
+| `StartRecurringTask` | `{ recurringTaskConfigId, recurrenceDateAndTime }` | 200 | OnDeck → InProgress |
+| `RevertRecurringTaskToOnDeck` | `{ recurringTaskConfigId, recurrenceDateAndTime }` | 200 | InProgress → OnDeck |
+| `CompleteRecurringTask` | `{ recurringTaskConfigId, recurrenceDateAndTime }` | 200 | Idempotent |
+| `SkipRecurringTask` | `{ recurringTaskConfigId, recurrenceDateAndTime }` | 200 | Idempotent |
 
 ---
 
-_Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-18_
+_Generated by BMAD document-project workflow | Exhaustive Scan | 2026-03-19_

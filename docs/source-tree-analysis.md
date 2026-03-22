@@ -1,318 +1,186 @@
 # Here and Now Service - Source Tree Analysis
 
-**Date:** 2026-01-18
+**Date:** 2026-03-19
+**Scan Level:** Exhaustive
 
 ## Overview
 
-This document provides an annotated directory structure of the Here and Now Service codebase, highlighting critical directories, entry points, and key file locations.
+This document provides an annotated directory tree of the Here and Now Service codebase, highlighting critical directories, entry points, and integration points.
 
-## Complete Directory Structure
+## Project Root Structure
 
 ```
 here-and-now-service/
-├── .claude/                        # Claude Code configuration
-│   └── commands/                   # Custom slash commands
-├── .env                            # Environment variables (not in git)
-├── .github/                        # GitHub configuration
-│   ├── agents/                     # AI agent definitions
-│   │   └── dotnet-code-reviewer.md
-│   ├── copilot-instructions.md
-│   └── workflows/                  # CI/CD pipelines
-│       └── main_here-and-now-service.yml
-├── .gitignore
-├── CLAUDE.md                       # Claude Code instructions
-├── HereAndNow.sln                  # ★ Solution file (entry point)
-├── README.md                       # Project readme
+├── HereAndNow.sln                    # Solution file (5 active projects)
+├── .env                               # Environment variables (not committed)
+├── CLAUDE.md                          # AI assistant context
+├── README.md                          # Project readme
 │
-├── Message/                        # ★ Business Logic Assembly (Demo)
+├── Message/                           # Demo business logic assembly
 │   └── HereAndNow.Message/
 │       ├── HereAndNow.Message.csproj
 │       ├── Models/
-│       │   └── Message.cs          # Simple message model
+│       │   └── Message.cs             # Simple message model
 │       └── Services/
-│           ├── IMessageService.cs
-│           └── MessageService.cs   # Static message provider
+│           ├── IMessageService.cs     # Interface
+│           └── MessageService.cs      # Static message responses
 │
-├── Task/                           # ★ Business Logic Assembly (Core)
-│   └── HereAndNow.Task/
-│       ├── HereAndNow.Task.csproj
-│       ├── Models/
-│       │   ├── TaskDocument.cs         # Task entity for CosmosDB
-│       │   ├── TaskReminderDocument.cs # Reminder entity for CosmosDB
-│       │   ├── TaskState.cs            # State constants
-│       │   ├── PagedResult.cs          # Pagination wrapper
-│       │   └── Exceptions/             # Business exceptions
-│       │       ├── TaskNotFoundException.cs
-│       │       ├── TaskAlreadyExistsException.cs      # NEW
-│       │       ├── ReminderNotFoundException.cs
-│       │       ├── TaskReminderAlreadyExistsException.cs  # NEW
-│       │       ├── ReminderAlreadyExistsException.cs
-│       │       ├── ReminderAlreadyDismissedException.cs
-│       │       ├── InvalidScheduledTimeException.cs
-│       │       ├── InvalidStateTransitionException.cs     # NEW
-│       │       └── UnityTransactionFailedException.cs
-│       ├── Repositories/
-│       │   ├── ITaskRepository.cs
-│       │   ├── TaskRepository.cs       # CosmosDB operations for tasks
-│       │   ├── ITaskReminderRepository.cs
-│       │   ├── TaskReminderRepository.cs # CosmosDB operations for reminders
-│       │   └── CosmosDbSettings.cs     # Configuration class
-│       └── Services/
-│           ├── ITaskService.cs
-│           ├── TaskService.cs          # Task business logic + state machine
-│           ├── ITaskReminderService.cs
-│           └── TaskReminderService.cs  # Reminder business logic
+├── Task/                              # ★ Core business logic assembly
+│   ├── HereAndNow.Task/
+│   │   ├── HereAndNow.Task.csproj     # Cosmos DB 3.46.1, Ical.Net 5.2.0, Newtonsoft.Json
+│   │   ├── Models/
+│   │   │   ├── TaskDocument.cs                       # Task entity (Cosmos DB)
+│   │   │   ├── TaskReminderDocument.cs               # Reminder entity (Cosmos DB)
+│   │   │   ├── RecurringTaskConfigDocument.cs        # ★ NEW Recurrence config (Cosmos DB)
+│   │   │   ├── RecurringTaskStateOverrideDocument.cs  # ★ NEW State override (Cosmos DB)
+│   │   │   ├── RecurringTaskInstance.cs              # ★ NEW Computed model (not persisted)
+│   │   │   ├── TaskState.cs                          # State constants (OnDeck, InProgress, Completed, Deleted, Scheduled, Skipped)
+│   │   │   ├── PagedResult.cs                        # Generic pagination wrapper
+│   │   │   └── Exceptions/                           # 12 domain exceptions
+│   │   │       ├── TaskNotFoundException.cs
+│   │   │       ├── TaskAlreadyExistsException.cs
+│   │   │       ├── ReminderNotFoundException.cs
+│   │   │       ├── ReminderAlreadyExistsException.cs
+│   │   │       ├── ReminderAlreadyDismissedException.cs
+│   │   │       ├── InvalidScheduledTimeException.cs
+│   │   │       ├── InvalidStateTransitionException.cs
+│   │   │       ├── UnityTransactionFailedException.cs
+│   │   │       ├── RecurringTaskConfigNotFoundException.cs      # ★ NEW
+│   │   │       ├── RecurringTaskConfigAlreadyExistsException.cs # ★ NEW
+│   │   │       ├── InvalidRecurrenceRuleException.cs            # ★ NEW
+│   │   │       └── TaskReminderAlreadyExistsException.cs
+│   │   ├── Repositories/
+│   │   │   ├── CosmosDbSettings.cs                   # DB connection config
+│   │   │   ├── ITaskRepository.cs                    # Task CRUD + Unity batches
+│   │   │   ├── TaskRepository.cs                     # Cosmos DB implementation
+│   │   │   ├── ITaskReminderRepository.cs            # Reminder CRUD + atomic link
+│   │   │   ├── TaskReminderRepository.cs             # Cosmos DB implementation
+│   │   │   ├── IRecurringTaskRepository.cs           # ★ NEW Config + Override CRUD
+│   │   │   └── RecurringTaskRepository.cs            # ★ NEW Cosmos DB impl (batch delete, upsert)
+│   │   └── Services/
+│   │       ├── ITaskService.cs                       # Task operations + Unity
+│   │       ├── TaskService.cs                        # Business logic (state machine, reminder sync)
+│   │       ├── ITaskReminderService.cs               # Reminder operations
+│   │       ├── TaskReminderService.cs                # Snooze, dismiss, create
+│   │       ├── IRecurringTaskService.cs              # ★ NEW Computation + CRUD + state commands
+│   │       └── RecurringTaskService.cs               # ★ NEW RRULE engine, one-active-at-a-time
+│   │
+│   └── HereAndNow.Task.Tests/
+│       ├── HereAndNow.Task.Tests.csproj              # xUnit, Moq, FluentAssertions
+│       └── Services/                                 # Unit tests for services
 │
-├── Web/                            # ★ Web Layer Assemblies
-│   ├── HereAndNow.Web/             # API Project
-│   │   ├── HereAndNow.Web.csproj
-│   │   ├── Program.cs              # ★ Application entry point
+├── Web/                               # API layer assembly
+│   ├── HereAndNow.Web/
+│   │   ├── HereAndNow.Web.csproj      # JWT Bearer 8.0.11, Swashbuckle 6.9.0, dotenv.net
+│   │   ├── .env                       # Web-specific env vars
+│   │   ├── Program.cs                 # ★ Entry point — DI, auth, middleware, Cosmos init
 │   │   ├── Controllers/
-│   │   │   ├── ErrorController.cs
-│   │   │   ├── MessagesController.cs
-│   │   │   ├── CommandsController.cs     # ★ NEW - Command Pattern API
-│   │   │   ├── TasksController.cs        # Queries + legacy complete
-│   │   │   └── RemindersController.cs    # Queries + legacy endpoints
-│   │   ├── Commands/                     # ★ NEW - Command Pattern
-│   │   │   ├── CommandRequest.cs
-│   │   │   ├── CommandResponse.cs
+│   │   │   ├── CommandsController.cs  # ★ POST /api/v1/commands (13 command types)
+│   │   │   ├── TasksController.cs     # GET queries + legacy complete
+│   │   │   ├── RemindersController.cs # GET queries + legacy dismiss/create
+│   │   │   ├── MessagesController.cs  # Demo public/protected/admin
+│   │   │   └── ErrorController.cs     # Development error page
+│   │   ├── Commands/                  # ★ Command request/response models
+│   │   │   ├── CommandRequest.cs      # Base: { command, payload }
+│   │   │   ├── CommandResponse.cs     # Base: { success, message }
 │   │   │   ├── CreateTaskCommand.cs
 │   │   │   ├── CreateTaskAndTaskReminderCommand.cs
 │   │   │   ├── UpdateTaskNameCommand.cs
 │   │   │   ├── UpdateTaskStateCommand.cs
 │   │   │   ├── UpdateTaskReminderScheduledTimeCommand.cs
-│   │   │   └── DismissTaskReminderCommand.cs
+│   │   │   ├── DismissTaskReminderCommand.cs
+│   │   │   ├── CreateRecurringTaskConfigCommand.cs    # ★ NEW
+│   │   │   ├── UpdateRecurringTaskConfigCommand.cs    # ★ NEW
+│   │   │   ├── DeleteRecurringTaskConfigCommand.cs    # ★ NEW
+│   │   │   ├── StartRecurringTaskCommand.cs           # ★ NEW
+│   │   │   ├── RevertRecurringTaskToOnDeckCommand.cs  # ★ NEW
+│   │   │   ├── CompleteRecurringTaskCommand.cs        # ★ NEW
+│   │   │   └── SkipRecurringTaskCommand.cs            # ★ NEW
 │   │   ├── DTOs/
-│   │   │   ├── CreateTaskDto.cs
 │   │   │   ├── TaskDto.cs
-│   │   │   ├── PagedTasksDto.cs
-│   │   │   ├── TaskAndReminderDto.cs     # NEW - combined response
-│   │   │   ├── CreateReminderDto.cs
 │   │   │   ├── TaskReminderDto.cs
+│   │   │   ├── TaskAndReminderDto.cs
+│   │   │   ├── PagedTasksDto.cs
+│   │   │   ├── CreateTaskDto.cs
+│   │   │   ├── CreateReminderDto.cs
+│   │   │   ├── RecurringTaskConfigDto.cs              # ★ NEW
 │   │   │   └── ErrorResponseDto.cs
 │   │   ├── Mappers/
 │   │   │   ├── TaskMapper.cs
-│   │   │   └── ReminderMapper.cs
-│   │   ├── Validation/
-│   │   │   └── FutureTimeValidationAttribute.cs
+│   │   │   ├── ReminderMapper.cs
+│   │   │   └── RecurringTaskConfigMapper.cs           # ★ NEW
 │   │   ├── Middlewares/
-│   │   │   ├── ErrorHandlerMiddleware.cs
-│   │   │   └── SecureHeadersMiddleware.cs
-│   │   └── SWAGGER_SETUP.md
+│   │   │   ├── ErrorHandlerMiddleware.cs              # Exception → HTTP status mapping
+│   │   │   └── SecureHeadersMiddleware.cs             # Security headers (CSP, HSTS, etc.)
+│   │   └── Validation/
+│   │       └── FutureTimeValidationAttribute.cs       # Custom [FutureTime] attribute
 │   │
-│   └── HereAndNow.Web.Tests/       # Test Project
-│       ├── HereAndNow.Web.Tests.csproj
-│       ├── Controllers/
-│       │   ├── CommandsControllerTests.cs  # NEW
-│       │   ├── TasksControllerTests.cs
-│       │   └── RemindersControllerTests.cs
-│       ├── Services/
-│       │   ├── TaskServiceTests.cs
-│       │   └── TaskReminderServiceTests.cs
-│       ├── Integration/
-│       │   ├── AuthorizationTests.cs
-│       │   ├── CorsTests.cs
-│       │   ├── CommandsApiTests.cs     # NEW
-│       │   ├── TasksApiTests.cs
-│       │   └── RemindersApiTests.cs
-│       └── Helpers/
-│           ├── TestWebApplicationFactory.cs
-│           └── TestAuthHandler.cs
+│   └── HereAndNow.Web.Tests/
+│       ├── HereAndNow.Web.Tests.csproj                # Integration + unit tests
+│       └── Controllers/                               # Controller tests
 │
-├── Reminders/                      # ⚠️ DEPRECATED (empty folder)
+├── Reminders/                         # ⚠ STALE — abandoned scaffold from Dec 2025
+│   └── HereAndNow.Reminders/
+│       └── obj/                       # Only build artifacts, no source files
 │
-├── docs/                           # Generated documentation
-│   ├── index.md                    # Master index
-│   ├── project-overview.md
-│   ├── architecture.md
-│   ├── api-contracts.md
-│   ├── data-models.md
-│   ├── source-tree-analysis.md
-│   ├── development-guide.md
-│   ├── deployment-guide.md
-│   └── project-scan-report.json    # Workflow state
+├── docs/                              # Project documentation (you are here)
 │
-└── _bmad/                          # BMAD workflow tooling
+├── _bmad/                             # BMAD Method configuration
+├── _bmad-output/                      # BMAD output artifacts
+└── .github/
+    ├── workflows/
+    │   └── main_here-and-now-service.yml  # CI/CD: Build → Test → Deploy to Azure
+    ├── agents/                        # AI agent configs
+    └── skills/                        # BMAD skills
 ```
 
 ## Critical Directories
 
-### `Message/HereAndNow.Message/`
+| Directory | Purpose | Key Files |
+|-----------|---------|-----------|
+| `Task/HereAndNow.Task/Models/` | Domain entities stored in Cosmos DB | TaskDocument, TaskReminderDocument, RecurringTaskConfigDocument, RecurringTaskStateOverrideDocument |
+| `Task/HereAndNow.Task/Services/` | Core business logic | TaskService, TaskReminderService, RecurringTaskService (RRULE engine) |
+| `Task/HereAndNow.Task/Repositories/` | Data access layer | Cosmos DB implementations with Unity (transactional batch) |
+| `Web/HereAndNow.Web/Controllers/` | API surface | CommandsController (13 commands), TasksController, RemindersController |
+| `Web/HereAndNow.Web/Commands/` | Command definitions | 13 command request/response models |
+| `Web/HereAndNow.Web/DTOs/` | API response shapes | TaskDto, RecurringTaskConfigDto, ErrorResponseDto |
+| `Web/HereAndNow.Web/Middlewares/` | Cross-cutting concerns | Error handling, security headers |
 
-**Purpose:** Demo business logic assembly (Auth0 sample).
+## Assembly Dependency Graph
 
-**Contains:**
-- Domain model (`Message`)
-- Service interface (`IMessageService`)
-- Service implementation (`MessageService`) with static messages
+```
+HereAndNow.Web ──────► HereAndNow.Task ──────► Microsoft.Azure.Cosmos 3.46.1
+    │                       │                      Ical.Net 5.2.0
+    │                       │                      Newtonsoft.Json 13.0.3
+    ├──► HereAndNow.Message                        Logging.Abstractions 8.0.0
+    │
+    ├──► Microsoft.AspNetCore.Authentication.JwtBearer 8.0.11
+    ├──► Swashbuckle.AspNetCore 6.9.0
+    └──► dotenv.net 3.2.1
 
-**Key Design Decision:** No web dependencies; pure business logic for demonstration.
+HereAndNow.Web.Tests ──► HereAndNow.Web + Task + Message
+    ├──► xUnit 2.9.2
+    ├──► Moq 4.20.72
+    ├──► FluentAssertions 6.12.0
+    ├──► Microsoft.AspNetCore.Mvc.Testing 8.0.11
+    └──► coverlet.collector 6.0.2
 
-### `Task/HereAndNow.Task/`
+HereAndNow.Task.Tests ──► HereAndNow.Task
+    ├──► xUnit 2.9.2, Moq 4.20.72, FluentAssertions 6.12.0
+    └──► coverlet.collector 6.0.2
+```
 
-**Purpose:** Core business logic assembly with CosmosDB persistence.
+## Changes Since Last Scan (Jan 2026)
 
-**Contains:**
-- Domain models (`TaskDocument`, `TaskReminderDocument`, `TaskState`, `PagedResult`)
-- Custom exceptions for business rule violations
-- Repository interfaces and implementations for CosmosDB
-- Service interfaces and implementations for business logic
-
-**Key Design Decisions:**
-- Service-Repository pattern for separation of concerns
-- Unity pattern for atomic Task-Reminder operations
-- Denormalized `taskName` in reminders for efficient display
-- State machine logic for task lifecycle
-
-### `Web/HereAndNow.Web/`
-
-**Purpose:** ASP.NET Core Web API project handling HTTP requests, authentication, and API documentation.
-
-**Contains:**
-- **Commands** - Command Pattern implementation for all mutations
-- REST API controllers (`CommandsController`, `MessagesController`, `TasksController`, `RemindersController`)
-- DTOs for request/response shaping
-- Mappers for Document↔DTO conversion
-- Custom validation attributes
-- Middleware for error handling and security headers
-
-**Entry Point:** `Program.cs` - Application bootstrap and configuration
-
-### `Web/HereAndNow.Web/Commands/` (NEW)
-
-**Purpose:** Command Pattern implementation for intent-based API operations.
-
-**Contains:**
-- `CommandRequest.cs` - Base request structure with `command` and `payload`
-- `CommandResponse.cs` - Base response structure
-- Individual command classes with validation attributes
-
-**Key Design Decisions:**
-- Client-generated IDs for optimistic UI patterns
-- Single endpoint (`POST /api/v1/commands`) for all mutations
-- Explicit intent over HTTP verb semantics
-
-### `Web/HereAndNow.Web.Tests/`
-
-**Purpose:** Test project containing unit and integration tests.
-
-**Contains:**
-- Unit tests for controllers (including CommandsController) and services
-- Integration tests for full HTTP pipeline
-- Test infrastructure (mock auth, factory)
-
-### `.github/workflows/`
-
-**Purpose:** CI/CD pipeline configuration for GitHub Actions.
-
-**Contains:**
-- Build, test, and deploy workflow to Azure Web Apps
-- Test result publishing
-- Code coverage collection
-
-## Entry Points
-
-### Main Entry Point
-
-- **File:** `Web/HereAndNow.Web/Program.cs`
-- **Description:** Application bootstrap, service registration, middleware configuration, CosmosDB setup, and Kestrel server startup.
-
-### Test Entry Point
-
-- **File:** `Web/HereAndNow.Web.Tests/Helpers/TestWebApplicationFactory.cs`
-- **Description:** Custom `WebApplicationFactory` for integration testing with test configuration overrides.
-
-## File Organization Patterns
-
-### Controllers Pattern
-- **Location:** `Web/HereAndNow.Web/Controllers/`
-- **Pattern:** `{Feature}Controller.cs`
-- **Current:** `CommandsController.cs`, `MessagesController.cs`, `TasksController.cs`, `RemindersController.cs`, `ErrorController.cs`
-
-### Commands Pattern (NEW)
-- **Location:** `Web/HereAndNow.Web/Commands/`
-- **Pattern:** `{Action}{Feature}Command.cs`
-- **Current:** `CreateTaskCommand`, `CreateTaskAndTaskReminderCommand`, `UpdateTaskNameCommand`, `UpdateTaskStateCommand`, `UpdateTaskReminderScheduledTimeCommand`, `DismissTaskReminderCommand`
-
-### Services Pattern
-- **Location:** `Task/HereAndNow.Task/Services/` or `Message/HereAndNow.Message/Services/`
-- **Pattern:** `I{Feature}Service.cs` (interface), `{Feature}Service.cs` (implementation)
-- **Current:** `ITaskService`, `TaskService`, `ITaskReminderService`, `TaskReminderService`, `IMessageService`, `MessageService`
-
-### Repositories Pattern
-- **Location:** `Task/HereAndNow.Task/Repositories/`
-- **Pattern:** `I{Feature}Repository.cs` (interface), `{Feature}Repository.cs` (implementation)
-- **Current:** `ITaskRepository`, `TaskRepository`, `ITaskReminderRepository`, `TaskReminderRepository`
-
-### Models Pattern
-- **Location:** `Task/HereAndNow.Task/Models/` or `Message/HereAndNow.Message/Models/`
-- **Pattern:** `{ModelName}.cs` or `{ModelName}Document.cs` (for CosmosDB entities)
-- **Current:** `TaskDocument`, `TaskReminderDocument`, `TaskState`, `PagedResult`, `Message`
-
-### DTOs Pattern
-- **Location:** `Web/HereAndNow.Web/DTOs/`
-- **Pattern:** `{Action}{Feature}Dto.cs` or `{Feature}Dto.cs`
-- **Current:** `CreateTaskDto`, `TaskDto`, `PagedTasksDto`, `TaskAndReminderDto`, etc.
-
-### Mappers Pattern
-- **Location:** `Web/HereAndNow.Web/Mappers/`
-- **Pattern:** `{Feature}Mapper.cs`
-- **Current:** `TaskMapper`, `ReminderMapper`
-
-### Tests Pattern
-- **Location:** `Web/HereAndNow.Web.Tests/`
-- **Patterns:**
-  - `Controllers/{Controller}Tests.cs` - Controller unit tests
-  - `Services/{Service}Tests.cs` - Service unit tests
-  - `Integration/{Feature}ApiTests.cs` - Integration tests
-
-## Configuration Files
-
-| File | Description |
-|------|-------------|
-| `HereAndNow.sln` | Visual Studio solution file |
-| `*.csproj` | Project files with dependencies |
-| `.env` | Environment variables (PORT, AUTH0_*, COSMOS_*) |
-| `.github/workflows/*.yml` | CI/CD pipeline definitions |
-| `.gitignore` | Git ignore patterns |
-| `CLAUDE.md` | Claude Code AI assistant instructions |
-
-## Notes for Development
-
-1. **Solution Structure:** Open `HereAndNow.sln` in Visual Studio or Rider for full IDE support.
-
-2. **Layer Dependencies:**
-   ```
-   Web → Task, Message (one-way)
-   Task → (none - independent)
-   Message → (none - independent)
-   ```
-
-3. **Adding New Commands:**
-   - Add command class to `Web/HereAndNow.Web/Commands/`
-   - Add handler case to `CommandsController.ExecuteCommand()`
-   - Add service method (if needed) to `Task/HereAndNow.Task/Services/`
-   - Add repository method (if needed) to `Task/HereAndNow.Task/Repositories/`
-   - Add DTO (if needed) to `Web/HereAndNow.Web/DTOs/`
-   - Add unit test to `Web/HereAndNow.Web.Tests/Controllers/CommandsControllerTests.cs`
-   - Add integration test to `Web/HereAndNow.Web.Tests/Integration/CommandsApiTests.cs`
-
-4. **Adding Legacy Features (deprecated approach):**
-   - Add domain model to `Task/HereAndNow.Task/Models/`
-   - Add exception (if needed) to `Task/HereAndNow.Task/Models/Exceptions/`
-   - Add repository interface + implementation to `Task/HereAndNow.Task/Repositories/`
-   - Add service interface + implementation to `Task/HereAndNow.Task/Services/`
-   - Add DTO to `Web/HereAndNow.Web/DTOs/`
-   - Add mapper to `Web/HereAndNow.Web/Mappers/`
-   - Add controller endpoints to `Web/HereAndNow.Web/Controllers/`
-   - Register services in DI (`Program.cs`)
-   - Add tests to `Web/HereAndNow.Web.Tests/`
-
-5. **Configuration:** All configuration is via environment variables loaded by `dotenv.net`.
-
-6. **Deprecated:** The `Reminders/` folder at root level is empty and no longer used.
+Files marked with ★ NEW are additions since the previous documentation scan. The major addition is the **RecurringTask** feature set:
+- 3 new Cosmos DB document models
+- 1 new computed model (RecurringTaskInstance)
+- 3 new exception types
+- 1 new repository (IRecurringTaskRepository/RecurringTaskRepository)
+- 1 new service (IRecurringTaskService/RecurringTaskService)
+- 7 new command types
+- 1 new DTO and mapper
 
 ---
 
-_Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-18_
+_Generated by BMAD document-project workflow | Exhaustive Scan | 2026-03-19_

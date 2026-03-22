@@ -1,10 +1,10 @@
 # Here and Now Service - Deployment Guide
 
-**Date:** 2026-01-15
+**Date:** 2026-03-19
 
 ## Overview
 
-The Here and Now Service is deployed to Azure Web Apps using GitHub Actions. The CI/CD pipeline is triggered on every push to the `main` branch. The service connects to Azure Cosmos DB for task and reminder persistence.
+The Here and Now Service is deployed to Azure Web Apps using GitHub Actions. The CI/CD pipeline is triggered on every push to the `main` branch. The service connects to Azure Cosmos DB for task, reminder, and recurring task persistence.
 
 ## Deployment Architecture
 
@@ -49,11 +49,11 @@ The Here and Now Service is deployed to Azure Web Apps using GitHub Actions. The
 |-------|---------|-------------|
 | Setup | `actions/setup-dotnet@v4` | Install .NET 8.0 SDK |
 | Build | `dotnet build --configuration Release` | Compile solution |
-| Test | `dotnet test --configuration Release` | Run all tests |
-| Test Report | `dorny/test-reporter@v1` | Publish results to GitHub |
-| Coverage | `actions/upload-artifact@v4` | Upload coverage reports |
+| Test | `dotnet test --configuration Release` | Run all tests (Task.Tests + Web.Tests) |
+| Test Report | `dorny/test-reporter@v1` | Publish results to GitHub Actions UI |
+| Coverage | `actions/upload-artifact@v4` | Upload coverage reports as artifacts |
 | Publish | `dotnet publish -c Release` | Create deployment package |
-| Deploy | `azure/webapps-deploy@v3` | Deploy to Azure |
+| Deploy | `azure/webapps-deploy@v3` | Deploy to Azure Web App |
 
 ### Trigger Conditions
 
@@ -73,7 +73,7 @@ on:
 |----------|------|---------|
 | here-and-now-service | Azure Web App | Application hosting |
 | App Service Plan | Hosting plan | Compute resources |
-| Cosmos DB Account | Database | Task and reminder storage |
+| Cosmos DB Account | Database | Task, reminder, and recurring task storage |
 
 ### Cosmos DB Setup
 
@@ -83,6 +83,19 @@ on:
    - Name: `Tasks`
    - Partition Key: `/userId`
    - Throughput: 400 RU/s (minimum) or autoscale
+
+**Note:** The application auto-creates the database and container on startup if they don't exist, so manual creation is optional.
+
+### Document Types in Container
+
+The single `Tasks` container stores 4 document types using a type discriminator:
+
+| Type Value | Document | Description |
+|-----------|----------|-------------|
+| `Task` | TaskDocument | Regular tasks |
+| `TaskReminder` | TaskReminderDocument | Time-based reminders |
+| `RecurringTaskConfig` | RecurringTaskConfigDocument | Recurrence pattern definitions |
+| `RecurringTaskStateOverride` | RecurringTaskStateOverrideDocument | Explicit state overrides for recurring instances |
 
 ### Application Settings
 
@@ -159,13 +172,19 @@ https://here-and-now-service.azurewebsites.net/swagger
 
 ### Verify CosmosDB Connection
 
-After deploying with CosmosDB settings, test by creating a task:
+Test by creating a task via the commands endpoint:
 
 ```bash
-curl -X POST https://here-and-now-service.azurewebsites.net/api/v1/tasks \
+curl -X POST https://here-and-now-service.azurewebsites.net/api/v1/commands \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "Test task"}'
+  -d '{
+    "command": "CreateTask",
+    "payload": {
+      "taskId": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Test task"
+    }
+  }'
 ```
 
 ## Rollback Procedures
@@ -222,6 +241,10 @@ Monitor in Azure Portal → Cosmos DB → Metrics:
 - 429 (throttled) responses
 - Latency percentiles
 
+Key patterns to watch:
+- `GetComputedInstancesAsync` makes exactly 2 DB queries per call (configs + overrides for date range)
+- `DeleteConfigWithOverridesAsync` uses chunked batches (100 items per batch) for large cascading deletes
+
 ## Environment-Specific Configuration
 
 ### Development
@@ -250,6 +273,14 @@ Azure Web Apps automatically provide HTTPS. Enforce HTTPS-only:
 1. Azure Portal → Web App → TLS/SSL settings
 2. Enable "HTTPS Only"
 
+### Security Headers
+
+The `SecureHeadersMiddleware` automatically adds:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Content-Security-Policy`
+- `Strict-Transport-Security`
+
 ### Secrets
 
 - Never commit `.env` files
@@ -268,7 +299,7 @@ Azure Web Apps automatically provide HTTPS. Enforce HTTPS-only:
 
 - Use private endpoints in production
 - Enable diagnostic logging
-- Review partition key design for tenant isolation
+- Partition key `/userId` ensures tenant isolation — all queries are partition-scoped
 
 ## Troubleshooting
 
@@ -277,7 +308,7 @@ Azure Web Apps automatically provide HTTPS. Enforce HTTPS-only:
 | Issue | Solution |
 |-------|----------|
 | Build failure | Check .NET version compatibility |
-| Test failure | Review test results in Actions |
+| Test failure | Review test results in Actions UI |
 | Publish profile invalid | Regenerate in Azure Portal |
 | 502 after deploy | Check application settings, view logs |
 
@@ -290,16 +321,16 @@ Azure Web Apps automatically provide HTTPS. Enforce HTTPS-only:
 | CORS errors | Check CLIENT_ORIGIN_URL |
 | Task endpoints 500 | Verify COSMOS_CONNECTION_STRING |
 | Slow queries | Check CosmosDB RU consumption |
+| RRULE parse errors | Verify recurrence rule format (no `RRULE:` prefix) |
 
 ### CosmosDB Issues
 
 | Issue | Solution |
 |-------|----------|
 | 429 (throttled) | Increase RU/s or enable autoscale |
-| Container not found | Create Tasks container with /userId partition key |
+| Container not found | App auto-creates on startup; check connection string |
 | Connection timeout | Check firewall rules, use private endpoint |
 
 ---
 
-_Generated using BMAD Method `document-project` workflow_
-_Last Updated: 2026-01-15_
+_Generated by BMAD document-project workflow | Exhaustive Scan | 2026-03-19_

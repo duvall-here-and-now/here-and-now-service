@@ -200,6 +200,194 @@ public class RecurringTaskService : IRecurringTaskService
         // if the config doesn't exist, and handles chunked batch deletion for >99 overrides
     }
 
+    /// <inheritdoc />
+    public async Task StartRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime)
+    {
+        recurrenceDateAndTime = EnsureUtc(recurrenceDateAndTime);
+        var (instance, _) = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
+
+        if (instance.State != TaskState.OnDeck)
+        {
+            throw new InvalidStateTransitionException(
+                instance.Id, instance.State, "StartRecurringTask",
+                $"Cannot start recurring task instance in state '{instance.State}'. Only OnDeck instances can be started.");
+        }
+
+        var overrideDoc = CreateOverrideDocument(userId, configId, recurrenceDateAndTime, TaskState.InProgress);
+        await _repository.UpsertStateOverrideAsync(overrideDoc);
+    }
+
+    /// <inheritdoc />
+    public async Task RevertRecurringTaskToOnDeckAsync(string userId, string configId, DateTime recurrenceDateAndTime)
+    {
+        recurrenceDateAndTime = EnsureUtc(recurrenceDateAndTime);
+        var (instance, _) = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
+
+        if (instance.State != TaskState.InProgress)
+        {
+            throw new InvalidStateTransitionException(
+                instance.Id, instance.State, "RevertRecurringTaskToOnDeck",
+                $"Cannot revert recurring task instance in state '{instance.State}'. Only InProgress instances can be reverted.");
+        }
+
+        var overrideId = RecurringTaskStateOverrideDocument.GenerateId(configId, recurrenceDateAndTime);
+        await _repository.DeleteStateOverrideAsync(userId, overrideId);
+    }
+
+    /// <inheritdoc />
+    public async Task CompleteRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime)
+    {
+        recurrenceDateAndTime = EnsureUtc(recurrenceDateAndTime);
+        var (instance, allInstances) = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
+
+        switch (instance.State)
+        {
+            case TaskState.OnDeck:
+            case TaskState.InProgress:
+                // Allowed — proceed
+                break;
+            case TaskState.Completed:
+                // Idempotent — already completed, no-op
+                return;
+            case TaskState.Skipped:
+                // Allowed only if no newer active instance
+                ValidateNoNewerActiveInstance(instance, allInstances, "CompleteRecurringTask");
+                break;
+            default:
+                throw new InvalidStateTransitionException(
+                    instance.Id, instance.State, "CompleteRecurringTask",
+                    $"Cannot complete recurring task instance in state '{instance.State}'.");
+        }
+
+        var overrideDoc = CreateOverrideDocument(userId, configId, recurrenceDateAndTime, TaskState.Completed);
+        await _repository.UpsertStateOverrideAsync(overrideDoc);
+    }
+
+    /// <inheritdoc />
+    public async Task SkipRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime)
+    {
+        recurrenceDateAndTime = EnsureUtc(recurrenceDateAndTime);
+        var (instance, allInstances) = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
+
+        switch (instance.State)
+        {
+            case TaskState.OnDeck:
+            case TaskState.InProgress:
+                // Allowed — proceed
+                break;
+            case TaskState.Skipped:
+                // Idempotent — already skipped, no-op
+                return;
+            case TaskState.Completed:
+                // Allowed only if no newer active instance
+                ValidateNoNewerActiveInstance(instance, allInstances, "SkipRecurringTask");
+                break;
+            default:
+                throw new InvalidStateTransitionException(
+                    instance.Id, instance.State, "SkipRecurringTask",
+                    $"Cannot skip recurring task instance in state '{instance.State}'.");
+        }
+
+        var overrideDoc = CreateOverrideDocument(userId, configId, recurrenceDateAndTime, TaskState.Skipped);
+        await _repository.UpsertStateOverrideAsync(overrideDoc);
+    }
+
+    /// <summary>
+    /// Fetches the target config and computes instances to find the specific instance's current state.
+    /// Returns both the target instance and all instances for the config (needed for newer-active checks).
+    /// </summary>
+    private async Task<(RecurringTaskInstance instance, IReadOnlyList<RecurringTaskInstance> allInstances)>
+        GetTargetInstanceAsync(string userId, string configId, DateTime recurrenceDateAndTime)
+    {
+        // Verify config exists
+        var config = await _repository.GetConfigByIdAsync(userId, configId);
+        if (config == null)
+            throw new RecurringTaskConfigNotFoundException(configId);
+
+        // Compute instances for a wide range around the target date to capture nearby instances
+        // for the newer-active-instance check. Use ±365 days from the target date (max range).
+        var from = recurrenceDateAndTime.AddDays(-365);
+        var to = recurrenceDateAndTime.AddDays(365);
+
+        var overrides = (await _repository.GetStateOverridesForDateRangeAsync(userId, from, to)).ToList();
+
+        var allInstances = ComputeInstances(
+            new[] { config },
+            overrides,
+            from,
+            to,
+            DateTime.UtcNow);
+
+        // Find the specific target instance
+        var targetInstance = allInstances
+            .FirstOrDefault(i => i.RecurringTaskConfigId == configId &&
+                                 i.RecurrenceDateAndTime == recurrenceDateAndTime);
+
+        if (targetInstance == null)
+        {
+            throw new InvalidStateTransitionException(
+                RecurringTaskStateOverrideDocument.GenerateId(configId, recurrenceDateAndTime),
+                TaskState.Scheduled,
+                "StateCommand",
+                $"No recurring task instance found for config '{configId}' at {recurrenceDateAndTime:O}. " +
+                "The recurrenceDateAndTime may not match any occurrence in the RRULE pattern.");
+        }
+
+        return (targetInstance, allInstances);
+    }
+
+    /// <summary>
+    /// Validates that no newer instance (with a more recent recurrenceDateAndTime) is in OnDeck or InProgress state.
+    /// This prevents modifying old completed/skipped instances while a newer one demands attention.
+    /// </summary>
+    private static void ValidateNoNewerActiveInstance(
+        RecurringTaskInstance targetInstance,
+        IReadOnlyList<RecurringTaskInstance> allInstances,
+        string attemptedAction)
+    {
+        var hasNewerActive = allInstances.Any(i =>
+            i.RecurringTaskConfigId == targetInstance.RecurringTaskConfigId &&
+            i.RecurrenceDateAndTime > targetInstance.RecurrenceDateAndTime &&
+            (i.State == TaskState.OnDeck || i.State == TaskState.InProgress));
+
+        if (hasNewerActive)
+        {
+            throw new InvalidStateTransitionException(
+                targetInstance.Id, targetInstance.State, attemptedAction,
+                $"Cannot change state of instance at {targetInstance.RecurrenceDateAndTime:O} " +
+                "because a more recent instance is currently active (OnDeck or InProgress).");
+        }
+    }
+
+    /// <summary>
+    /// Creates a state override document for upsert operations.
+    /// </summary>
+    private static RecurringTaskStateOverrideDocument CreateOverrideDocument(
+        string userId, string configId, DateTime recurrenceDateAndTime, string state)
+    {
+        return new RecurringTaskStateOverrideDocument
+        {
+            Id = RecurringTaskStateOverrideDocument.GenerateId(configId, recurrenceDateAndTime),
+            UserId = userId,
+            ConfigId = configId,
+            RecurrenceDateAndTime = recurrenceDateAndTime,
+            State = state,
+            UpdatedAt = DateTime.UtcNow
+        };
+    }
+
+    /// <summary>
+    /// Ensures the DateTime has UTC kind. Specifies Utc if Unspecified.
+    /// </summary>
+    private static DateTime EnsureUtc(DateTime dateTime)
+    {
+        if (dateTime.Kind == DateTimeKind.Utc)
+            return dateTime;
+        if (dateTime.Kind == DateTimeKind.Unspecified)
+            return DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
+        throw new ArgumentException("recurrenceDateAndTime must be UTC", nameof(dateTime));
+    }
+
     /// <summary>
     /// Validates an RRULE string: parses it via Ical.Net and rejects SECONDLY/MINUTELY frequencies.
     /// </summary>
