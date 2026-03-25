@@ -7,8 +7,9 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(curl:*)",
       "Bash(mkdir -p docs/.archive)",
-      "Bash(cp docs/project-scan-report.json \"docs/.archive/project-scan-report-2026-01-21.json\")"
+      "Bash(cp docs/project-scan-report.json \"docs/.archive/project-scan-report-2026-01-21.json\")",
+      "Bash(dotnet test:*)"
     ]
   },
-  "outputStyle": "Learning"
+  "outputStyle": "Verbose"
 }
