@@ -17,19 +17,19 @@ public class RecurringTaskStateCommandServiceTests
     private const string TestUserId = "auth0|test-user-123";
     private const string ValidDailyRrule = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0";
 
-    // Use relative dates so tests remain valid regardless of when they run.
-    // ReferenceDate is "today at noon UTC" — all other dates are relative to it.
-    private static readonly DateTime ReferenceDate = DateTime.UtcNow.Date.AddHours(12);
+    // All occurrence times use BYHOUR=9 to match ValidDailyRrule.
+    // Dates are anchored to "yesterday/tomorrow" so they are always unambiguously
+    // past or future regardless of the runner's UTC clock position.
+    //
+    // Past occurrence = OnDeck (most recent past, no override)
+    private static readonly DateTime PastOccurrence = DateTime.UtcNow.Date.AddDays(-1).AddHours(9);
+    // Older past occurrence = would be Skipped if there's a more recent active
+    private static readonly DateTime OlderPastOccurrence = DateTime.UtcNow.Date.AddDays(-2).AddHours(9);
+    // Future occurrence = Scheduled
+    private static readonly DateTime FutureOccurrence = DateTime.UtcNow.Date.AddDays(2).AddHours(9);
 
-    // Past occurrence = OnDeck (most recent past, no override) — 3 hours before reference
-    private static readonly DateTime PastOccurrence = ReferenceDate.AddHours(-3);
-    // Older past occurrence = would be Skipped if there's a more recent active — 1 day before reference
-    private static readonly DateTime OlderPastOccurrence = ReferenceDate.AddDays(-1).AddHours(-3);
-    // Future occurrence = Scheduled — 1 day after reference
-    private static readonly DateTime FutureOccurrence = ReferenceDate.AddDays(1).AddHours(-3);
-
-    // Config start date = well before all occurrences — 30 days before reference
-    private static readonly DateTime ConfigStartDate = ReferenceDate.AddDays(-30);
+    // Config start date = well before all occurrences — 60 days ago at 09:00 UTC
+    private static readonly DateTime ConfigStartDate = DateTime.UtcNow.Date.AddDays(-60).AddHours(9);
 
     private readonly Mock<IRecurringTaskRepository> _mockRepo;
     private readonly RecurringTaskService _service;
