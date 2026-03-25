@@ -63,7 +63,7 @@ public class CommandsController : ControllerBase
     /// Executes a command to modify system state.
     /// </summary>
     /// <remarks>
-    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskState, UpdateTaskReminderScheduledTime, DismissTaskReminder, CreateRecurringTaskConfig, UpdateRecurringTaskConfig, DeleteRecurringTaskConfig
+    /// Available commands: CreateTask, CreateTaskAndTaskReminder, UpdateTaskName, UpdateTaskState, UpdateTaskReminderScheduledTime, DismissTaskReminder, CreateRecurringTaskConfig, UpdateRecurringTaskConfig, DeleteRecurringTaskConfig, StartRecurringTask, RevertRecurringTaskToOnDeck, CompleteRecurringTask, SkipRecurringTask
     ///
     /// Request format for CreateTask:
     /// ```json
@@ -119,6 +119,86 @@ public class CommandsController : ControllerBase
     ///   "command": "DismissTaskReminder",
     ///   "payload": {
     ///     "taskReminderId": "660e8400-e29b-41d4-a716-446655440001"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for CreateRecurringTaskConfig:
+    /// ```json
+    /// {
+    ///   "command": "CreateRecurringTaskConfig",
+    ///   "payload": {
+    ///     "id": "770e8400-e29b-41d4-a716-446655440010",
+    ///     "text": "Morning standup",
+    ///     "recurrenceRule": "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+    ///     "startDateAndTime": "2026-01-20T09:00:00Z"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for UpdateRecurringTaskConfig:
+    /// ```json
+    /// {
+    ///   "command": "UpdateRecurringTaskConfig",
+    ///   "payload": {
+    ///     "id": "770e8400-e29b-41d4-a716-446655440010",
+    ///     "text": "Morning standup (updated)",
+    ///     "recurrenceRule": "FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+    ///     "startDateAndTime": "2026-01-20T09:00:00Z"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for DeleteRecurringTaskConfig:
+    /// ```json
+    /// {
+    ///   "command": "DeleteRecurringTaskConfig",
+    ///   "payload": {
+    ///     "id": "770e8400-e29b-41d4-a716-446655440010"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for StartRecurringTask:
+    /// ```json
+    /// {
+    ///   "command": "StartRecurringTask",
+    ///   "payload": {
+    ///     "recurringTaskConfigId": "770e8400-e29b-41d4-a716-446655440010",
+    ///     "recurrenceDateAndTime": "2026-01-20T09:00:00Z"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for RevertRecurringTaskToOnDeck:
+    /// ```json
+    /// {
+    ///   "command": "RevertRecurringTaskToOnDeck",
+    ///   "payload": {
+    ///     "recurringTaskConfigId": "770e8400-e29b-41d4-a716-446655440010",
+    ///     "recurrenceDateAndTime": "2026-01-20T09:00:00Z"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for CompleteRecurringTask:
+    /// ```json
+    /// {
+    ///   "command": "CompleteRecurringTask",
+    ///   "payload": {
+    ///     "recurringTaskConfigId": "770e8400-e29b-41d4-a716-446655440010",
+    ///     "recurrenceDateAndTime": "2026-01-20T09:00:00Z"
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// Request format for SkipRecurringTask:
+    /// ```json
+    /// {
+    ///   "command": "SkipRecurringTask",
+    ///   "payload": {
+    ///     "recurringTaskConfigId": "770e8400-e29b-41d4-a716-446655440010",
+    ///     "recurrenceDateAndTime": "2026-01-20T09:00:00Z"
     ///   }
     /// }
     /// ```
