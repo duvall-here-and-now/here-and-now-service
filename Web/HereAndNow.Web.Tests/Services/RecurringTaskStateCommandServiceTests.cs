@@ -18,13 +18,17 @@ public class RecurringTaskStateCommandServiceTests
     private const string ValidDailyRrule = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0";
 
     // All occurrence times use BYHOUR=9 to match ValidDailyRrule.
-    // Dates are anchored to "yesterday/tomorrow" so they are always unambiguously
-    // past or future regardless of the runner's UTC clock position.
+    // PastOccurrence MUST be the most recent 09:00 UTC that has already passed,
+    // so it is always the OnDeck instance (most recent past, no override).
+    // After 09:00 UTC today, that is today's 09:00; before 09:00 UTC, yesterday's.
     //
     // Past occurrence = OnDeck (most recent past, no override)
-    private static readonly DateTime PastOccurrence = DateTime.UtcNow.Date.AddDays(-1).AddHours(9);
+    private static readonly DateTime PastOccurrence =
+        DateTime.UtcNow.TimeOfDay >= TimeSpan.FromHours(9)
+            ? DateTime.UtcNow.Date.AddHours(9)
+            : DateTime.UtcNow.Date.AddDays(-1).AddHours(9);
     // Older past occurrence = would be Skipped if there's a more recent active
-    private static readonly DateTime OlderPastOccurrence = DateTime.UtcNow.Date.AddDays(-2).AddHours(9);
+    private static readonly DateTime OlderPastOccurrence = PastOccurrence.AddDays(-1);
     // Future occurrence = Scheduled
     private static readonly DateTime FutureOccurrence = DateTime.UtcNow.Date.AddDays(2).AddHours(9);
 
