@@ -1,210 +1,119 @@
 ---
 project_name: 'here-and-now-service'
 user_name: 'Mike DuVall'
-date: '2026-03-25'
-sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'code_quality_rules', 'workflow_rules', 'critical_rules']
+date: '2026-03-29'
+sections_completed: ['technology_stack', 'architecture_rules', 'runtime_rules', 'testing_rules', 'critical_rules']
 status: 'complete'
-rule_count: 72
+rule_count: 39
 optimized_for_llm: true
 ---
 
 # Project Context for AI Agents
 
-_This file contains critical rules and patterns that AI agents must follow when implementing code in this project. Focus on unobvious details that agents might otherwise miss._
+_This file captures the non-obvious project rules an implementation agent is likely to miss. Favor accuracy and durability over exhaustive detail._
 
 ---
 
-## Technology Stack & Versions
+## Technology Stack
 
-- **.NET 8.0** (LTS) / **C# 12** — file-scoped namespaces, nullable reference types, implicit usings
-- **ASP.NET Core 8.0** — Web API with `[ApiController]`, JWT Bearer auth
-- **Azure Cosmos DB** SDK 3.46.1 — NoSQL, `/userId` partition key, transactional batches
-- **Ical.Net 5.2.0** — RFC 5545 RRULE parsing for recurring tasks
-- **Auth0** — JWT Bearer tokens via `Microsoft.AspNetCore.Authentication.JwtBearer` 8.0.11
-- **Swagger** — Swashbuckle.AspNetCore 6.9.0 with XML doc generation
-- **Newtonsoft.Json 13.0.3** — Used by Cosmos SDK (NOT System.Text.Json for Cosmos operations)
-- **Testing:** xUnit 2.9.2 + Moq 4.20.72 + FluentAssertions 6.12.0 + Mvc.Testing 8.0.11
-- **CI/CD:** GitHub Actions → Azure Web Apps (build → test → publish → deploy)
+- .NET 8 / C# 12
+- ASP.NET Core Web API with Auth0 JWT bearer auth
+- Azure Cosmos DB, single container with `/userId` partition key
+- Ical.Net for RRULE parsing and validation
+- Swagger with XML doc generation
+- xUnit + Moq + FluentAssertions for tests
 
-## Critical Implementation Rules
+## Core Architecture Rules
 
-### C# Language Rules
+- **New mutations use the command endpoint**: add new write operations to `POST /api/v1/commands`, not to new REST mutation endpoints.
+- **Legacy endpoints still exist**: preserve existing non-command endpoints unless the task explicitly removes or migrates them.
+- **Command dispatch lives in `CommandsController`**: it switches on the `command` string, deserializes the `payload`, and returns `IActionResult` responses directly.
+- **Client generates IDs**: task, reminder, and recurring config IDs come from the client to support optimistic UI.
+- **Normalize GUID IDs to lowercase** before persisting or comparing command IDs.
+- **`userId` is always the first service parameter** and comes from `ClaimTypes.NameIdentifier`.
+- **Use `TaskState` string constants**, not enums or duplicated string literals.
+- **All timestamps are UTC**: use `DateTime.UtcNow`, store and transmit ISO 8601 UTC values only.
+- **File-scoped namespaces only**.
+- **Public API-facing properties use `[JsonPropertyName]`** for explicit JSON field names.
+- **Public APIs should have XML docs** because Swagger includes XML comments when available.
+- **Use structured logging** with user and resource identifiers in log messages.
 
-- **File-scoped namespaces ALWAYS** — `namespace HereAndNowService.Controllers;` (never block-scoped)
-- **Nullable reference types enabled** — Use `string?` for optional, `!` for null-forgiving; all projects have `<Nullable>enable</Nullable>`
-- **`[JsonPropertyName]` on EVERY public property** — DTOs, Commands, and Documents all use explicit camelCase attributes:
-  ```csharp
-  [JsonPropertyName("taskId")]
-  public string TaskId { get; set; }
-  ```
-- **Async all the way** — All service/repository methods return `Task<T>` or `Task`, use `await` (never `.Result` or `.Wait()`)
-- **userId as first parameter** — All service methods: `CreateTaskAsync(string userId, ...)`
-- **String constants for state values, NOT enums** — Use `TaskState.OnDeck`, `TaskState.Completed` etc. (static class with `const string` fields)
-- **State value strings are PascalCase** — `"OnDeck"`, `"InProgress"`, `"Completed"`, `"Deleted"`, `"Scheduled"`, `"Skipped"` — no variations
-- **DateTime always UTC** — Use `DateTime.UtcNow`, store/transmit as ISO 8601 `"2026-01-02T14:00:00Z"`, never local time
-- **XML documentation required** — Public methods need `<summary>`, `<param>`, `<returns>`, `<exception>` tags
-- **Structured logging with context** — Always include userId, resource IDs, and operation details in log messages:
-  ```csharp
-  _logger.LogInformation("Creating task {TaskId} for user {UserId}", taskId, userId);
-  ```
+## Data and Persistence Rules
 
-### ASP.NET Core & Architecture Rules
+- **All task-related documents share one Cosmos container**: `Task`, `TaskReminder`, `RecurringTaskConfig`, and `RecurringTaskStateOverride` are stored together.
+- **Always scope Cosmos operations to the user partition**: every read, query, patch, replace, delete, and batch uses partition key `userId`.
+- **Do not query across partitions**.
+- **Use the document `type` discriminator** on stored documents.
+- **Task/reminder multi-document updates use the Unity pattern**: if a task and reminder must change together, use a transactional batch.
+- **Reminder `taskName` is denormalized**: changing a task name must also update the linked reminder atomically.
+- **Recurring task instances are computed, not persisted**: only configs and state overrides are stored.
+- **Computed recurring instances follow the two-query pattern**: fetch configs, fetch overrides, then compute in memory.
+- **Override ID format is `{configId}_{yyyy-MM-ddTHH:mm:ssZ}`**.
+- **Store RRULE values without the `RRULE:` prefix**.
+- **Reject `Secondly` and `Minutely` RRULE frequencies**; accept Hourly, Daily, Weekly, Monthly, and Yearly.
+- **One active recurring instance at a time**: only the most recent past instance may be `OnDeck` or `InProgress` for a config.
+- **Recurring config deletes may require chunking**: Cosmos transactional batch limit is 100 operations.
 
-- **Command Pattern for ALL mutations** — Single endpoint `POST /api/v1/commands` with discriminator:
-  ```json
-  { "command": "CreateTask", "payload": { "taskId": "guid", "name": "..." } }
-  ```
-  NEVER add new PUT/POST/DELETE endpoints for mutations — add a new Command class instead
+## Runtime and API Rules
 
-- **Command dispatch in CommandsController** — Switch on `command` string, deserialize `JsonElement` payload to specific Command type, call service method, return `CommandResponse`
+- **Required env vars**: `PORT`, `CLIENT_ORIGIN_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`.
+- **Cosmos wiring is conditional**: task/reminder/recurring services and repositories are only registered when `COSMOS_CONNECTION_STRING` is set.
+- **Without Cosmos configured, only non-Cosmos functionality is expected to work**.
+- **Database and container are auto-created on startup** when Cosmos is configured.
+- **`CLIENT_ORIGIN_URL` may contain multiple comma-separated origins**; CORS is built from that list.
+- **Validation errors use the standard error envelope**.
+- **`ScheduledTime` model validation failures map to `INVALID_SCHEDULED_TIME`**; other model validation failures map to `VALIDATION_ERROR`.
+- **Controllers sometimes translate validation and domain errors directly**; middleware still handles cross-cutting and unhandled exceptions.
+- **Standard error shape**:
 
-- **Client-generated IDs** — Task IDs and Reminder IDs are GUIDs generated by the client, passed in the command payload (enables optimistic UI)
-
-- **Unity Pattern for atomic multi-document operations** — NEVER update Task + Reminder separately:
-  ```csharp
-  // CORRECT: Transactional batch
-  var batch = _container.CreateTransactionalBatch(new PartitionKey(userId));
-  batch.ReplaceItem(taskId, updatedTask);
-  batch.ReplaceItem(reminderId, updatedReminder);
-  await batch.ExecuteAsync();
-  ```
-
-- **Cosmos DB batch limit = 100** — For cascade deletes with >99 documents, chunk into batches of 100
-
-- **Denormalized `taskName` on reminders** — When task name changes, MUST update both Task AND TaskReminder documents atomically (Unity)
-
-- **Computed Instance Model for recurring tasks** — Instances are NEVER persisted. Only `RecurringTaskConfig` and `RecurringTaskStateOverride` are stored. `ComputeInstances()` is a pure function
-
-- **Two-Query Pattern** — `GetComputedInstancesAsync` makes exactly 2 DB calls (configs + overrides), then computes in-memory
-
-- **Override key format** — `{configId}_{yyyy-MM-ddTHH:mm:ssZ}` using `:O` (round-trip) format
-
-- **RRULE validation** — Reject Secondly/Minutely frequencies. Accept Hourly/Daily/Weekly/Monthly/Yearly. Store WITHOUT `RRULE:` prefix
-
-- **One-active-at-a-time** — Only the most recent past recurring instance can be OnDeck/InProgress per config. Older instances auto-skip
-
-- **DI lifetimes** — Services = Scoped, Repositories = Singleton, CosmosClient = Singleton
-
-- **Controller routing** — `[Route("api/v1/[controller]")]` with `[ApiController]` and `[Authorize]` at class level
-
-- **Error handling via middleware** — `ErrorHandlerMiddleware` maps domain exceptions to HTTP status codes + `ErrorResponseDto`. Controllers do NOT catch domain exceptions
-
-- **Standard error response format:**
   ```json
   { "error": { "code": "TASK_NOT_FOUND", "message": "Task with ID abc123 not found" } }
   ```
 
-- **User ID from JWT** — Extract via `User.FindFirst(ClaimTypes.NameIdentifier)?.Value` in controllers; pass as `string userId` to services
+## State Rules
 
-### Testing Rules
+- **Regular task states**: `OnDeck`, `InProgress`, `Completed`, `Deleted`.
+- **Recurring instance states**: `Scheduled`, `OnDeck`, `InProgress`, `Completed`, `Skipped`.
+- **Regular transitions**: `OnDeck -> InProgress -> Completed`, `InProgress -> OnDeck`, `OnDeck/InProgress -> Deleted`.
+- **Recurring transitions**: `Scheduled -> OnDeck -> InProgress -> Completed`, `InProgress -> OnDeck`, `OnDeck/InProgress -> Skipped`.
+- **Completed, Deleted, and Skipped are terminal for normal state flow**; recurring commands also enforce the newer-active-instance rule.
 
-- **Test framework:** xUnit `[Fact]` (no `[Theory]` with inline data currently used)
-- **Naming convention:** `MethodName_Condition_ExpectedResult()` — e.g., `ExecuteCommand_CreateTask_ReturnsCreatedResult()`
-- **Arrange-Act-Assert pattern** — Consistently used, with `#region` blocks grouping related tests
-- **Standard test user:** `private const string TestUserId = "auth0|test-user-123";`
-- **Controller test setup** — Mock all dependencies, create `ControllerContext` with authenticated `ClaimsPrincipal`:
-  ```csharp
-  var claims = new[] { new Claim(ClaimTypes.NameIdentifier, TestUserId) };
-  var identity = new ClaimsIdentity(claims, "TestAuth");
-  _controller.ControllerContext = new ControllerContext
-  {
-      HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
-  };
-  ```
-- **Moq for all dependencies** — `Mock<ITaskService>`, `Mock<ILogger<T>>` etc.
-- **FluentAssertions for all assertions** — `.Should().BeOfType<T>()`, `.Should().Be(expected)`, never raw `Assert.*`
-- **Service tests mock repositories** — Never hit Cosmos DB in unit tests
-- **Test project mirrors source structure** — `CommandsControllerTests`, `TaskServiceTests`, etc.
-- **CI gate:** Tests MUST pass before deployment; test results published to GitHub Actions UI
+## Code Organization Rules
 
-### Code Quality & Style Rules
+- Domain models, exceptions, repositories, and services live under `Task/HereAndNow.Task/`.
+- Commands, DTOs, mappers, validation attributes, controllers, and middleware live under `Web/HereAndNow.Web/`.
+- Mappers are static classes; do not introduce AutoMapper for routine DTO mapping.
+- Controller actions should declare `ProducesResponseType` metadata.
 
-- **Namespace convention:** `HereAndNowService.{Layer}` — e.g., `HereAndNowService.Controllers`, `HereAndNowService.Commands`, `HereAndNowService.DTOs`
-- **File organization by responsibility:**
-  - Domain models → `Task/HereAndNow.Task/Models/`
-  - Exceptions → `Task/HereAndNow.Task/Models/Exceptions/`
-  - Repository interfaces + implementations → `Task/HereAndNow.Task/Repositories/`
-  - Service interfaces + implementations → `Task/HereAndNow.Task/Services/`
-  - Commands → `Web/HereAndNow.Web/Commands/`
-  - DTOs → `Web/HereAndNow.Web/DTOs/`
-  - Mappers → `Web/HereAndNow.Web/Mappers/`
-  - Validation → `Web/HereAndNow.Web/Validation/`
-- **Mappers are static classes** — `TaskMapper.ToDto()`, `ReminderMapper.ToDto()` — no AutoMapper
-- **ProducesResponseType on all controller actions** — Document all possible status codes:
-  ```csharp
-  [ProducesResponseType(typeof(TaskDto), StatusCodes.Status200OK)]
-  [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
-  ```
-- **Cosmos DB document type discriminator** — All documents have `"type"` field: `"Task"`, `"TaskReminder"`, `"RecurringTaskConfig"`, `"RecurringTaskStateOverride"`
-- **Single container design** — All 4 document types share the `Tasks` container with `/userId` partition key
-- **Cosmos serialization** — Container uses `CosmosPropertyNamingPolicy.CamelCase`; C# models use `[JsonPropertyName]` for explicit control
+## Testing Rules
 
-### Development Workflow Rules
+- Use xUnit, Moq, and FluentAssertions.
+- Prefer `MethodName_Condition_ExpectedResult` naming.
+- Follow Arrange / Act / Assert consistently.
+- Use the standard authenticated test user: `auth0|test-user-123`.
+- Controller tests set `ControllerContext.HttpContext.User` with a `ClaimTypes.NameIdentifier` claim.
+- Unit tests mock services and repositories; do not hit Cosmos DB in unit tests.
 
-- **CI/CD pipeline:** GitHub Actions on push to `main` — Build → Test → Publish → Deploy to Azure Web Apps
-- **Quality gate:** Tests must pass before deployment proceeds; `dotnet test` with trx logger and code coverage
-- **Test results** published to GitHub Actions UI via `dorny/test-reporter`; coverage uploaded as artifacts
-- **Deployment:** `azure/webapps-deploy@v3` with `clean: true` flag (removes old artifacts)
-- **Environment variables via dotenv.net** — `.env` file loaded at startup, NOT committed to git
-- **Cosmos DB auto-create** — Database and container created on startup if they don't exist (safe for fresh environments)
-- **Conditional DI registration** — Cosmos-dependent services only registered if `COSMOS_CONNECTION_STRING` is set (allows running without DB for message-only endpoints)
-- **Build command:** `dotnet build HereAndNow.sln` — always build the full solution
-- **Test command:** `dotnet test` — runs both `HereAndNow.Web.Tests` and `HereAndNow.Task.Tests`
+## Critical Don't-Miss Rules
 
-### Critical Don't-Miss Rules
-
-**Anti-Patterns — NEVER Do These:**
-
-- **NEVER update Task and Reminder in separate calls** — Always use Unity transactional batch. Separate calls risk data inconsistency if the second fails
-- **NEVER persist RecurringTaskInstance objects** — They are computed in-memory only. Store configs and overrides
-- **NEVER use `DateTime.Now`** — Always `DateTime.UtcNow`. Local time only at display layer (frontend)
-- **NEVER add new REST mutation endpoints** — All new mutations go through the Command Pattern (`POST /api/v1/commands`)
-- **NEVER use block-scoped namespaces** — File-scoped only
-- **NEVER use raw `Assert.*`** — FluentAssertions `.Should()` syntax only
-- **NEVER query across partitions** — All Cosmos queries scoped to `/userId` partition key
-- **NEVER store RRULE with prefix** — Store `"FREQ=WEEKLY;BYDAY=MO"` not `"RRULE:FREQ=WEEKLY;BYDAY=MO"`
-
-**State Machine Rules:**
-- Regular tasks: `OnDeck → InProgress → Completed`, `OnDeck/InProgress → Deleted`, `InProgress → OnDeck` (revert)
-- Recurring instances: `Scheduled → OnDeck → InProgress → Completed`, `OnDeck/InProgress → Skipped`, `InProgress → OnDeck` (revert)
-- Completed, Deleted, and Skipped are terminal states — no transitions out
-- State applicability: Regular tasks use `OnDeck|InProgress|Completed|Deleted`; recurring instances use `Scheduled|OnDeck|InProgress|Completed|Skipped`
-
-**Security Rules:**
-- **User isolation:** ALWAYS filter by `userId` from JWT claim — never allow cross-user access
-- **Partition key = userId** — Every Cosmos operation must include partition key
-- **Never trust client input** — Validate all input server-side; `[Required]`, `[MaxLength]`, `[FutureTimeValidation]`
-- **Never expose internal errors** — All exceptions caught by `ErrorHandlerMiddleware` and returned as standard `ErrorResponseDto`
-- **SecureHeadersMiddleware** adds X-Frame-Options, CSP, HSTS, X-Content-Type-Options on every response
-
-**Edge Cases:**
-- Completing/deleting a task that has a reminder → Unity operation (atomic)
-- Completing/deleting a task WITHOUT a reminder → Normal single-document update
-- Reminder already dismissed → `DismissTaskReminder` is idempotent (no error)
-- `CompleteRecurringTask` and `SkipRecurringTask` are idempotent (upsert pattern)
-- `RevertRecurringTaskToOnDeck` deletes the override (returning to computed default)
-- Cascade delete of recurring config → delete all overrides in chunks of 100, then delete config
+- **Never update a task and reminder in separate calls** when the operation must stay atomic.
+- **Never persist recurring task instances**.
+- **Never use `DateTime.Now`**.
+- **Never add a new mutation endpoint when a command should be added instead**.
+- **Never bypass the user partition key**.
+- **Never store RRULE values with the `RRULE:` prefix**.
+- **Never invent new state strings**; reuse `TaskState` constants.
 
 ---
 
-## Usage Guidelines
+## Usage Guidance
 
-**For AI Agents:**
-
-- Read this file before implementing any code
-- Follow ALL rules exactly as documented
-- When in doubt, prefer the more restrictive option
-- Update this file if new patterns emerge
-
-**For Humans:**
-
-- Keep this file lean and focused on agent needs
-- Update when technology stack changes
-- Review quarterly for outdated rules
-- Remove rules that become obvious over time
+- Read this file before implementing service changes.
+- If this file conflicts with code, verify the current code and update this file.
+- Use this file as a decision filter, not as a substitute for reading the relevant controller, service, repository, and docs files.
 
 ---
 
 _Generated by BMAD Method generate-project-context workflow_
-_Source: architecture.md + codebase analysis + docs/index.md_
-_Last Updated: 2026-03-25_
+_Source: docs/index.md + docs/architecture.md + Program.cs + CommandsController.cs + task models/repositories_
+_Last Updated: 2026-03-29_
