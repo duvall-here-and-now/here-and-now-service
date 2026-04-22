@@ -67,15 +67,15 @@ public class RecurringTaskServiceTests
     [Fact]
     public void ComputeInstances_DailyRrule_GeneratesCorrectOccurrences()
     {
-        // Arrange — all occurrences in range will be "future" relative to utcNow (Jan 1)
+        // Arrange — all occurrences in range will be "future" relative to now (Jan 1)
         var config = CreateConfig();
-        var utcNow = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var nowJan1AtMidnight = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            Feb14AtMidnight, Feb17AtMidnight, utcNow);
+            Feb14AtMidnight, Feb17AtMidnight, nowJan1AtMidnight);
 
         // Assert — 3 daily occurrences at 09:00 on Feb 14, 15, 16
         result.Should().HaveCount(3);
@@ -90,15 +90,13 @@ public class RecurringTaskServiceTests
         // Arrange — config starts Feb 15, but range starts Feb 14
         var configStart = new DateTime(2026, 2, 15, 9, 0, 0, DateTimeKind.Utc);
         var config = CreateConfig(startDateAndTime: configStart);
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Utc);
-        var utcNow = new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc); // all future
+        var nowFeb10AtMidnight = new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc); // all future
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            from, to, utcNow);
+            Feb14AtMidnight, Feb17AtMidnight, nowFeb10AtMidnight);
 
         // Assert — Feb 14 occurrence excluded; only Feb 15 and Feb 16
         result.Should().NotContain(r => r.RecurrenceDateAndTime < configStart);
@@ -114,16 +112,15 @@ public class RecurringTaskServiceTests
     [Fact]
     public void ComputeInstances_FutureOccurrence_ReturnsScheduled()
     {
-        // Arrange — only Feb 16 in range; utcNow is Feb 15 noon → Feb 16 is future
+        // Arrange — only Feb 16 in range; now is Feb 15 noon → Feb 16 is future
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            from, to, Feb15AtNoon);
+            fromFeb16AtMidnight, Feb17AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(1);
@@ -134,16 +131,16 @@ public class RecurringTaskServiceTests
     [Fact]
     public void ComputeInstances_MostRecentPastOccurrence_NoOverride_ReturnsOnDeck()
     {
-        // Arrange — only Feb 15 at 09:00; utcNow is Feb 15 at noon (past)
+        // Arrange — only Feb 15 at 09:00; now is Feb 15 at noon (past)
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            from, to, Feb15AtNoon);
+            fromFeb15AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(1);
@@ -156,14 +153,13 @@ public class RecurringTaskServiceTests
     {
         // Arrange — Feb 14, 15 at 09:00 both past; Feb 15 is most recent
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            from, to, Feb15AtNoon);
+            Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(2);
@@ -177,14 +173,13 @@ public class RecurringTaskServiceTests
     {
         // Arrange — Feb 14 and Feb 15 past; Feb 15 is OnDeck, Feb 14 should be Skipped
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            from, to, Feb15AtNoon);
+            Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         var feb14Instance = result.Single(r => r.RecurrenceDateAndTime == Feb14At9);
@@ -196,14 +191,13 @@ public class RecurringTaskServiceTests
     {
         // Arrange — only Feb 14 occurrence with InProgress override; it's the only instance
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb14At9, TaskState.InProgress) };
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, Feb15AtNoon);
+            new[] { config }, overrides, Feb14AtMidnight, toFeb15AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(1);
@@ -217,14 +211,13 @@ public class RecurringTaskServiceTests
         // Arrange — Feb 14 has InProgress override, but Feb 15 is more recent past (no override)
         // Feb 15 wins as OnDeck; Feb 14's InProgress is superseded → Skipped
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb14At9, TaskState.InProgress) };
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, Feb15AtNoon);
+            new[] { config }, overrides, Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(2);
@@ -240,14 +233,13 @@ public class RecurringTaskServiceTests
     {
         // Arrange — Feb 15 has Completed override; even as most-recent-past it should stay Completed
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.Completed) };
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, Feb15AtNoon);
+            new[] { config }, overrides, Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         var feb15 = result.Single(r => r.RecurrenceDateAndTime == Feb15At9);
@@ -259,14 +251,13 @@ public class RecurringTaskServiceTests
     {
         // Arrange — Feb 15 has Skipped override; even as most-recent-past it should stay Skipped
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.Skipped) };
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, Feb15AtNoon);
+            new[] { config }, overrides, Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         var feb15 = result.Single(r => r.RecurrenceDateAndTime == Feb15At9);
@@ -277,21 +268,19 @@ public class RecurringTaskServiceTests
     public void ComputeInstances_CompletedYesterday_BeforeTodaysOccurrence_OlderPastDoesNotBecomeOnDeck()
     {
         // Arrange — reproduces user-reported Kanban "Brush teeth" bug:
-        //   Daily 9am task. utcNow = 07:18 on Feb 16 — BEFORE today's 9am occurrence.
+        //   Daily 9am task. now = 07:18 on Feb 16 — BEFORE today's 9am occurrence.
         //   Before the drag: Feb 15 9am was OnDeck (most recent past).
         //   User drags Feb 15 to Completed → Completed override stored.
         //   After recompute: Feb 14 9am wrongly becomes OnDeck.
         //   Expected: Feb 14 = Skipped, Feb 15 = Completed, Feb 16 = Scheduled, no OnDeck.
         var config = CreateConfig();
-        var utcNowBefore9am = new DateTime(2026, 2, 16, 7, 18, 0, DateTimeKind.Utc);
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Utc);
+        var nowFeb16At0718 = new DateTime(2026, 2, 16, 7, 18, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.Completed) };
         var service = CreateService();
 
         // Act
         IReadOnlyList<RecurringTaskInstance> result  = service.ComputeInstances(
-            new[] { config }, overrides, from, to, utcNowBefore9am);
+            new[] { config }, overrides, Feb14AtMidnight, Feb17AtMidnight, nowFeb16At0718);
 
         // Assert
         result.Should().HaveCount(3);
@@ -299,10 +288,10 @@ public class RecurringTaskServiceTests
         var feb15 = result.Single(r => r.RecurrenceDateAndTime == Feb15At9);
         var feb16 = result.Single(r => r.RecurrenceDateAndTime == Feb16At9);
 
-        feb15.State.Should().Be(TaskState.Completed, "user's explicit Completed override must be respected");
-        feb16.State.Should().Be(TaskState.Scheduled, "today's 9am occurrence is still in the future at 07:18");
         feb14.State.Should().Be(TaskState.Skipped,
             "older past occurrence must not leak into OnDeck after the newer past was completed");
+        feb15.State.Should().Be(TaskState.Completed, "user's explicit Completed override must be respected");
+        feb16.State.Should().Be(TaskState.Scheduled, "today's 9am occurrence is still in the future at 07:18");
 
         result.Should().NotContain(r => r.State == TaskState.OnDeck,
             "nothing should be OnDeck: most-recent-past was Completed and today's 9am has not arrived");
@@ -315,14 +304,13 @@ public class RecurringTaskServiceTests
         // Feb 14 9am (older past) must also be Skipped — the active slot is consumed by Feb 15.
         // Verifies both terminal states behave identically under the simplified algorithm.
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.Skipped) };
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, Feb15AtNoon);
+            new[] { config }, overrides, Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(2);
@@ -339,7 +327,7 @@ public class RecurringTaskServiceTests
     {
         // Arrange — originally reported scenario, re-expressed on an HOURLY RRULE.
         //   Task recurs every 2 hours. On Feb 15: 17:00, 19:00, 21:00 UTC.
-        //   utcNow = 20:29 UTC (between 19:00 past and 21:00 future).
+        //   nowFeb15At2029 = 20:29 UTC (between 19:00 past and 21:00 future).
         //   User completed the 19:00 occurrence (most recent past).
         //   Expected: 17:00 = Skipped, 19:00 = Completed, 21:00 = Scheduled, no OnDeck.
         // Covers a second RRULE frequency so the fix is not accidentally Daily-specific.
@@ -347,9 +335,9 @@ public class RecurringTaskServiceTests
         var config = CreateConfig(
             rrule: "FREQ=HOURLY;INTERVAL=2",
             startDateAndTime: configStart);
-        var utcNow = new DateTime(2026, 2, 15, 20, 29, 0, DateTimeKind.Utc);
-        var from = new DateTime(2026, 2, 15, 16, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 15, 22, 0, 0, DateTimeKind.Utc);
+        var nowFeb15At2029 = new DateTime(2026, 2, 15, 20, 29, 0, DateTimeKind.Utc);
+        var fromFeb15At16 = new DateTime(2026, 2, 15, 16, 0, 0, DateTimeKind.Utc);
+        var toFeb15At22 = new DateTime(2026, 2, 15, 22, 0, 0, DateTimeKind.Utc);
 
         var feb15At17 = new DateTime(2026, 2, 15, 17, 0, 0, DateTimeKind.Utc);
         var feb15At19 = new DateTime(2026, 2, 15, 19, 0, 0, DateTimeKind.Utc);
@@ -360,7 +348,7 @@ public class RecurringTaskServiceTests
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, utcNow);
+            new[] { config }, overrides, fromFeb15At16, toFeb15At22, nowFeb15At2029);
 
         // Assert
         result.Should().HaveCount(3);
@@ -369,7 +357,7 @@ public class RecurringTaskServiceTests
         result.Single(r => r.RecurrenceDateAndTime == feb15At19).State
             .Should().Be(TaskState.Completed, "19:00 has the Completed override");
         result.Single(r => r.RecurrenceDateAndTime == feb15At21).State
-            .Should().Be(TaskState.Scheduled, "21:00 is still future at 20:29 utcNow");
+            .Should().Be(TaskState.Scheduled, "21:00 is still future at 20:29 nowFeb15At2029");
         result.Should().NotContain(r => r.State == TaskState.OnDeck,
             "no OnDeck should exist: the active slot is Completed and the next occurrence is future");
     }
@@ -385,14 +373,14 @@ public class RecurringTaskServiceTests
         // If it appears in the override store (e.g., a data-migration artifact), the defensive
         // fallback should pass it through rather than silently dropping the occurrence.
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.OnDeck) };
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, Feb15AtNoon);
+            new[] { config }, overrides, fromFeb15AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert — occurrence must not be silently dropped; state passed through as-is
         result.Should().HaveCount(1);
@@ -406,14 +394,14 @@ public class RecurringTaskServiceTests
         // Arrange — Scheduled is another computed state never legitimately persisted.
         // Same defensive contract: pass through, do not drop.
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.Scheduled) };
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, Feb15AtNoon);
+            new[] { config }, overrides, fromFeb15AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(1);
@@ -428,18 +416,17 @@ public class RecurringTaskServiceTests
         // recent past occurrence, regardless of its override state. Older past occurrences
         // are always Skipped (unless they themselves carry a Completed/Skipped terminal override).
         //
-        // Occurrences: Feb 15 and Feb 14 (both past; utcNow = Feb 15 noon).
+        // Occurrences: Feb 15 and Feb 14 (both past; now = Feb 15 noon).
         // Feb 15 has an unexpected OnDeck override → passed through defensively.
         // Feb 14 has no override → Skipped (older past).
         var config = CreateConfig();
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.OnDeck) };
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
-            new[] { config }, overrides, from, to, Feb15AtNoon);
+            new[] { config }, overrides, Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert — both instances present
         result.Should().HaveCount(2);
@@ -460,14 +447,14 @@ public class RecurringTaskServiceTests
     {
         // Arrange
         var config = CreateConfig(text: "Daily standup");
-        var from = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            from, to, Feb15AtNoon);
+            fromFeb15AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(1);
@@ -479,14 +466,14 @@ public class RecurringTaskServiceTests
     {
         // Arrange — config id "abc-123", occurrence at Feb 15 09:00 UTC
         var config = CreateConfig(id: "abc-123");
-        var from = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            from, to, Feb15AtNoon);
+            fromFeb15AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().HaveCount(1);
@@ -506,14 +493,14 @@ public class RecurringTaskServiceTests
             rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
             startDateAndTime: new DateTime(2026, 2, 2, 9, 0, 0, DateTimeKind.Utc)); // Monday Feb 2
         // Range: Friday Feb 6 to Sunday Feb 8 — no Monday in this range
-        var from = new DateTime(2026, 2, 6, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 9, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb6AtMidnight = new DateTime(2026, 2, 6, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb9AtMidnight = new DateTime(2026, 2, 9, 0, 0, 0, DateTimeKind.Utc);
         var service = CreateService();
 
         // Act
         var result = service.ComputeInstances(
             new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
-            from, to, Feb15AtNoon);
+            fromFeb6AtMidnight, toFeb9AtMidnight, Feb15AtNoon);
 
         // Assert
         result.Should().BeEmpty("no Monday falls in the Fri-Sun range");
@@ -522,7 +509,7 @@ public class RecurringTaskServiceTests
     [Fact]
     public void ComputeInstances_SameInputsDifferentCallTimes_ReturnsSameResult()
     {
-        // Arrange — determinism: same utcNow produces identical output (AC10)
+        // Arrange — determinism: same now produces identical output (AC10)
         var config = CreateConfig();
         var overrides = new[] { CreateOverride("config-1", Feb14At9, TaskState.Completed) };
         var service = CreateService();
@@ -578,23 +565,21 @@ public class RecurringTaskServiceTests
     public async Task GetComputedInstancesAsync_ExactlyTwoRepositoryCallsMade()
     {
         // Arrange
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Utc);
         var mockRepo = new Mock<IRecurringTaskRepository>(MockBehavior.Strict);
 
         mockRepo.Setup(r => r.GetAllConfigsAsync(TestUserId))
                 .ReturnsAsync(Array.Empty<RecurringTaskConfigDocument>());
-        mockRepo.Setup(r => r.GetStateOverridesForDateRangeAsync(TestUserId, from, to))
+        mockRepo.Setup(r => r.GetStateOverridesForDateRangeAsync(TestUserId, Feb14AtMidnight, Feb17AtMidnight))
                 .ReturnsAsync(Array.Empty<RecurringTaskStateOverrideDocument>());
 
         var service = CreateService(mockRepo.Object);
 
         // Act
-        await service.GetComputedInstancesAsync(TestUserId, from, to);
+        await service.GetComputedInstancesAsync(TestUserId, Feb14AtMidnight, Feb17AtMidnight);
 
         // Assert — exactly these two calls, no others (MockBehavior.Strict enforces this)
         mockRepo.Verify(r => r.GetAllConfigsAsync(TestUserId), Times.Once);
-        mockRepo.Verify(r => r.GetStateOverridesForDateRangeAsync(TestUserId, from, to), Times.Once);
+        mockRepo.Verify(r => r.GetStateOverridesForDateRangeAsync(TestUserId, Feb14AtMidnight, Feb17AtMidnight), Times.Once);
         mockRepo.VerifyNoOtherCalls();
     }
 
@@ -602,12 +587,12 @@ public class RecurringTaskServiceTests
     public async Task GetComputedInstancesAsync_DateRangeExceeds365Days_ThrowsArgumentException()
     {
         // Arrange
-        var from = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var to = from.AddDays(366); // 366 days > 365 limit
+        var fromJan1AtMidnight = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var to = fromJan1AtMidnight.AddDays(366); // 366 days > 365 limit
         var service = CreateService();
 
         // Act
-        var act = () => service.GetComputedInstancesAsync(TestUserId, from, to);
+        var act = () => service.GetComputedInstancesAsync(TestUserId, fromJan1AtMidnight, to);
 
         // Assert
         await act.Should().ThrowAsync<ArgumentException>()
@@ -618,12 +603,11 @@ public class RecurringTaskServiceTests
     public async Task GetComputedInstancesAsync_NonUtcFromDate_ThrowsArgumentException()
     {
         // Arrange — from is Local kind
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Local);
-        var to = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb14AtMidnightLocal = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Local);
         var service = CreateService();
 
         // Act
-        var act = () => service.GetComputedInstancesAsync(TestUserId, from, to);
+        var act = () => service.GetComputedInstancesAsync(TestUserId, fromFeb14AtMidnightLocal, Feb17AtMidnight);
 
         // Assert
         await act.Should().ThrowAsync<ArgumentException>()
@@ -634,12 +618,11 @@ public class RecurringTaskServiceTests
     public async Task GetComputedInstancesAsync_NonUtcToDate_ThrowsArgumentException()
     {
         // Arrange — to is Unspecified kind
-        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Unspecified);
+        var toFeb17AtMidnightUnspecified = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Unspecified);
         var service = CreateService();
 
         // Act
-        var act = () => service.GetComputedInstancesAsync(TestUserId, from, to);
+        var act = () => service.GetComputedInstancesAsync(TestUserId, Feb14AtMidnight, toFeb17AtMidnightUnspecified);
 
         // Assert
         await act.Should().ThrowAsync<ArgumentException>()
@@ -650,20 +633,20 @@ public class RecurringTaskServiceTests
     public async Task GetComputedInstancesAsync_ReturnsComputedInstances()
     {
         // Arrange
-        var from = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
         var config = CreateConfig();
         var mockRepo = new Mock<IRecurringTaskRepository>();
 
         mockRepo.Setup(r => r.GetAllConfigsAsync(TestUserId))
                 .ReturnsAsync(new[] { config });
-        mockRepo.Setup(r => r.GetStateOverridesForDateRangeAsync(TestUserId, from, to))
+        mockRepo.Setup(r => r.GetStateOverridesForDateRangeAsync(TestUserId, fromFeb15AtMidnight, toFeb16AtMidnight))
                 .ReturnsAsync(Array.Empty<RecurringTaskStateOverrideDocument>());
 
         var service = CreateService(mockRepo.Object);
 
         // Act
-        var result = await service.GetComputedInstancesAsync(TestUserId, from, to);
+        var result = await service.GetComputedInstancesAsync(TestUserId, fromFeb15AtMidnight, toFeb16AtMidnight);
 
         // Assert — should return the computed Feb 15 instance
         result.Should().HaveCount(1);
@@ -676,19 +659,19 @@ public class RecurringTaskServiceTests
     public async Task GetComputedInstancesAsync_Exactly365DayRange_DoesNotThrow()
     {
         // Arrange — boundary: exactly 365 days is allowed
-        var from = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var to = from.AddDays(365);
+        var fromJan1AtMidnight = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var to = fromJan1AtMidnight.AddDays(365);
         var mockRepo = new Mock<IRecurringTaskRepository>();
 
         mockRepo.Setup(r => r.GetAllConfigsAsync(TestUserId))
                 .ReturnsAsync(Array.Empty<RecurringTaskConfigDocument>());
-        mockRepo.Setup(r => r.GetStateOverridesForDateRangeAsync(TestUserId, from, to))
+        mockRepo.Setup(r => r.GetStateOverridesForDateRangeAsync(TestUserId, fromJan1AtMidnight, to))
                 .ReturnsAsync(Array.Empty<RecurringTaskStateOverrideDocument>());
 
         var service = CreateService(mockRepo.Object);
 
         // Act
-        var act = () => service.GetComputedInstancesAsync(TestUserId, from, to);
+        var act = () => service.GetComputedInstancesAsync(TestUserId, fromJan1AtMidnight, to);
 
         // Assert
         await act.Should().NotThrowAsync("exactly 365 days is within the allowed limit");
