@@ -273,6 +273,41 @@ public class RecurringTaskServiceTests
         feb15.State.Should().Be(TaskState.Skipped, "terminal Skipped override is always respected");
     }
 
+    [Fact]
+    public void ComputeInstances_CompletedYesterday_BeforeTodaysOccurrence_OlderPastDoesNotBecomeOnDeck()
+    {
+        // Arrange — reproduces user-reported Kanban "Brush teeth" bug:
+        //   Daily 9am task. utcNow = 07:18 on Feb 16 — BEFORE today's 9am occurrence.
+        //   Before the drag: Feb 15 9am was OnDeck (most recent past).
+        //   User drags Feb 15 to Completed → Completed override stored.
+        //   After recompute: Feb 14 9am wrongly becomes OnDeck.
+        //   Expected: Feb 14 = Skipped, Feb 15 = Completed, Feb 16 = Scheduled, no OnDeck.
+        var config = CreateConfig();
+        var utcNowBefore9am = new DateTime(2026, 2, 16, 7, 18, 0, DateTimeKind.Utc);
+        var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
+        var to = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Utc);
+        var overrides = new[] { CreateOverride("config-1", Feb15At9, TaskState.Completed) };
+        var service = CreateService();
+
+        // Act
+        IReadOnlyList<RecurringTaskInstance> result  = service.ComputeInstances(
+            new[] { config }, overrides, from, to, utcNowBefore9am);
+
+        // Assert
+        result.Should().HaveCount(3);
+        var feb14 = result.Single(r => r.RecurrenceDateAndTime == Feb14At9);
+        var feb15 = result.Single(r => r.RecurrenceDateAndTime == Feb15At9);
+        var feb16 = result.Single(r => r.RecurrenceDateAndTime == Feb16At9);
+
+        feb15.State.Should().Be(TaskState.Completed, "user's explicit Completed override must be respected");
+        feb16.State.Should().Be(TaskState.Scheduled, "today's 9am occurrence is still in the future at 07:18");
+        feb14.State.Should().Be(TaskState.Skipped,
+            "older past occurrence must not leak into OnDeck after the newer past was completed");
+
+        result.Should().NotContain(r => r.State == TaskState.OnDeck,
+            "nothing should be OnDeck: most-recent-past was Completed and today's 9am has not arrived");
+    }
+
     #endregion
 
     #region ComputeInstances — Override Fallback (Defensive)
@@ -321,14 +356,15 @@ public class RecurringTaskServiceTests
     }
 
     [Fact]
-    public void ComputeInstances_UnexpectedStoredState_DoesNotConsumeActiveCandidate()
+    public void ComputeInstances_UnexpectedStoredState_OlderPastIsSkipped()
     {
-        // Arrange — Critical contract: the fallback branch must NOT set activeCandidate.
-        // If it did, the next older occurrence would become Skipped instead of OnDeck.
+        // Arrange — Under the simplified algorithm, the active instance is ALWAYS the most
+        // recent past occurrence, regardless of its override state. Older past occurrences
+        // are always Skipped (unless they themselves carry a Completed/Skipped terminal override).
         //
         // Occurrences: Feb 15 and Feb 14 (both past; utcNow = Feb 15 noon).
-        // Feb 15 has an unexpected OnDeck override (pass-through, no activeCandidate set).
-        // Feb 14 has no override — since activeCandidate is still null, it should become OnDeck.
+        // Feb 15 has an unexpected OnDeck override → passed through defensively.
+        // Feb 14 has no override → Skipped (older past).
         var config = CreateConfig();
         var from = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
         var to = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
@@ -339,14 +375,14 @@ public class RecurringTaskServiceTests
         var result = service.ComputeInstances(
             new[] { config }, overrides, from, to, UtcNow);
 
-        // Assert — both instances are present
+        // Assert — both instances present
         result.Should().HaveCount(2);
         var feb15 = result.Single(r => r.RecurrenceDateAndTime == Feb15At9);
         feb15.State.Should().Be(TaskState.OnDeck, "unexpected state passed through from override");
 
         var feb14 = result.Single(r => r.RecurrenceDateAndTime == Feb14At9);
-        feb14.State.Should().Be(TaskState.OnDeck,
-            "fallback did not consume activeCandidate, so Feb 14 correctly becomes OnDeck");
+        feb14.State.Should().Be(TaskState.Skipped,
+            "older past occurrences are always Skipped — only the most recent past is the active instance");
     }
 
     #endregion
