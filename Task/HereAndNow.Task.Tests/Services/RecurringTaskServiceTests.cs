@@ -438,6 +438,48 @@ public class RecurringTaskServiceTests
             "older past occurrences are always Skipped — only the most recent past is the active instance");
     }
 
+    [Fact]
+    public void ComputeInstances_FutureOccurrenceWithCompletedOverride_StoredStatePassedThrough()
+    {
+        // Arrange — Feb 16 9am is FUTURE (now = Feb 15 noon). A Completed override is
+        // anomalous for a future slot (no normal flow writes overrides there) but must
+        // be surfaced defensively rather than silently dropped to Scheduled.
+        // Range starts at Feb15AtNoon so Feb 15 9am is excluded — isolates the future-override contract.
+        var config = CreateConfig();
+        var overrides = new[] { CreateOverride("config-1", Feb16At9, TaskState.Completed) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, Feb15AtNoon, Feb17AtMidnight, Feb15AtNoon);
+
+        // Assert
+        result.Should().HaveCount(1);
+        var feb16 = result.Single(r => r.RecurrenceDateAndTime == Feb16At9);
+        feb16.State.Should().Be(TaskState.Completed,
+            "future-occurrence overrides must pass through so data anomalies stay visible and fixable");
+    }
+
+    [Fact]
+    public void ComputeInstances_FutureOccurrenceWithUnexpectedOverride_StoredStatePassedThrough()
+    {
+        // Arrange — Feb 16 9am future; OnDeck override (a computed state never legitimately
+        // persisted). Defensive contract: pass through, matching the past-side UnexpectedStoredState tests.
+        var config = CreateConfig();
+        var overrides = new[] { CreateOverride("config-1", Feb16At9, TaskState.OnDeck) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, Feb15AtNoon, Feb17AtMidnight, Feb15AtNoon);
+
+        // Assert
+        result.Should().HaveCount(1);
+        var feb16 = result.Single(r => r.RecurrenceDateAndTime == Feb16At9);
+        feb16.State.Should().Be(TaskState.OnDeck,
+            "unexpected stored state on a future occurrence is passed through defensively");
+    }
+
     #endregion
 
     #region ComputeInstances — Instance Properties (AC8, AC9)
