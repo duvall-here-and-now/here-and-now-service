@@ -77,7 +77,7 @@ public class RecurringTaskService : IRecurringTaskService
 
         // Build lookup from stored overrides — key uses :O (round-trip) format
         // CRITICAL: Both sides of the lookup MUST use the same format (:O) for consistent matching
-        var overrideLookup = overrides.ToDictionary(
+        Dictionary<string, RecurringTaskStateOverrideDocument> overrideLookup = overrides.ToDictionary(
             o => $"{o.ConfigId}_{o.RecurrenceDateAndTime:O}");
 
         foreach (var config in configs)
@@ -86,75 +86,105 @@ public class RecurringTaskService : IRecurringTaskService
             var effectiveFrom = config.StartDateAndTime > from ? config.StartDateAndTime : from;
             var occurrences = GetOccurrences(config.Rrule, config.StartDateAndTime, effectiveFrom, to);
 
-            RecurringTaskInstance? activeCandidate = null;
-            var configInstances = new List<RecurringTaskInstance>();
+            // 4-step computation:
+            //   1. Every occurrence starts as Scheduled (set here at construction).
+            //   2. Future occurrences stay Scheduled unless a stored override exists
+            //      (defensive pass-through for data anomalies; normal flows never write these).
+            //   3. Older past occurrences become Skipped (or keep a Completed/Skipped override).
+            //   4. The active instance (most recent past) becomes OnDeck unless an override applies.
+            var instances = occurrences
+                .Select(o => new RecurringTaskInstance(config, o, TaskState.Scheduled))
+                .ToList();
 
-            // Traverse newest-first to apply one-active-at-a-time (AC5, AC6)
-            foreach (var occurrence in occurrences.OrderByDescending(o => o))
-            {
-                // Must match key format used in overrideLookup above
-                var key = $"{config.Id}_{occurrence:O}";
+            ApplyFutureOverrides(instances, overrideLookup, config.Id, utcNow);
+            MarkPastInstances(instances, overrideLookup, config.Id, utcNow);
+            ApplyActiveOverride(instances, overrideLookup, config.Id, utcNow);
 
-                if (overrideLookup.TryGetValue(key, out var stateOverride))
-                {
-                    var storedState = stateOverride.State;
-
-                    // Terminal states — always respected, never recalculated (AC7)
-                    if (storedState == TaskState.Completed || storedState == TaskState.Skipped)
-                    {
-                        configInstances.Add(new RecurringTaskInstance(config, occurrence, storedState));
-                    }
-                    // InProgress is an active state — subject to one-active-at-a-time (AC6)
-                    else if (storedState == TaskState.InProgress)
-                    {
-                        if (activeCandidate == null)
-                        {
-                            // Most recent active — InProgress override stands
-                            activeCandidate = new RecurringTaskInstance(config, occurrence, TaskState.InProgress);
-                            configInstances.Add(activeCandidate);
-                        }
-                        else
-                        {
-                            // Superseded by a more recent active instance (AC6) — becomes Skipped
-                            configInstances.Add(new RecurringTaskInstance(config, occurrence, TaskState.Skipped));
-                        }
-                    }
-                    else
-                    {
-                        // Defensive fallback: unexpected stored state (e.g. data migration artifact or
-                        // a future state added without a corresponding branch here).
-                        // Pass through as-is to prevent silent data loss. In normal operation this
-                        // branch should never execute because only InProgress / Completed / Skipped
-                        // are ever written to Cosmos DB.
-                        _logger.LogWarning(
-                            "RecurringTaskService: unexpected stored override state '{State}' for key '{Key}'. " +
-                            "Passing through as-is.",
-                            storedState, key);
-                        configInstances.Add(new RecurringTaskInstance(config, occurrence, storedState));
-                    }
-                }
-                else if (occurrence > utcNow)
-                {
-                    // Future occurrence, no override → Scheduled (AC3)
-                    configInstances.Add(new RecurringTaskInstance(config, occurrence, TaskState.Scheduled));
-                }
-                else if (activeCandidate == null)
-                {
-                    // Most recent past, no override → OnDeck (AC4)
-                    activeCandidate = new RecurringTaskInstance(config, occurrence, TaskState.OnDeck);
-                    configInstances.Add(activeCandidate);
-                }
-                else
-                {
-                    // Older past, no override, already have an active candidate → Skipped (AC5)
-                    configInstances.Add(new RecurringTaskInstance(config, occurrence, TaskState.Skipped));
-                }
-            }
-
-            results.AddRange(configInstances);
+            results.AddRange(instances);
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Step 3: Resolve every past occurrence EXCEPT the active one (most recent past).
+    /// Default: Skipped. Exception: a Completed or Skipped override is a terminal state and is kept.
+    /// </summary>
+    private static void MarkPastInstances(
+        IList<RecurringTaskInstance> instances,
+        IReadOnlyDictionary<string, RecurringTaskStateOverrideDocument> overrideLookup,
+        string configId,
+        DateTime utcNow)
+    {
+        var pastNewestFirst = instances
+            .Where(i => i.RecurrenceDateAndTime <= utcNow)
+            .OrderByDescending(i => i.RecurrenceDateAndTime)
+            .ToList();
+
+        // Skip index 0 — the active instance is handled in step 4.
+        for (var i = 1; i < pastNewestFirst.Count; i++)
+        {
+            var instance = pastNewestFirst[i];
+            var key = $"{configId}_{instance.RecurrenceDateAndTime:O}";
+
+            if (overrideLookup.TryGetValue(key, out var stored) &&
+                (stored.State == TaskState.Completed || stored.State == TaskState.Skipped))
+            {
+                instance.State = stored.State;
+            }
+            else
+            {
+                instance.State = TaskState.Skipped;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Step 4: Resolve the active instance (most recent past).
+    /// - Stored override present → pass the stored state through as-is
+    /// - No override → OnDeck
+    /// </summary>
+    private static void ApplyActiveOverride(
+        IList<RecurringTaskInstance> instances,
+        IReadOnlyDictionary<string, RecurringTaskStateOverrideDocument> overrideLookup,
+        string configId,
+        DateTime utcNow)
+    {
+        var active = instances
+            .Where(i => i.RecurrenceDateAndTime <= utcNow)
+            .MaxBy(i => i.RecurrenceDateAndTime);
+        if (active is null) return;
+
+        var key = $"{configId}_{active.RecurrenceDateAndTime:O}";
+        active.State = overrideLookup.TryGetValue(key, out var stored)
+            ? stored.State
+            : TaskState.OnDeck;
+    }
+
+    /// <summary>
+    /// Defensive step: resolve any stored override on a FUTURE occurrence.
+    /// No override is ever expected here — normal write flows only persist overrides for
+    /// past occurrences (state commands require past-only states). When one does exist —
+    /// migration artifact, clock skew, or data anomaly — pass the stored state through so
+    /// the anomaly is visible in computed output, and warn unconditionally.
+    /// </summary>
+    private void ApplyFutureOverrides(
+        IList<RecurringTaskInstance> instances,
+        IReadOnlyDictionary<string, RecurringTaskStateOverrideDocument> overrideLookup,
+        string configId,
+        DateTime utcNow)
+    {
+        foreach (var instance in instances.Where(i => i.RecurrenceDateAndTime > utcNow))
+        {
+            var key = $"{configId}_{instance.RecurrenceDateAndTime:O}";
+            if (!overrideLookup.TryGetValue(key, out var stored)) continue;
+
+            _logger.LogWarning(
+                "RecurringTaskService: unexpected stored override (state '{State}') for future key '{Key}'. " +
+                "No overrides are expected for future occurrences. Passing through as-is.",
+                stored.State, key);
+            instance.State = stored.State;
+        }
     }
 
     /// <inheritdoc />
