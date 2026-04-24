@@ -37,11 +37,12 @@ public class RecurringTaskInstance
 
     /// <summary>
     /// Computed or overridden state: Scheduled | OnDeck | InProgress | Completed | Skipped.
-    /// See <see cref="TaskState"/> for valid values. Initialized by the constructor and
-    /// mutated in place by <see cref="HereAndNowService.Services.RecurringTaskService.ComputeInstances"/>
-    /// as the 4-step state resolution pipeline runs.
+    /// See <see cref="TaskState"/> for valid values. Initialized by the constructor; the
+    /// setter is <c>internal</c> so only <see cref="HereAndNowService.Services.RecurringTaskService.ComputeInstances"/>
+    /// (same assembly) can mutate it in place as the 4-step pipeline runs. External consumers
+    /// see an effectively immutable model.
     /// </summary>
-    public string State { get; set; }
+    public string State { get; internal set; }
 
     /// <summary>RRULE string (no "RRULE:" prefix) from parent config. Used for Kanban display.</summary>
     public string RecurrenceRule { get; }
