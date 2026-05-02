@@ -1,9 +1,9 @@
 {
   "workflow_version": "1.2.0",
   "timestamps": {
-    "started": "2026-03-19T12:00:00Z",
-    "last_updated": "2026-03-19T13:00:00Z",
-    "completed": "2026-03-19T13:00:00Z"
+    "started": "2026-05-01T13:45:00Z",
+    "last_updated": "2026-05-01T14:20:00Z",
+    "completed": "2026-05-01T14:20:00Z"
   },
   "mode": "full_rescan",
   "scan_level": "exhaustive",
@@ -13,72 +13,68 @@
     {
       "step": "step_1",
       "status": "completed",
-      "summary": "Classified as monolith backend with 5 active assemblies. Reminders/ stale scaffold excluded."
+      "timestamp": "2026-05-01T13:47:00Z",
+      "summary": "Classified as monolith backend with 1 part. ASP.NET Core 8.0, Cosmos DB 3.46.1, Auth0 JWT, Ical.Net 5.2.0. 5 assemblies. Reminders/ is stale scaffold."
     },
     {
       "step": "step_2",
       "status": "completed",
-      "summary": "Found 8 existing docs in docs/ (all from Jan 2026), plus README.md and CLAUDE.md at root."
+      "timestamp": "2026-05-01T13:49:00Z",
+      "summary": "Found 9 existing docs in docs/ (8 from March 2026 + new compute-instances-algorithm.md), plus README.md, CLAUDE.md, SWAGGER_SETUP.md. No additional user guidance."
     },
     {
       "step": "step_3",
       "status": "completed",
-      "summary": "Tech stack: ASP.NET Core 8.0, Cosmos DB 3.46.1, Auth0 JWT, Ical.Net 5.2.0 (new), xUnit/Moq/FluentAssertions."
+      "timestamp": "2026-05-01T13:52:00Z",
+      "summary": "Tech stack confirmed: ASP.NET Core 8.0, Cosmos DB 3.46.1, Ical.Net 5.2.0, Auth0 JWT 8.0.11, dotenv.net 3.2.1, xUnit+Moq+FluentAssertions. CI/CD: GitHub Actions to Azure Web Apps."
     },
     {
       "step": "step_4",
       "status": "completed",
-      "summary": "Exhaustive scan: 25 API operations (13 commands + 12 queries), 4 Cosmos DB document types + 1 computed model, 12 custom exceptions, 3 services, 3 repositories, 2 middleware, command pattern architecture."
+      "timestamp": "2026-05-01T14:05:00Z",
+      "summary": "Exhaustive scan: read all 29 Task assembly files, all 40+ Web assembly files (commands, controllers, DTOs, mappers, middleware), all 16 test files, compute-instances-algorithm.md. 13 commands documented, 4 Cosmos document types, 1 computed model, 12 exceptions, 3 services, 3 repositories."
     },
     {
       "step": "step_5",
       "status": "completed",
-      "summary": "Generated source-tree-analysis.md with annotated directory tree, assembly dependency graph, ★ NEW markers for recurring task additions."
+      "timestamp": "2026-05-01T14:10:00Z",
+      "summary": "Generated source-tree-analysis.md with annotated directory tree, assembly dependency graph, critical folders table."
+    },
+    {
+      "step": "step_6",
+      "status": "completed",
+      "timestamp": "2026-05-01T14:10:00Z",
+      "summary": "Generated development-guide.md (prerequisites, setup, commands, adding features, conventions, curl examples) and deployment-guide.md (CI/CD pipeline, Azure config, Cosmos setup, troubleshooting)."
     },
     {
       "step": "step_8",
       "status": "completed",
-      "summary": "Generated architecture.md covering assembly architecture, 4 document types, state machines, command catalog (13 commands), Unity operations, recurring task computation, DI registration, middleware pipeline, Cosmos DB design."
+      "timestamp": "2026-05-01T14:12:00Z",
+      "summary": "Generated architecture.md: Command Pattern dispatch (13 commands), Unity Pattern with transactional batch code, Cosmos DB single-container design, recurring task 4-phase computation pipeline, middleware pipeline, DI registration table, validation architecture, testing architecture."
     },
     {
-      "step": "step_9_overview",
+      "step": "step_9",
       "status": "completed",
-      "summary": "Generated project-overview.md with executive summary, tech stack table, architecture summary, API surface overview."
-    },
-    {
-      "step": "step_9_api",
-      "status": "completed",
-      "summary": "Generated api-contracts.md with all 13 commands, query endpoints, error codes, DTO reference."
-    },
-    {
-      "step": "step_9_data",
-      "status": "completed",
-      "summary": "Generated data-models.md with all 4 document types, computed model, state constants, 12 exceptions, service and repository layer documentation."
-    },
-    {
-      "step": "step_9_dev",
-      "status": "completed",
-      "summary": "Generated development-guide.md with prerequisites, environment setup, build/test commands, adding commands and recurring task features, coding conventions, curl examples for all command categories."
-    },
-    {
-      "step": "step_9_deploy",
-      "status": "completed",
-      "summary": "Generated deployment-guide.md with CI/CD pipeline, Azure configuration, document types in container, monitoring, security headers, troubleshooting."
+      "timestamp": "2026-05-01T14:14:00Z",
+      "summary": "Generated project-overview.md, api-contracts.md (all 13 commands + REST endpoints + DTO reference + error codes table), data-models.md (all 4 Cosmos docs + computed model + state machines + 12 exceptions + service interfaces)."
     },
     {
       "step": "step_10",
       "status": "completed",
-      "summary": "Generated index.md with all 13 commands listed, recurring task documentation links, updated AI-assisted development section covering recurring task computation model."
+      "timestamp": "2026-05-01T14:15:00Z",
+      "summary": "Generated index.md: all 13 commands, quick reference table, links to all 8 docs, compute-instances-algorithm deep dive link, AI development rules summary."
     },
     {
       "step": "step_11",
       "status": "completed",
-      "summary": "Validation passed: no TODO/PLACEHOLDER/TBD/FIXME markers found across all 8 documentation files."
+      "timestamp": "2026-05-01T14:18:00Z",
+      "summary": "Validation passed: no TODO/PLACEHOLDER/TBD/FIXME/incomplete markers found across all 8 documentation files. User selected finalize."
     },
     {
       "step": "step_12",
       "status": "completed",
-      "summary": "All documentation finalized. 8 files generated/updated."
+      "timestamp": "2026-05-01T14:20:00Z",
+      "summary": "Workflow complete. 8 documentation files generated/updated in docs/."
     }
   ],
   "current_step": "completed",
@@ -93,26 +89,16 @@
       "framework": "ASP.NET Core 8.0",
       "language": "C#",
       "database": "Azure Cosmos DB 3.46.1",
-      "recurrence_engine": "Ical.Net 5.2.0",
-      "new_since_last_scan": ["Ical.Net 5.2.0"]
+      "recurrence_engine": "Ical.Net 5.2.0"
     },
     "api_summary": {
-      "total_operations": 25,
-      "commands": 13,
-      "query_endpoints": 12
+      "total_commands": 13,
+      "query_endpoints": 10
     },
     "data_models": {
       "document_types": 4,
       "computed_models": 1,
       "exceptions": 12
-    },
-    "changes_since_last_scan": {
-      "new_feature": "RecurringTask system (RRULE-based recurrence with computed instances)",
-      "new_document_types": ["RecurringTaskConfigDocument", "RecurringTaskStateOverrideDocument"],
-      "new_computed_model": "RecurringTaskInstance",
-      "new_commands": 7,
-      "new_exceptions": 3,
-      "new_dependency": "Ical.Net 5.2.0"
     }
   },
   "project_types": [

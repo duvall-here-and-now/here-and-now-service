@@ -1,0 +1,136 @@
+{
+  "workflow_version": "1.2.0",
+  "timestamps": {
+    "started": "2026-03-19T12:00:00Z",
+    "last_updated": "2026-03-19T13:00:00Z",
+    "completed": "2026-03-19T13:00:00Z"
+  },
+  "mode": "full_rescan",
+  "scan_level": "exhaustive",
+  "project_root": "D:/workspace/here-and-now/here-and-now-bmad-top-level/here-and-now-service",
+  "project_knowledge": "D:/workspace/here-and-now/here-and-now-bmad-top-level/here-and-now-service/docs",
+  "completed_steps": [
+    {
+      "step": "step_1",
+      "status": "completed",
+      "summary": "Classified as monolith backend with 5 active assemblies. Reminders/ stale scaffold excluded."
+    },
+    {
+      "step": "step_2",
+      "status": "completed",
+      "summary": "Found 8 existing docs in docs/ (all from Jan 2026), plus README.md and CLAUDE.md at root."
+    },
+    {
+      "step": "step_3",
+      "status": "completed",
+      "summary": "Tech stack: ASP.NET Core 8.0, Cosmos DB 3.46.1, Auth0 JWT, Ical.Net 5.2.0 (new), xUnit/Moq/FluentAssertions."
+    },
+    {
+      "step": "step_4",
+      "status": "completed",
+      "summary": "Exhaustive scan: 25 API operations (13 commands + 12 queries), 4 Cosmos DB document types + 1 computed model, 12 custom exceptions, 3 services, 3 repositories, 2 middleware, command pattern architecture."
+    },
+    {
+      "step": "step_5",
+      "status": "completed",
+      "summary": "Generated source-tree-analysis.md with annotated directory tree, assembly dependency graph, ★ NEW markers for recurring task additions."
+    },
+    {
+      "step": "step_8",
+      "status": "completed",
+      "summary": "Generated architecture.md covering assembly architecture, 4 document types, state machines, command catalog (13 commands), Unity operations, recurring task computation, DI registration, middleware pipeline, Cosmos DB design."
+    },
+    {
+      "step": "step_9_overview",
+      "status": "completed",
+      "summary": "Generated project-overview.md with executive summary, tech stack table, architecture summary, API surface overview."
+    },
+    {
+      "step": "step_9_api",
+      "status": "completed",
+      "summary": "Generated api-contracts.md with all 13 commands, query endpoints, error codes, DTO reference."
+    },
+    {
+      "step": "step_9_data",
+      "status": "completed",
+      "summary": "Generated data-models.md with all 4 document types, computed model, state constants, 12 exceptions, service and repository layer documentation."
+    },
+    {
+      "step": "step_9_dev",
+      "status": "completed",
+      "summary": "Generated development-guide.md with prerequisites, environment setup, build/test commands, adding commands and recurring task features, coding conventions, curl examples for all command categories."
+    },
+    {
+      "step": "step_9_deploy",
+      "status": "completed",
+      "summary": "Generated deployment-guide.md with CI/CD pipeline, Azure configuration, document types in container, monitoring, security headers, troubleshooting."
+    },
+    {
+      "step": "step_10",
+      "status": "completed",
+      "summary": "Generated index.md with all 13 commands listed, recurring task documentation links, updated AI-assisted development section covering recurring task computation model."
+    },
+    {
+      "step": "step_11",
+      "status": "completed",
+      "summary": "Validation passed: no TODO/PLACEHOLDER/TBD/FIXME markers found across all 8 documentation files."
+    },
+    {
+      "step": "step_12",
+      "status": "completed",
+      "summary": "All documentation finalized. 8 files generated/updated."
+    }
+  ],
+  "current_step": "completed",
+  "findings": {
+    "project_classification": {
+      "repository_type": "monolith",
+      "parts_count": 1,
+      "primary_tech": "ASP.NET Core 8.0",
+      "assemblies": ["HereAndNow.Message", "HereAndNow.Task", "HereAndNow.Task.Tests", "HereAndNow.Web", "HereAndNow.Web.Tests"]
+    },
+    "technology_stack": {
+      "framework": "ASP.NET Core 8.0",
+      "language": "C#",
+      "database": "Azure Cosmos DB 3.46.1",
+      "recurrence_engine": "Ical.Net 5.2.0",
+      "new_since_last_scan": ["Ical.Net 5.2.0"]
+    },
+    "api_summary": {
+      "total_operations": 25,
+      "commands": 13,
+      "query_endpoints": 12
+    },
+    "data_models": {
+      "document_types": 4,
+      "computed_models": 1,
+      "exceptions": 12
+    },
+    "changes_since_last_scan": {
+      "new_feature": "RecurringTask system (RRULE-based recurrence with computed instances)",
+      "new_document_types": ["RecurringTaskConfigDocument", "RecurringTaskStateOverrideDocument"],
+      "new_computed_model": "RecurringTaskInstance",
+      "new_commands": 7,
+      "new_exceptions": 3,
+      "new_dependency": "Ical.Net 5.2.0"
+    }
+  },
+  "project_types": [
+    {
+      "part_id": "main",
+      "project_type_id": "backend",
+      "display_name": "ASP.NET Core Backend API with Command Pattern + Recurring Tasks"
+    }
+  ],
+  "outputs_generated": [
+    "project-scan-report.json",
+    "source-tree-analysis.md",
+    "project-overview.md",
+    "architecture.md",
+    "api-contracts.md",
+    "data-models.md",
+    "development-guide.md",
+    "deployment-guide.md",
+    "index.md"
+  ]
+}

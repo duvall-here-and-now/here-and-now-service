@@ -1,186 +1,194 @@
 # Here and Now Service - Source Tree Analysis
 
-**Date:** 2026-03-19
+**Date:** 2026-05-01
 **Scan Level:** Exhaustive
 
-## Overview
+---
 
-This document provides an annotated directory tree of the Here and Now Service codebase, highlighting critical directories, entry points, and integration points.
-
-## Project Root Structure
+## Annotated Directory Tree
 
 ```
-here-and-now-service/
-├── HereAndNow.sln                    # Solution file (5 active projects)
-├── .env                               # Environment variables (not committed)
-├── CLAUDE.md                          # AI assistant context
-├── README.md                          # Project readme
+here-and-now-service/               # Solution root
 │
-├── Message/                           # Demo business logic assembly
+├── HereAndNow.sln                  # Solution file (5 projects)
+├── .env                            # Local env vars (not committed)
+├── .gitignore
+├── README.md                       # Auth0 sample origin story
+├── CLAUDE.md                       # AI assistant instructions
+│
+├── Message/                        # Auth0 demo assembly
 │   └── HereAndNow.Message/
-│       ├── HereAndNow.Message.csproj
+│       ├── HereAndNow.Message.csproj  # No external deps beyond logging
 │       ├── Models/
-│       │   └── Message.cs             # Simple message model
+│       │   └── Message.cs          # Simple model: Text, Type
 │       └── Services/
-│           ├── IMessageService.cs     # Interface
-│           └── MessageService.cs      # Static message responses
+│           ├── IMessageService.cs  # GetPublic/Protected/AdminMessage
+│           └── MessageService.cs   # Returns static hardcoded messages
 │
-├── Task/                              # ★ Core business logic assembly
+├── Task/                           # Core business logic assembly
 │   ├── HereAndNow.Task/
-│   │   ├── HereAndNow.Task.csproj     # Cosmos DB 3.46.1, Ical.Net 5.2.0, Newtonsoft.Json
+│   │   ├── HereAndNow.Task.csproj  # Deps: Cosmos 3.46.1, Ical.Net 5.2.0, Newtonsoft.Json 13.0.3
+│   │   │
 │   │   ├── Models/
-│   │   │   ├── TaskDocument.cs                       # Task entity (Cosmos DB)
-│   │   │   ├── TaskReminderDocument.cs               # Reminder entity (Cosmos DB)
-│   │   │   ├── RecurringTaskConfigDocument.cs        # ★ NEW Recurrence config (Cosmos DB)
-│   │   │   ├── RecurringTaskStateOverrideDocument.cs  # ★ NEW State override (Cosmos DB)
-│   │   │   ├── RecurringTaskInstance.cs              # ★ NEW Computed model (not persisted)
-│   │   │   ├── TaskState.cs                          # State constants (OnDeck, InProgress, Completed, Deleted, Scheduled, Skipped)
-│   │   │   ├── PagedResult.cs                        # Generic pagination wrapper
-│   │   │   └── Exceptions/                           # 12 domain exceptions
-│   │   │       ├── TaskNotFoundException.cs
-│   │   │       ├── TaskAlreadyExistsException.cs
-│   │   │       ├── ReminderNotFoundException.cs
-│   │   │       ├── ReminderAlreadyExistsException.cs
-│   │   │       ├── ReminderAlreadyDismissedException.cs
-│   │   │       ├── InvalidScheduledTimeException.cs
-│   │   │       ├── InvalidStateTransitionException.cs
-│   │   │       ├── UnityTransactionFailedException.cs
-│   │   │       ├── RecurringTaskConfigNotFoundException.cs      # ★ NEW
-│   │   │       ├── RecurringTaskConfigAlreadyExistsException.cs # ★ NEW
-│   │   │       ├── InvalidRecurrenceRuleException.cs            # ★ NEW
-│   │   │       └── TaskReminderAlreadyExistsException.cs
+│   │   │   ├── TaskDocument.cs                     # Cosmos doc: id, type, userId, name, state, timestamps, reminderId?
+│   │   │   ├── TaskReminderDocument.cs              # Cosmos doc: denormalized taskName, scheduledTime, isDismissed
+│   │   │   ├── RecurringTaskConfigDocument.cs       # ★ Cosmos doc: text, rrule, startDateAndTime
+│   │   │   ├── RecurringTaskStateOverrideDocument.cs # ★ Cosmos doc: compositeId={configId}_{timestamp}
+│   │   │   ├── RecurringTaskInstance.cs             # ★ Computed (NOT persisted): derived from config+overrides
+│   │   │   ├── TaskState.cs                        # String constants: OnDeck, InProgress, Completed, Deleted, Scheduled, Skipped
+│   │   │   └── PagedResult.cs                      # Generic wrapper: Items, TotalCount, HasMore
+│   │   │
+│   │   ├── Exceptions/             # 12 domain exceptions
+│   │   │   ├── TaskNotFoundException.cs
+│   │   │   ├── TaskAlreadyExistsException.cs
+│   │   │   ├── ReminderNotFoundException.cs
+│   │   │   ├── ReminderAlreadyExistsException.cs
+│   │   │   ├── ReminderAlreadyDismissedException.cs
+│   │   │   ├── InvalidScheduledTimeException.cs
+│   │   │   ├── UnityTransactionFailedException.cs
+│   │   │   ├── InvalidRecurrenceRuleException.cs        # ★ RRULE validation
+│   │   │   ├── InvalidStateTransitionException.cs       # ★ State machine guard
+│   │   │   ├── RecurringTaskConfigAlreadyExistsException.cs  # ★
+│   │   │   ├── RecurringTaskConfigNotFoundException.cs        # ★
+│   │   │   └── TaskReminderAlreadyExistsException.cs
+│   │   │
 │   │   ├── Repositories/
-│   │   │   ├── CosmosDbSettings.cs                   # DB connection config
-│   │   │   ├── ITaskRepository.cs                    # Task CRUD + Unity batches
-│   │   │   ├── TaskRepository.cs                     # Cosmos DB implementation
-│   │   │   ├── ITaskReminderRepository.cs            # Reminder CRUD + atomic link
-│   │   │   ├── TaskReminderRepository.cs             # Cosmos DB implementation
-│   │   │   ├── IRecurringTaskRepository.cs           # ★ NEW Config + Override CRUD
-│   │   │   └── RecurringTaskRepository.cs            # ★ NEW Cosmos DB impl (batch delete, upsert)
+│   │   │   ├── CosmosDbSettings.cs          # POCO: ConnectionString, DatabaseName, ContainerName
+│   │   │   ├── ITaskRepository.cs           # CRUD + paginated query + soft-delete + Unity ops
+│   │   │   ├── TaskRepository.cs            # Cosmos impl; /userId partition key
+│   │   │   ├── ITaskReminderRepository.cs   # CRUD + list non-dismissed
+│   │   │   ├── TaskReminderRepository.cs    # Cosmos impl
+│   │   │   ├── IRecurringTaskRepository.cs  # ★ Config CRUD + bulk override ops
+│   │   │   └── RecurringTaskRepository.cs   # ★ Cosmos impl; chunked delete for overrides
+│   │   │
 │   │   └── Services/
-│   │       ├── ITaskService.cs                       # Task operations + Unity
-│   │       ├── TaskService.cs                        # Business logic (state machine, reminder sync)
-│   │       ├── ITaskReminderService.cs               # Reminder operations
-│   │       ├── TaskReminderService.cs                # Snooze, dismiss, create
-│   │       ├── IRecurringTaskService.cs              # ★ NEW Computation + CRUD + state commands
-│   │       └── RecurringTaskService.cs               # ★ NEW RRULE engine, one-active-at-a-time
+│   │       ├── ITaskService.cs              # CreateTaskWithIdAsync, GetTasksPagedAsync, UpdateStateAsync, Unity ops
+│   │       ├── TaskService.cs               # GUID normalization, state validation, Unity dispatch
+│   │       ├── ITaskReminderService.cs      # Create/Snooze/Dismiss/Get reminder
+│   │       ├── TaskReminderService.cs       # Validates future time on snooze, sets timestamps
+│   │       ├── IRecurringTaskService.cs     # ★ Config CRUD + ComputeInstances + state commands
+│   │       └── RecurringTaskService.cs      # ★ RRULE validation, 4-phase computation pipeline
 │   │
 │   └── HereAndNow.Task.Tests/
-│       ├── HereAndNow.Task.Tests.csproj              # xUnit, Moq, FluentAssertions
-│       └── Services/                                 # Unit tests for services
+│       ├── Models/
+│       │   └── RecurringTaskModelsTests.cs   # Override ID format, TaskState constants
+│       └── Services/
+│           ├── TaskServiceTests.cs           # 1660 lines: full task lifecycle
+│           ├── TaskReminderServiceTests.cs   # Snooze, dismiss, timestamps
+│           └── RecurringTaskServiceTests.cs  # 723 lines: RRULE computation, state resolution
 │
-├── Web/                               # API layer assembly
+├── Web/                            # ASP.NET Core Web API
 │   ├── HereAndNow.Web/
-│   │   ├── HereAndNow.Web.csproj      # JWT Bearer 8.0.11, Swashbuckle 6.9.0, dotenv.net
-│   │   ├── .env                       # Web-specific env vars
-│   │   ├── Program.cs                 # ★ Entry point — DI, auth, middleware, Cosmos init
-│   │   ├── Controllers/
-│   │   │   ├── CommandsController.cs  # ★ POST /api/v1/commands (13 command types)
-│   │   │   ├── TasksController.cs     # GET queries + legacy complete
-│   │   │   ├── RemindersController.cs # GET queries + legacy dismiss/create
-│   │   │   ├── MessagesController.cs  # Demo public/protected/admin
-│   │   │   └── ErrorController.cs     # Development error page
-│   │   ├── Commands/                  # ★ Command request/response models
-│   │   │   ├── CommandRequest.cs      # Base: { command, payload }
-│   │   │   ├── CommandResponse.cs     # Base: { success, message }
+│   │   ├── HereAndNow.Web.csproj   # Deps: dotenv.net 3.2.1, JwtBearer 8.0.11, Swashbuckle 6.9.0
+│   │   ├── Program.cs              # ★ Entry point: DI, middleware, Cosmos init
+│   │   ├── SWAGGER_SETUP.md        # Azure Swagger IP restriction guide
+│   │   │
+│   │   ├── Commands/               # ★ All mutation payloads (one file per command)
+│   │   │   ├── CommandRequest.cs   # { command: string, payload: JsonElement }
+│   │   │   ├── CommandResponse.cs  # { success: bool, message?: string }
 │   │   │   ├── CreateTaskCommand.cs
 │   │   │   ├── CreateTaskAndTaskReminderCommand.cs
 │   │   │   ├── UpdateTaskNameCommand.cs
 │   │   │   ├── UpdateTaskStateCommand.cs
-│   │   │   ├── UpdateTaskReminderScheduledTimeCommand.cs
 │   │   │   ├── DismissTaskReminderCommand.cs
-│   │   │   ├── CreateRecurringTaskConfigCommand.cs    # ★ NEW
-│   │   │   ├── UpdateRecurringTaskConfigCommand.cs    # ★ NEW
-│   │   │   ├── DeleteRecurringTaskConfigCommand.cs    # ★ NEW
-│   │   │   ├── StartRecurringTaskCommand.cs           # ★ NEW
-│   │   │   ├── RevertRecurringTaskToOnDeckCommand.cs  # ★ NEW
-│   │   │   ├── CompleteRecurringTaskCommand.cs        # ★ NEW
-│   │   │   └── SkipRecurringTaskCommand.cs            # ★ NEW
+│   │   │   ├── UpdateTaskReminderScheduledTimeCommand.cs
+│   │   │   ├── CreateRecurringTaskConfigCommand.cs
+│   │   │   ├── UpdateRecurringTaskConfigCommand.cs
+│   │   │   ├── DeleteRecurringTaskConfigCommand.cs
+│   │   │   ├── CompleteRecurringTaskCommand.cs
+│   │   │   ├── RevertRecurringTaskToOnDeckCommand.cs
+│   │   │   ├── SkipRecurringTaskCommand.cs
+│   │   │   └── StartRecurringTaskCommand.cs
+│   │   │
+│   │   ├── Controllers/
+│   │   │   ├── CommandsController.cs           # ★ POST /api/v1/commands — 13-command switch dispatch
+│   │   │   ├── TasksController.cs              # GET /api/v1/tasks[/{id}], PUT /{id}/complete
+│   │   │   ├── RemindersController.cs          # GET+POST /api/v1/reminders, GET/{id}, PUT/{id}/dismiss
+│   │   │   ├── RecurringTaskConfigsController.cs  # ★ GET /api/v1/recurring-task-configs[/{id}]
+│   │   │   ├── RecurringTasksController.cs     # ★ GET /api/v1/recurring-tasks?from=&to=
+│   │   │   ├── MessagesController.cs           # GET /api/messages/public|protected|admin
+│   │   │   └── ErrorController.cs              # /error ExceptionHandler route
+│   │   │
 │   │   ├── DTOs/
-│   │   │   ├── TaskDto.cs
-│   │   │   ├── TaskReminderDto.cs
-│   │   │   ├── TaskAndReminderDto.cs
-│   │   │   ├── PagedTasksDto.cs
-│   │   │   ├── CreateTaskDto.cs
-│   │   │   ├── CreateReminderDto.cs
-│   │   │   ├── RecurringTaskConfigDto.cs              # ★ NEW
-│   │   │   └── ErrorResponseDto.cs
-│   │   ├── Mappers/
+│   │   │   ├── TaskDto.cs                  # id, name, state, createdAt, completedAt?, reminderId?, lastModifiedAt
+│   │   │   ├── TaskReminderDto.cs          # id, taskId, taskName, scheduledTime, isDismissed, timestamps
+│   │   │   ├── CreateTaskDto.cs            # Legacy request: name, scheduledTime?
+│   │   │   ├── CreateReminderDto.cs        # Legacy request: taskId, scheduledTime
+│   │   │   ├── PagedTasksDto.cs            # items, totalCount, hasMore
+│   │   │   ├── ErrorResponseDto.cs         # { error: { code, message } }
+│   │   │   ├── RecurringTaskConfigDto.cs   # id, text, recurrenceRule, startDateAndTime, createdAt
+│   │   │   ├── RecurringTaskDto.cs         # id, configId, text, recurrenceDateAndTime, state, recurrenceRule
+│   │   │   └── TaskAndReminderDto.cs       # { task: TaskDto, reminder: TaskReminderDto }
+│   │   │
+│   │   ├── Mappers/                # Static classes (no AutoMapper)
 │   │   │   ├── TaskMapper.cs
 │   │   │   ├── ReminderMapper.cs
-│   │   │   └── RecurringTaskConfigMapper.cs           # ★ NEW
+│   │   │   ├── RecurringTaskConfigMapper.cs
+│   │   │   └── RecurringTaskMapper.cs
+│   │   │
 │   │   ├── Middlewares/
-│   │   │   ├── ErrorHandlerMiddleware.cs              # Exception → HTTP status mapping
-│   │   │   └── SecureHeadersMiddleware.cs             # Security headers (CSP, HSTS, etc.)
+│   │   │   ├── ErrorHandlerMiddleware.cs   # Domain exceptions → HTTP status + ErrorResponseDto
+│   │   │   └── SecureHeadersMiddleware.cs  # X-Content-Type-Options, X-Frame-Options, etc.
+│   │   │
 │   │   └── Validation/
-│   │       └── FutureTimeValidationAttribute.cs       # Custom [FutureTime] attribute
+│   │       └── FutureTimeValidationAttribute.cs  # [FutureTime] for legacy ScheduledTime fields
 │   │
 │   └── HereAndNow.Web.Tests/
-│       ├── HereAndNow.Web.Tests.csproj                # Integration + unit tests
-│       └── Controllers/                               # Controller tests
+│       ├── Controllers/            # Unit tests per controller
+│       │   ├── CommandsControllerTests.cs
+│       │   ├── RecurringTaskConfigsControllerTests.cs
+│       │   ├── RecurringTasksControllerTests.cs
+│       │   ├── RecurringTaskStateCommandTests.cs
+│       │   ├── RemindersControllerTests.cs
+│       │   └── TasksControllerTests.cs
+│       ├── Helpers/
+│       │   ├── TestAuthHandler.cs           # Auth0 JWT simulation; X-Test-UserId header support
+│       │   └── TestWebApplicationFactory.cs # In-memory host with mocked Cosmos services
+│       ├── Integration/            # Full HTTP stack tests (no real Cosmos)
+│       │   ├── CommandsApiTests.cs          # 1217 lines: all 13 commands end-to-end
+│       │   ├── TasksApiTests.cs
+│       │   ├── RemindersApiTests.cs
+│       │   ├── AuthorizationTests.cs
+│       │   └── CorsTests.cs
+│       └── Services/
+│           ├── RecurringTaskServiceTests.cs
+│           └── RecurringTaskStateCommandServiceTests.cs
 │
-├── Reminders/                         # ⚠ STALE — abandoned scaffold from Dec 2025
-│   └── HereAndNow.Reminders/
-│       └── obj/                       # Only build artifacts, no source files
-│
-├── docs/                              # Project documentation (you are here)
-│
-├── _bmad/                             # BMAD Method configuration
-├── _bmad-output/                      # BMAD output artifacts
-└── .github/
-    ├── workflows/
-    │   └── main_here-and-now-service.yml  # CI/CD: Build → Test → Deploy to Azure
-    ├── agents/                        # AI agent configs
-    └── skills/                        # BMAD skills
+├── docs/                           # Project documentation
+├── .github/
+│   ├── workflows/main_here-and-now-service.yml  # CI/CD → Azure Web Apps
+│   ├── agents/                     # BMAD AI agent definitions
+│   └── skills/                     # BMAD skill definitions
+├── _bmad/                          # BMAD method config
+├── _bmad-output/project-context.md # ★ Critical AI agent rules
+└── Reminders/                      # ⚠ Stale scaffold (not in active solution)
 ```
 
-## Critical Directories
-
-| Directory | Purpose | Key Files |
-|-----------|---------|-----------|
-| `Task/HereAndNow.Task/Models/` | Domain entities stored in Cosmos DB | TaskDocument, TaskReminderDocument, RecurringTaskConfigDocument, RecurringTaskStateOverrideDocument |
-| `Task/HereAndNow.Task/Services/` | Core business logic | TaskService, TaskReminderService, RecurringTaskService (RRULE engine) |
-| `Task/HereAndNow.Task/Repositories/` | Data access layer | Cosmos DB implementations with Unity (transactional batch) |
-| `Web/HereAndNow.Web/Controllers/` | API surface | CommandsController (13 commands), TasksController, RemindersController |
-| `Web/HereAndNow.Web/Commands/` | Command definitions | 13 command request/response models |
-| `Web/HereAndNow.Web/DTOs/` | API response shapes | TaskDto, RecurringTaskConfigDto, ErrorResponseDto |
-| `Web/HereAndNow.Web/Middlewares/` | Cross-cutting concerns | Error handling, security headers |
+---
 
 ## Assembly Dependency Graph
 
 ```
-HereAndNow.Web ──────► HereAndNow.Task ──────► Microsoft.Azure.Cosmos 3.46.1
-    │                       │                      Ical.Net 5.2.0
-    │                       │                      Newtonsoft.Json 13.0.3
-    ├──► HereAndNow.Message                        Logging.Abstractions 8.0.0
-    │
-    ├──► Microsoft.AspNetCore.Authentication.JwtBearer 8.0.11
-    ├──► Swashbuckle.AspNetCore 6.9.0
-    └──► dotenv.net 3.2.1
-
-HereAndNow.Web.Tests ──► HereAndNow.Web + Task + Message
-    ├──► xUnit 2.9.2
-    ├──► Moq 4.20.72
-    ├──► FluentAssertions 6.12.0
-    ├──► Microsoft.AspNetCore.Mvc.Testing 8.0.11
-    └──► coverlet.collector 6.0.2
-
-HereAndNow.Task.Tests ──► HereAndNow.Task
-    ├──► xUnit 2.9.2, Moq 4.20.72, FluentAssertions 6.12.0
-    └──► coverlet.collector 6.0.2
+HereAndNow.Web ──────────────► HereAndNow.Task
+     │                         HereAndNow.Message
+     │
+HereAndNow.Web.Tests ────────► HereAndNow.Web
+     │                    ──► HereAndNow.Task
+     │                    ──► HereAndNow.Message
+     │
+HereAndNow.Task.Tests ───────► HereAndNow.Task
 ```
-
-## Changes Since Last Scan (Jan 2026)
-
-Files marked with ★ NEW are additions since the previous documentation scan. The major addition is the **RecurringTask** feature set:
-- 3 new Cosmos DB document models
-- 1 new computed model (RecurringTaskInstance)
-- 3 new exception types
-- 1 new repository (IRecurringTaskRepository/RecurringTaskRepository)
-- 1 new service (IRecurringTaskService/RecurringTaskService)
-- 7 new command types
-- 1 new DTO and mapper
 
 ---
 
-_Generated by BMAD document-project workflow | Exhaustive Scan | 2026-03-19_
+## Critical Folders for AI Agents
+
+| Folder | Why It Matters |
+|--------|----------------|
+| `Task/HereAndNow.Task/Services/` | Business logic — read before writing any service |
+| `Task/HereAndNow.Task/Models/` | Domain models and TaskState constants |
+| `Web/HereAndNow.Web/Controllers/CommandsController.cs` | All mutations dispatch here |
+| `Web/HereAndNow.Web/Commands/` | One file per command — add new mutations here |
+| `Web/HereAndNow.Web/Program.cs` | DI registration and middleware pipeline |
+| `docs/compute-instances-algorithm.md` | Mandatory before any recurring task work |
+| `_bmad-output/project-context.md` | Rules an AI agent is likely to miss |
