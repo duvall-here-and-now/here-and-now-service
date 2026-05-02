@@ -1,81 +1,84 @@
 # Here and Now Service - Project Overview
 
-**Date:** 2026-03-19
-**Type:** Backend API Service
-**Architecture:** Clean Architecture (3-Layer) + Command Pattern + Unity Pattern
+**Date:** 2026-05-01
+**Type:** Monolith Backend API
+**Architecture:** Clean Architecture (3-Layer) + Command Pattern + Unity Pattern + Computed Instance Model
+
+---
 
 ## Executive Summary
 
-Here and Now Service is an ASP.NET Core 8.0 REST API for personal task management with reminders and recurring tasks. It serves web (SPA) and Android mobile clients via Auth0 JWT-authenticated endpoints backed by Azure Cosmos DB.
+Here and Now Service is a task management REST API with reminders and recurring tasks. It is the backend for the HereAndNow product (web SPA + Android app). The service uses a **Command Pattern API** — all mutations flow through a single `POST /api/v1/commands` endpoint with explicit intent-based commands and client-generated IDs for optimistic UI.
 
-## Key Capabilities
+The **Unity Pattern** atomically completes or deletes a task and dismisses its reminder in a single Cosmos DB transactional batch. The **Recurring Task** feature adds RRULE-based repeating tasks (RFC 5545/iCal) with computed instances and sparse state overrides.
 
-- **Task Management:** Create, update, complete, and soft-delete tasks with state machine (OnDeck → InProgress → Completed/Deleted)
-- **Reminders:** Time-based reminders attached to tasks, with snooze/dismiss and denormalized task name sync
-- **Recurring Tasks:** RRULE-based recurrence patterns (RFC 5545/iCal) with computed instances, state overrides, and one-active-at-a-time constraint
-- **Command Pattern API:** Single mutation endpoint (`POST /api/v1/commands`) handling 13 command types with client-generated IDs for optimistic UI
-- **Atomic Operations:** Cosmos DB transactional batches (Unity pattern) ensure Task↔Reminder consistency
-- **Mobile Sync Support:** Offline-first patterns — no future-time validation on synced snoozes
+---
 
 ## Technology Stack
 
 | Category | Technology | Version |
-|----------|-----------|---------|
-| Framework | ASP.NET Core | 8.0 |
-| Language | C# | .NET 8 |
-| Database | Azure Cosmos DB | 3.46.1 |
-| Recurrence Engine | Ical.Net (RFC 5545) | 5.2.0 |
+|----------|------------|---------|
+| Runtime | .NET | 8.0 |
+| Language | C# | 12 |
+| Framework | ASP.NET Core Web API | 8.0 |
+| Database | Azure Cosmos DB | SDK 3.46.1 |
 | Authentication | Auth0 JWT Bearer | 8.0.11 |
-| API Documentation | Swashbuckle/Swagger | 6.9.0 |
-| Serialization | Newtonsoft.Json | 13.0.3 |
-| Environment Config | dotenv.net | 3.2.1 |
-| Testing | xUnit + Moq + FluentAssertions | 2.9.2 / 4.20.72 / 6.12.0 |
-| CI/CD | GitHub Actions → Azure Web App | — |
-
-## Architecture Summary
-
-**Clean Architecture** with three assemblies:
-
-1. **HereAndNow.Message** — Demo/sample business logic (Auth0 integration sample)
-2. **HereAndNow.Task** — Core domain: models, services, repositories (pure business logic + Cosmos DB persistence)
-3. **HereAndNow.Web** — API controllers, commands, DTOs, middleware, DI configuration
-
-**Key Architectural Patterns:**
-- **Service-Repository** with constructor-injected dependencies
-- **Command Pattern** — single POST endpoint with discriminated payloads for all mutations
-- **Unity Pattern** — Cosmos DB transactional batches for atomic multi-document operations
-- **Type Discriminator** — 4 document types (Task, TaskReminder, RecurringTaskConfig, RecurringTaskStateOverride) in single Cosmos DB container
-- **Computed Instance Model** — recurring task instances generated in-memory from RRULE + state overrides (not persisted)
-
-## API Surface
-
-| Category | Endpoint(s) | Count | Description |
-|----------|-------------|-------|-------------|
-| Commands | POST /api/v1/commands | 13 types | All mutations (task, reminder, recurring) |
-| Tasks | GET /api/v1/tasks[/{id}] | 4 | Paginated queries, get by ID, complete |
-| Reminders | GET /api/v1/reminders[/{id}] | 4 | List active, get by ID, create, dismiss |
-| Messages | GET /api/messages/* | 3 | Demo public/protected/admin |
-
-## Data Storage
-
-- **Database:** HereAndNow (Azure Cosmos DB)
-- **Container:** Tasks (single container, `/userId` partition key)
-- **Document Types:** Task, TaskReminder, RecurringTaskConfig, RecurringTaskStateOverride
-- **Design:** All user data co-located by userId for efficient partition-scoped queries
-
-## Deployment
-
-- **Hosting:** Azure Web App
-- **CI/CD:** GitHub Actions (build → test → publish → deploy)
-- **Quality Gate:** Tests must pass before deployment proceeds
-- **Coverage:** Code coverage reports uploaded as workflow artifacts
-
-## Repository Info
-
-- **Type:** Monolith (single .NET solution)
-- **Active Assemblies:** 5 (Message, Task, Task.Tests, Web, Web.Tests)
-- **Stale:** Reminders/ (abandoned scaffold from Dec 2025)
+| Recurrence Engine | Ical.Net | 5.2.0 |
+| API Docs | Swashbuckle/Swagger | 6.9.0 |
+| JSON | Newtonsoft.Json | 13.0.3 |
+| Config | dotenv.net | 3.2.1 |
+| Test Framework | xUnit | 2.9.2 |
+| Mocking | Moq | 4.20.72 |
+| Assertions | FluentAssertions | 6.12.0 |
+| Integration Testing | Microsoft.AspNetCore.Mvc.Testing | 8.0.11 |
 
 ---
 
-_Generated by BMAD document-project workflow | Exhaustive Scan | 2026-03-19_
+## Architecture Type
+
+**Monolith** — single repository, single deployable unit, 3 production assemblies:
+
+| Assembly | Role |
+|----------|------|
+| `HereAndNow.Web` | ASP.NET Core API — controllers, commands, DTOs, middleware |
+| `HereAndNow.Task` | Business logic — services, repositories, domain models |
+| `HereAndNow.Message` | Auth0 demo — static messages only |
+
+---
+
+## API Overview
+
+| Controller | Route Prefix | Endpoints |
+|------------|-------------|-----------|
+| **Commands** | `/api/v1/commands` | 1 (POST) — dispatches 13 commands |
+| Tasks | `/api/v1/tasks` | GET list, GET by ID, POST (deprecated), PUT complete |
+| Reminders | `/api/v1/reminders` | GET list, GET by ID, POST (deprecated), PUT dismiss |
+| Recurring Configs | `/api/v1/recurring-task-configs` | GET list, GET by ID |
+| Recurring Tasks | `/api/v1/recurring-tasks` | GET computed instances (date range) |
+| Messages | `/api/messages` | GET public, protected, admin |
+
+---
+
+## Data Storage
+
+- **Azure Cosmos DB** — single container `Tasks`, database `HereAndNow`
+- Partition key: `/userId`
+- 4 document types: `Task`, `TaskReminder`, `RecurringTaskConfig`, `RecurringTaskStateOverride`
+- Recurring task instances are computed in-memory, not persisted
+
+---
+
+## Entry Point
+
+`Web/HereAndNow.Web/Program.cs`
+
+---
+
+## Getting Started
+
+1. Copy `.env.example` to `.env` and fill in Auth0 credentials
+2. Set `COSMOS_CONNECTION_STRING` to connect to Cosmos (optional for message-only testing)
+3. `dotnet run --project Web/HereAndNow.Web/HereAndNow.Web.csproj`
+4. Open `http://localhost:6060/swagger`
+
+See [development-guide.md](./development-guide.md) for full setup instructions.

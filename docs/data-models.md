@@ -1,231 +1,269 @@
 # Here and Now Service - Data Models
 
-**Date:** 2026-03-19
-
-## Overview
-
-All domain models are stored in a single Azure Cosmos DB container (`Tasks`) using a type discriminator pattern. The partition key is `/userId`, ensuring all user data is co-located for efficient queries and transactional batches.
-
-## Cosmos DB Document Types
-
-### TaskDocument
-
-Represents a user's task.
-
-| Property | Type | JSON Name | Description |
-|----------|------|-----------|-------------|
-| Id | string | id | Unique GUID identifier |
-| Type | string | type | Always `"Task"` |
-| UserId | string | userId | Owner's user ID (partition key) |
-| Name | string | name | Task title/description |
-| State | string | state | Current state (OnDeck, InProgress, Completed, Deleted) |
-| CreatedAt | DateTime | createdAt | UTC creation timestamp |
-| CompletedAt | DateTime? | completedAt | UTC completion timestamp (null if not completed) |
-| ReminderId | string? | reminderId | Linked reminder ID (null if none) |
-| LastModifiedAt | DateTime | lastModifiedAt | UTC last modification timestamp |
-
-### TaskReminderDocument
-
-Represents a time-based reminder attached to a task. Stores a denormalized `TaskName` to avoid joins.
-
-| Property | Type | JSON Name | Description |
-|----------|------|-----------|-------------|
-| Id | string | id | Unique GUID identifier |
-| Type | string | type | Always `"TaskReminder"` |
-| UserId | string | userId | Owner's user ID (partition key) |
-| TaskId | string | taskId | Associated task ID |
-| TaskName | string | taskName | Denormalized task name (synced via Unity) |
-| ScheduledTime | DateTime | scheduledTime | UTC trigger time |
-| IsDismissed | bool | isDismissed | Whether dismissed |
-| DismissedAt | DateTime? | dismissedAt | UTC dismissal timestamp |
-| CreatedAt | DateTime | createdAt | UTC creation timestamp |
-| LastModifiedAt | DateTime | lastModifiedAt | UTC last modification timestamp |
-
-### RecurringTaskConfigDocument
-
-Defines a recurrence pattern for a repeating task using RFC 5545 RRULE syntax.
-
-| Property | Type | JSON Name | Description |
-|----------|------|-----------|-------------|
-| Id | string | id | Unique GUID identifier (client-generated) |
-| Type | string | type | Always `"RecurringTaskConfig"` |
-| UserId | string | userId | Owner's user ID (partition key) |
-| Text | string | text | Display text/name of the recurring task |
-| Rrule | string | rrule | RRULE string without prefix (e.g., `"FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0"`) |
-| StartDateAndTime | DateTime | startDateAndTime | UTC start date/time for the recurrence pattern |
-| CreatedAt | DateTime | createdAt | UTC creation timestamp |
-
-### RecurringTaskStateOverrideDocument
-
-Stores explicit state changes for specific recurring task instances. Only instances that deviate from the default computed state need an override.
-
-| Property | Type | JSON Name | Description |
-|----------|------|-----------|-------------|
-| Id | string | id | Composite: `{configId}_{yyyy-MM-ddTHH:mm:ssZ}` |
-| Type | string | type | Always `"RecurringTaskStateOverride"` |
-| UserId | string | userId | Owner's user ID (partition key) |
-| ConfigId | string | configId | Parent RecurringTaskConfig.Id |
-| RecurrenceDateAndTime | DateTime | recurrenceDateAndTime | UTC date/time of the specific occurrence |
-| State | string | state | Overridden state (InProgress, Completed, Skipped) |
-| UpdatedAt | DateTime | updatedAt | UTC last update timestamp |
-
-**Static method:** `GenerateId(configId, recurrenceDateAndTime)` — produces the composite ID, enforces UTC.
-
-## Computed Model (Not Persisted)
-
-### RecurringTaskInstance
-
-Generated in-memory by `RecurringTaskService.ComputeInstances()`. Represents one occurrence of a recurring task with its resolved state.
-
-| Property | Type | Description |
-|----------|------|-------------|
-| RecurringTaskConfigId | string | Parent config ID |
-| Text | string | Task text (from config, read-only) |
-| RecurrenceDateAndTime | DateTime | UTC occurrence date/time |
-| State | string | Computed state: Scheduled, OnDeck, InProgress, Completed, Skipped |
-| RecurrenceRule | string | RRULE from parent config |
-| Id | string | Computed composite: `{configId}_{datetime}` |
-
-## State Constants (TaskState)
-
-```csharp
-public static class TaskState
-{
-    public const string OnDeck = "OnDeck";
-    public const string InProgress = "InProgress";
-    public const string Completed = "Completed";
-    public const string Deleted = "Deleted";
-    public const string Scheduled = "Scheduled";    // Recurring only
-    public const string Skipped = "Skipped";         // Recurring only
-}
-```
-
-**Regular task states:** OnDeck, InProgress, Completed, Deleted
-**Recurring task states:** Scheduled, OnDeck, InProgress, Completed, Skipped
-
-## Pagination Model
-
-### PagedResult\<T\>
-
-Generic wrapper for paginated query results.
-
-| Property | Type | Description |
-|----------|------|-------------|
-| Items | IReadOnlyList\<T\> | Items in current page |
-| TotalCount | int | Total matching items across all pages |
-| HasMore | bool | Whether more items exist beyond current page |
-
-## Domain Exceptions (12)
-
-| Exception | HTTP Status | Description |
-|-----------|------------|-------------|
-| TaskNotFoundException | 404 | Task not found. Properties: `TaskId` |
-| TaskAlreadyExistsException | 409 | Task ID already exists. Properties: `TaskId` |
-| ReminderNotFoundException | 404 | Reminder not found. Properties: `ReminderId` |
-| ReminderAlreadyExistsException | 409 | Task already has a reminder. Properties: `TaskId` |
-| ReminderAlreadyDismissedException | 409 | Reminder already dismissed. Properties: `ReminderId` |
-| TaskReminderAlreadyExistsException | 409 | Reminder ID already exists. Properties: `ReminderId` |
-| InvalidScheduledTimeException | 400 | Invalid scheduled time value |
-| InvalidStateTransitionException | 409 | Invalid state transition. Properties: `TaskId`, `CurrentState`, `AttemptedAction` |
-| UnityTransactionFailedException | 500 | Transactional batch failed. Properties: `TaskId` |
-| RecurringTaskConfigNotFoundException | 404 | Config not found. Properties: `ConfigId` |
-| RecurringTaskConfigAlreadyExistsException | 409 | Config ID already exists. Properties: `ConfigId` |
-| InvalidRecurrenceRuleException | 400 | RRULE validation failed. Properties: `RecurrenceRule` |
-
-## Service Layer
-
-### ITaskService / TaskService
-
-Core task business logic with Unity pattern support.
-
-| Method | Description | Unity? |
-|--------|------------|--------|
-| CreateTaskAsync | Create with server-generated ID | No |
-| CreateTaskWithIdAsync | Create with client-generated ID | No |
-| CreateTaskWithOptionalReminderAsync | Create task, optionally create+link reminder | Partial |
-| CreateTaskWithReminderAsync | Atomic task+reminder creation | Yes |
-| GetTasksAsync | Get tasks with optional state filter | No |
-| GetTasksPagedAsync | Paginated, sorted, filtered query | No |
-| GetTaskByIdAsync | Single task lookup | No |
-| UpdateTaskAsync | Update name/state (legacy) | Conditional |
-| UpdateTaskNameAsync | Update name with reminder sync | Conditional |
-| UpdateStateAsync | State machine with Unity for Complete/Delete | Conditional |
-| CompleteTaskWithUnityAsync | Complete + dismiss reminder | Yes |
-| DeleteTaskWithUnityAsync | Soft-delete + dismiss reminder | Yes |
-
-### ITaskReminderService / TaskReminderService
-
-Reminder operations with idempotent dismiss.
-
-| Method | Description |
-|--------|------------|
-| CreateReminderAsync | Create reminder + atomic task link |
-| GetRemindersAsync | Non-dismissed reminders, sorted by time |
-| GetReminderByIdAsync | Single reminder lookup |
-| SnoozeAsync | Reschedule (no future-time validation for mobile sync) |
-| DismissAsync | Dismiss (idempotent) |
-
-### IRecurringTaskService / RecurringTaskService
-
-RRULE-based computation and state management.
-
-| Method | Description | I/O |
-|--------|------------|-----|
-| GetComputedInstancesAsync | Fetch configs + overrides, compute instances | 2 DB queries |
-| ComputeInstances | Pure function — RRULE expansion + state resolution | None (in-memory) |
-| CreateConfigAsync | Create config with RRULE validation | 1 DB write |
-| UpdateConfigAsync | Update config with RRULE re-validation | 1 DB read + 1 write |
-| DeleteConfigAsync | Cascade delete config + all overrides | Batch delete |
-| StartRecurringTaskAsync | OnDeck → InProgress | Compute + upsert |
-| RevertRecurringTaskToOnDeckAsync | InProgress → OnDeck (delete override) | Compute + delete |
-| CompleteRecurringTaskAsync | → Completed (idempotent) | Compute + upsert |
-| SkipRecurringTaskAsync | → Skipped (idempotent) | Compute + upsert |
-
-## Repository Layer
-
-### ITaskRepository / TaskRepository
-
-Cosmos DB operations with Unity transactional batches.
-
-| Method | Pattern |
-|--------|---------|
-| CreateAsync | Point write |
-| GetByIdAsync | Point read (1 RU) |
-| ExistsAsync | Point read for existence check |
-| GetByUserIdAsync | Partition query with type + state filter |
-| GetByUserIdPagedAsync | Partition query with ORDER BY + OFFSET/LIMIT |
-| UpdateAsync | Point replace |
-| UpdateReminderIdAsync | Patch operation (partial update) |
-| CompleteWithUnityAsync | Transactional batch (task + reminder) |
-| DeleteWithUnityAsync | Transactional batch (task + reminder) |
-| UpdateWithReminderSyncAsync | Transactional batch (task + reminder) |
-| CreateTaskWithReminderBatchAsync | Transactional batch (create task + create reminder) |
-
-### ITaskReminderRepository / TaskReminderRepository
-
-| Method | Pattern |
-|--------|---------|
-| CreateAsync | Point write |
-| GetByIdAsync | Point read with type verification |
-| GetByUserIdAsync | Partition query (non-dismissed, sorted) |
-| GetByTaskIdAsync | Partition query by taskId |
-| UpdateAsync | Point replace |
-| CreateWithTaskLinkAsync | Transactional batch (create reminder + patch task) |
-| ExistsAsync | Point read with type verification |
-
-### IRecurringTaskRepository / RecurringTaskRepository
-
-| Method | Pattern |
-|--------|---------|
-| CreateConfigAsync | Point write |
-| GetConfigByIdAsync | Point read with type verification |
-| GetAllConfigsAsync | Partition query (type=RecurringTaskConfig) |
-| UpdateConfigAsync | Point replace |
-| DeleteConfigWithOverridesAsync | Batch delete (chunked if >99 overrides) |
-| UpsertStateOverrideAsync | Upsert (create or replace) |
-| DeleteStateOverrideAsync | Point delete (idempotent) |
-| GetStateOverridesForDateRangeAsync | Partition query with date range filter |
+**Date:** 2026-05-01
 
 ---
 
-_Generated by BMAD document-project workflow | Exhaustive Scan | 2026-03-19_
+## Overview
+
+All task-related documents are stored in a single Azure Cosmos DB container (`Tasks`) using a type discriminator pattern. The partition key is `/userId`. Recurring task instances are computed in-memory and never persisted.
+
+---
+
+## Cosmos DB Documents
+
+### TaskDocument
+
+Persisted type: `"Task"`
+
+| Field | JSON Key | Type | Notes |
+|-------|----------|------|-------|
+| `Id` | `id` | string | Client-generated GUID (lowercase) |
+| `Type` | `type` | string | Always `"Task"` |
+| `UserId` | `userId` | string | Partition key (Auth0 sub claim) |
+| `Name` | `name` | string | Task display name |
+| `State` | `state` | string | See TaskState constants |
+| `CreatedAt` | `createdAt` | DateTime (UTC) | Set on creation |
+| `CompletedAt` | `completedAt` | DateTime? (UTC) | Set when state → Completed |
+| `ReminderId` | `reminderId` | string? | ID of linked TaskReminderDocument |
+| `LastModifiedAt` | `lastModifiedAt` | DateTime (UTC) | Updated on every mutation |
+
+**Notes:**
+- Deletion is a soft-delete: state → `"Deleted"`, document remains in Cosmos
+- `reminderId` is cleared when a reminder is dismissed via Unity
+
+---
+
+### TaskReminderDocument
+
+Persisted type: `"TaskReminder"`
+
+| Field | JSON Key | Type | Notes |
+|-------|----------|------|-------|
+| `Id` | `id` | string | Client-generated GUID (lowercase) |
+| `Type` | `type` | string | Always `"TaskReminder"` |
+| `UserId` | `userId` | string | Partition key |
+| `TaskId` | `taskId` | string | ID of linked TaskDocument |
+| `TaskName` | `taskName` | string | **Denormalized** from task — kept in sync atomically via Unity |
+| `ScheduledTime` | `scheduledTime` | DateTime (UTC) | When to fire the reminder |
+| `IsDismissed` | `isDismissed` | bool | Whether dismissed |
+| `DismissedAt` | `dismissedAt` | DateTime? (UTC) | Set on dismiss |
+| `CreatedAt` | `createdAt` | DateTime (UTC) | Set on creation |
+| `LastModifiedAt` | `lastModifiedAt` | DateTime (UTC) | Updated on every mutation |
+
+**Notes:**
+- `taskName` denormalization requires atomic update when task is renamed (Unity pattern)
+- Dismissed reminders remain in Cosmos; `GetReminders` filters `isDismissed == false`
+
+---
+
+### RecurringTaskConfigDocument
+
+Persisted type: `"RecurringTaskConfig"`
+
+| Field | JSON Key | Type | Notes |
+|-------|----------|------|-------|
+| `Id` | `id` | string | Client-generated GUID (lowercase) |
+| `Type` | `type` | string | Always `"RecurringTaskConfig"` |
+| `UserId` | `userId` | string | Partition key |
+| `Text` | `text` | string | Task display text (read-only per instance) |
+| `Rrule` | `rrule` | string | RRULE **without** `RRULE:` prefix |
+| `StartDateAndTime` | `startDateAndTime` | DateTime (UTC) | RRULE DTSTART |
+| `CreatedAt` | `createdAt` | DateTime (UTC) | Set on creation, preserved on updates |
+
+**RRULE constraints:**
+- Valid frequencies: `Hourly`, `Daily`, `Weekly`, `Monthly`, `Yearly`
+- Rejected frequencies: `Secondly`, `Minutely`
+- Stored without the `RRULE:` prefix: e.g., `FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0`
+
+---
+
+### RecurringTaskStateOverrideDocument
+
+Persisted type: `"RecurringTaskStateOverride"`
+
+| Field | JSON Key | Type | Notes |
+|-------|----------|------|-------|
+| `Id` | `id` | string | Composite: `{configId}_{yyyy-MM-ddTHH:mm:ssZ}` |
+| `Type` | `type` | string | Always `"RecurringTaskStateOverride"` |
+| `UserId` | `userId` | string | Partition key |
+| `ConfigId` | `configId` | string | Parent RecurringTaskConfigDocument.Id |
+| `RecurrenceDateAndTime` | `recurrenceDateAndTime` | DateTime (UTC) | Identifies the specific occurrence |
+| `State` | `state` | string | `OnDeck`, `InProgress`, `Completed`, or `Skipped` |
+| `UpdatedAt` | `updatedAt` | DateTime (UTC) | Updated on every state command |
+
+**Notes:**
+- ID generation: `RecurringTaskStateOverrideDocument.GenerateId(configId, recurrenceDateAndTime)` — requires UTC datetime
+- Sparse storage: only instances with non-`Scheduled` states have override documents
+- `RevertRecurringTaskToOnDeck` **deletes** the override document (reverts to computed default)
+- Bulk delete chunked in batches of ≤100 (Cosmos transactional batch limit)
+
+---
+
+## Computed Model
+
+### RecurringTaskInstance _(not persisted)_
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `Id` | string | `{RecurringTaskConfigId}_{yyyy-MM-ddTHH:mm:ssZ}` |
+| `RecurringTaskConfigId` | string | Parent config ID |
+| `Text` | string | From parent config (read-only) |
+| `RecurrenceDateAndTime` | DateTime (UTC) | RRULE-computed occurrence |
+| `State` | string | Resolved state (see computation algorithm) |
+| `RecurrenceRule` | string | RRULE from parent config (for display) |
+
+Generated by `IRecurringTaskService.GetComputedInstancesAsync(userId, from, to)`.
+
+See [compute-instances-algorithm.md](./compute-instances-algorithm.md) for the full state resolution pipeline.
+
+---
+
+## TaskState Constants
+
+Defined in `Task/HereAndNow.Task/Models/TaskState.cs`:
+
+| Constant | Value | Applies To |
+|----------|-------|-----------|
+| `OnDeck` | `"OnDeck"` | Regular tasks + Recurring instances |
+| `InProgress` | `"InProgress"` | Regular tasks + Recurring instances |
+| `Completed` | `"Completed"` | Regular tasks + Recurring instances |
+| `Deleted` | `"Deleted"` | Regular tasks only (soft delete) |
+| `Scheduled` | `"Scheduled"` | Recurring instances only (future, no override) |
+| `Skipped` | `"Skipped"` | Recurring instances only |
+
+**Rule:** Never use raw string literals — always reference `TaskState` constants.
+
+---
+
+## State Machines
+
+### Regular Task States
+
+```
+         ┌─────────────────┐
+         │    OnDeck       │◄──────────────────┐
+         └────────┬────────┘                   │
+                  │                            │
+         ┌────────▼────────┐                   │
+         │   InProgress    │───────────────────┘
+         └────────┬────────┘
+                  │
+         ┌────────▼────────┐
+         │   Completed     │  (terminal for normal flow)
+         └─────────────────┘
+
+Any non-Deleted state → Deleted (terminal)
+Deleted → anything: REJECTED
+```
+
+### Recurring Task Instance States
+
+```
+  Scheduled ──► OnDeck ──► InProgress ──► Completed
+                  │              │
+                  │              └──────► OnDeck (revert)
+                  │
+                  └──► Skipped  (from OnDeck or InProgress)
+                       (also from Completed → Skipped)
+
+Scheduled → any action: REJECTED (future instance)
+Completed, Skipped → Completed, Skipped: idempotent
+```
+
+---
+
+## Domain Exceptions
+
+| Exception | HTTP Code | Error Code | Thrown When |
+|-----------|-----------|------------|-------------|
+| `TaskNotFoundException` | 404 | `TASK_NOT_FOUND` | Task ID not in Cosmos |
+| `TaskAlreadyExistsException` | 409 | `TASK_ALREADY_EXISTS` | Client ID collision |
+| `ReminderNotFoundException` | 404 | `REMINDER_NOT_FOUND` | Reminder ID not in Cosmos |
+| `ReminderAlreadyExistsException` | 400/409 | `REMINDER_ALREADY_EXISTS` | Task already has reminder |
+| `ReminderAlreadyDismissedException` | 400 | `REMINDER_ALREADY_DISMISSED` | Cannot snooze dismissed reminder |
+| `TaskReminderAlreadyExistsException` | 409 | `TASK_REMINDER_ALREADY_EXISTS` | Reminder ID collision |
+| `InvalidScheduledTimeException` | 400 | `INVALID_SCHEDULED_TIME` | ScheduledTime validation |
+| `UnityTransactionFailedException` | 500 | `UNITY_TRANSACTION_FAILED` | Cosmos batch failure |
+| `InvalidStateTransitionException` | 400 | `INVALID_STATE_TRANSITION` | Illegal state change |
+| `InvalidRecurrenceRuleException` | 400 | `INVALID_RECURRENCE_RULE` | Bad/unsupported RRULE |
+| `RecurringTaskConfigNotFoundException` | 404 | `RECURRING_TASK_CONFIG_NOT_FOUND` | Config ID not in Cosmos |
+| `RecurringTaskConfigAlreadyExistsException` | 409 | `RECURRING_TASK_CONFIG_ALREADY_EXISTS` | Config ID collision |
+
+---
+
+## Service Interfaces
+
+### ITaskService
+
+```csharp
+Task<TaskDocument> CreateTaskWithIdAsync(string userId, string taskId, string name);
+Task<(TaskDocument task, TaskReminderDocument reminder)> CreateTaskWithReminderAsync(
+    string userId, string taskId, string reminderId, string name, DateTime scheduledTime);
+Task<TaskDocument> CreateTaskWithOptionalReminderAsync(string name, string userId, DateTime? scheduledTime);
+Task<PagedResult<TaskDocument>> GetTasksPagedAsync(
+    string userId, string? state, string orderBy, string direction, int skip, int take);
+Task<TaskDocument> GetTaskByIdAsync(string taskId, string userId);
+Task<TaskDocument> UpdateTaskNameAsync(string userId, string taskId, string name);
+Task<TaskDocument> UpdateStateAsync(string userId, string taskId, string newState);
+Task<TaskDocument> CompleteTaskWithUnityAsync(string userId, string taskId);
+Task DeleteTaskWithUnityAsync(string userId, string taskId);
+```
+
+### ITaskReminderService
+
+```csharp
+Task<TaskReminderDocument> CreateReminderAsync(string userId, string taskId, DateTime scheduledTime);
+Task<TaskReminderDocument?> GetReminderByIdAsync(string userId, string reminderId);
+Task<IReadOnlyList<TaskReminderDocument>> GetRemindersAsync(string userId);
+Task<TaskReminderDocument> SnoozeAsync(string userId, string reminderId, DateTime newScheduledTime);
+Task DismissAsync(string userId, string reminderId);
+```
+
+### IRecurringTaskService
+
+```csharp
+Task<RecurringTaskConfigDocument> CreateConfigAsync(
+    string userId, string configId, string text, string recurrenceRule, DateTime startDateAndTime);
+Task<RecurringTaskConfigDocument> UpdateConfigAsync(
+    string userId, string configId, string text, string recurrenceRule, DateTime startDateAndTime);
+Task DeleteConfigAsync(string userId, string configId);
+Task<RecurringTaskConfigDocument> GetConfigByIdAsync(string userId, string configId);
+Task<IReadOnlyList<RecurringTaskConfigDocument>> GetAllConfigsAsync(string userId);
+Task<IReadOnlyList<RecurringTaskInstance>> GetComputedInstancesAsync(
+    string userId, DateTime from, DateTime to);
+Task StartRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime);
+Task RevertRecurringTaskToOnDeckAsync(string userId, string configId, DateTime recurrenceDateAndTime);
+Task CompleteRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime);
+Task SkipRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime);
+```
+
+---
+
+## Repository Interfaces
+
+### ITaskRepository
+
+CRUD operations + paginated queries + soft-delete + Unity transactional batch operations.
+
+Key operations:
+- `GetByIdAsync(string id, string userId)` — scoped to user partition
+- `GetPagedAsync(string userId, string? state, string orderBy, string direction, int skip, int take)`
+- `CreateAsync(TaskDocument task)`
+- `UpdateAsync(TaskDocument task)`
+- `CompleteWithUnityAsync(TaskDocument task, TaskReminderDocument reminder)` — transactional batch
+- `UpdateWithReminderSyncAsync(TaskDocument task, TaskReminderDocument reminder)` — transactional batch
+
+### ITaskReminderRepository
+
+CRUD + list non-dismissed reminders.
+
+### IRecurringTaskRepository
+
+Config CRUD + bulk override operations.
+
+Key operations:
+- `GetConfigsAndOverridesAsync(string userId)` — returns both collections in 2 queries (NFR43)
+- `UpsertOverrideAsync(RecurringTaskStateOverrideDocument override)` — upsert single override
+- `DeleteOverrideAsync(string userId, string overrideId)` — delete single override
+- `DeleteConfigAndAllOverridesAsync(string userId, string configId)` — chunked bulk delete
