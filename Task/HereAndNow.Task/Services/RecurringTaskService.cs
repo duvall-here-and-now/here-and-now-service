@@ -218,7 +218,7 @@ public class RecurringTaskService : IRecurringTaskService
 
     /// <inheritdoc />
     public async Task<RecurringTaskConfigDocument> UpdateConfigAsync(
-        string userId, string id, string text, string rrule, DateTime startDateAndTime)
+        string userId, string id, string text, string rrule, DateTime startDateAndTime, bool hasReminder = false)
     {
         if (startDateAndTime.Kind != DateTimeKind.Utc)
             throw new ArgumentException("startDateAndTime must be UTC", nameof(startDateAndTime));
@@ -234,6 +234,10 @@ public class RecurringTaskService : IRecurringTaskService
         existing.StartDateAndTime = startDateAndTime;
         // Do NOT update CreatedAt — it's the original creation timestamp
         // Orphaned state overrides are accepted for MVP when RRULE changes
+
+        if (hasReminder && !existing.HasReminder)
+            existing.HasReminderEnabledAt = DateTime.UtcNow;
+        existing.HasReminder = hasReminder;
 
         return await _repository.UpdateConfigAsync(existing);
     }

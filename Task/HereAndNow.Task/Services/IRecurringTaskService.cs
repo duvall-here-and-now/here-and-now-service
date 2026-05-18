@@ -92,6 +92,7 @@ public interface IRecurringTaskService
     /// <param name="text">Updated display text.</param>
     /// <param name="rrule">Updated RRULE string — validated for supported frequencies.</param>
     /// <param name="startDateAndTime">Updated UTC start date/time.</param>
+    /// <param name="hasReminder">Whether Android reminder notifications are enabled for this config.</param>
     /// <returns>The updated config document.</returns>
     /// <exception cref="HereAndNowService.Models.Exceptions.InvalidRecurrenceRuleException">
     /// Thrown if the RRULE is malformed or uses an unsupported frequency.
@@ -100,7 +101,7 @@ public interface IRecurringTaskService
     /// Thrown if no config with the given ID exists for the user.
     /// </exception>
     Task<RecurringTaskConfigDocument> UpdateConfigAsync(
-        string userId, string id, string text, string rrule, DateTime startDateAndTime);
+        string userId, string id, string text, string rrule, DateTime startDateAndTime, bool hasReminder = false);
 
     /// <summary>
     /// Deletes a recurring task configuration and all its state overrides atomically.

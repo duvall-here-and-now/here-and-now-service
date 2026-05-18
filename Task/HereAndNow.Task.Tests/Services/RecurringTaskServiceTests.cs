@@ -720,4 +720,121 @@ public class RecurringTaskServiceTests
     }
 
     #endregion
+
+    #region UpdateConfigAsync — hasReminder Stamping
+
+    [Fact]
+    public async Task UpdateConfigAsync_WhenHasReminderSetTrueOnFalseConfig_StampsHasReminderEnabledAt()
+    {
+        // Arrange
+        var existingConfig = CreateConfig();
+        existingConfig.HasReminder = false;
+        existingConfig.HasReminderEnabledAt = null;
+
+        var mockRepo = new Mock<IRecurringTaskRepository>();
+        mockRepo.Setup(r => r.GetConfigByIdAsync(TestUserId, "config-1"))
+                .ReturnsAsync(existingConfig);
+        mockRepo.Setup(r => r.UpdateConfigAsync(It.IsAny<RecurringTaskConfigDocument>()))
+                .ReturnsAsync((RecurringTaskConfigDocument doc) => doc);
+
+        var service = CreateService(mockRepo.Object);
+        var before = DateTime.UtcNow;
+
+        // Act
+        var result = await service.UpdateConfigAsync(
+            TestUserId, "config-1", "Test Task", DailyAt9AmRrule,
+            new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc),
+            hasReminder: true);
+
+        var after = DateTime.UtcNow;
+
+        // Assert
+        result.HasReminder.Should().BeTrue();
+        result.HasReminderEnabledAt.Should().NotBeNull();
+        result.HasReminderEnabledAt!.Value.Should().BeOnOrAfter(before).And.BeOnOrBefore(after);
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_WhenHasReminderRemainsTrue_PreservesExistingHasReminderEnabledAt()
+    {
+        // Arrange
+        var t1 = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var existingConfig = CreateConfig();
+        existingConfig.HasReminder = true;
+        existingConfig.HasReminderEnabledAt = t1;
+
+        var mockRepo = new Mock<IRecurringTaskRepository>();
+        mockRepo.Setup(r => r.GetConfigByIdAsync(TestUserId, "config-1"))
+                .ReturnsAsync(existingConfig);
+        mockRepo.Setup(r => r.UpdateConfigAsync(It.IsAny<RecurringTaskConfigDocument>()))
+                .ReturnsAsync((RecurringTaskConfigDocument doc) => doc);
+
+        var service = CreateService(mockRepo.Object);
+
+        // Act
+        var result = await service.UpdateConfigAsync(
+            TestUserId, "config-1", "Test Task", DailyAt9AmRrule,
+            new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc),
+            hasReminder: true);
+
+        // Assert
+        result.HasReminderEnabledAt.Should().Be(t1);
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_WhenHasReminderToggledFalse_PreservesHasReminderEnabledAt()
+    {
+        // Arrange
+        var t1 = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var existingConfig = CreateConfig();
+        existingConfig.HasReminder = true;
+        existingConfig.HasReminderEnabledAt = t1;
+
+        var mockRepo = new Mock<IRecurringTaskRepository>();
+        mockRepo.Setup(r => r.GetConfigByIdAsync(TestUserId, "config-1"))
+                .ReturnsAsync(existingConfig);
+        mockRepo.Setup(r => r.UpdateConfigAsync(It.IsAny<RecurringTaskConfigDocument>()))
+                .ReturnsAsync((RecurringTaskConfigDocument doc) => doc);
+
+        var service = CreateService(mockRepo.Object);
+
+        // Act
+        var result = await service.UpdateConfigAsync(
+            TestUserId, "config-1", "Test Task", DailyAt9AmRrule,
+            new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc),
+            hasReminder: false);
+
+        // Assert
+        result.HasReminder.Should().BeFalse();
+        result.HasReminderEnabledAt.Should().Be(t1);
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_WhenHasReminderRemainsFalse_DoesNotSetHasReminderEnabledAt()
+    {
+        // Arrange
+        var existingConfig = CreateConfig();
+        existingConfig.HasReminder = false;
+        existingConfig.HasReminderEnabledAt = null;
+
+        var mockRepo = new Mock<IRecurringTaskRepository>();
+        mockRepo.Setup(r => r.GetConfigByIdAsync(TestUserId, "config-1"))
+                .ReturnsAsync(existingConfig);
+        mockRepo.Setup(r => r.UpdateConfigAsync(It.IsAny<RecurringTaskConfigDocument>()))
+                .ReturnsAsync((RecurringTaskConfigDocument doc) => doc);
+
+        var service = CreateService(mockRepo.Object);
+
+        // Act
+        var result = await service.UpdateConfigAsync(
+            TestUserId, "config-1", "Test Task", DailyAt9AmRrule,
+            new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc),
+            hasReminder: false);
+
+        // Assert
+        result.HasReminder.Should().BeFalse();
+        result.HasReminderEnabledAt.Should().BeNull();
+    }
+
+    #endregion
 }

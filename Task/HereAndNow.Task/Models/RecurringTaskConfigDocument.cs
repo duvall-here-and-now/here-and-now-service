@@ -50,4 +50,16 @@ public class RecurringTaskConfigDocument
     /// </summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>
+    /// Whether this config has Android reminder notifications enabled
+    /// </summary>
+    [JsonPropertyName("hasReminder")]
+    public bool HasReminder { get; set; } = false;
+
+    /// <summary>
+    /// UTC timestamp of the first false→true transition; never cleared on toggle-off
+    /// </summary>
+    [JsonPropertyName("hasReminderEnabledAt")]
+    public DateTime? HasReminderEnabledAt { get; set; }
 }

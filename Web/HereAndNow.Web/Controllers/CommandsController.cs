@@ -799,7 +799,7 @@ public class CommandsController : ControllerBase
         try
         {
             var config = await _recurringTaskService.UpdateConfigAsync(
-                userId, configId, command.Text, command.RecurrenceRule, command.StartDateAndTime);
+                userId, configId, command.Text, command.RecurrenceRule, command.StartDateAndTime, command.HasReminder);
             return Ok(RecurringTaskConfigMapper.ToDto(config));
         }
         catch (RecurringTaskConfigNotFoundException)
