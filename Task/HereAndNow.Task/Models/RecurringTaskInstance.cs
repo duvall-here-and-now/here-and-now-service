@@ -48,6 +48,14 @@ public class RecurringTaskInstance
     public string RecurrenceRule { get; }
 
     /// <summary>
+    /// Whether the derived reminder for this occurrence has been dismissed. Mirrors the matched
+    /// <see cref="RecurringTaskStateOverrideDocument.ReminderDismissed"/> whenever an override
+    /// exists for this occurrence, regardless of how state resolves; <c>false</c> otherwise.
+    /// Setter is <c>internal</c> for the same reason as <see cref="State"/>.
+    /// </summary>
+    public bool ReminderDismissed { get; internal set; }
+
+    /// <summary>
     /// Composite ID matching <see cref="RecurringTaskStateOverrideDocument.Id"/> format.
     /// Format: <c>{RecurringTaskConfigId}_{yyyy-MM-ddTHH:mm:ssZ}</c>
     /// </summary>

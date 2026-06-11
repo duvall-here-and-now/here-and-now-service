@@ -43,7 +43,8 @@ public class RecurringTaskServiceTests
     private static RecurringTaskStateOverrideDocument CreateOverride(
         string configId,
         DateTime recurrenceDateAndTime,
-        string state)
+        string state,
+        bool reminderDismissed = false)
     {
         return new RecurringTaskStateOverrideDocument
         {
@@ -51,7 +52,8 @@ public class RecurringTaskServiceTests
             ConfigId = configId,
             RecurrenceDateAndTime = recurrenceDateAndTime,
             State = state,
-            UserId = TestUserId
+            UserId = TestUserId,
+            ReminderDismissed = reminderDismissed
         };
     }
 
@@ -478,6 +480,118 @@ public class RecurringTaskServiceTests
         var feb16 = result.Single(r => r.RecurrenceDateAndTime == Feb16At9);
         feb16.State.Should().Be(TaskState.OnDeck,
             "unexpected stored state on a future occurrence is passed through defensively");
+    }
+
+    #endregion
+
+    #region ComputeInstances — ReminderDismissed Mapping
+
+    [Fact]
+    public void ComputeInstances_NoOverride_ReminderDismissedDefaultsFalse()
+    {
+        // Arrange — active occurrence (Feb 15 9am, now Feb 15 noon) with no stored override
+        var config = CreateConfig();
+        var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, Array.Empty<RecurringTaskStateOverrideDocument>(),
+            fromFeb15AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].ReminderDismissed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ComputeInstances_ActiveOccurrenceWithDismissedOverride_ReminderDismissedTrue()
+    {
+        // Arrange — active occurrence (most recent past) carries an InProgress override
+        // whose reminder was dismissed
+        var config = CreateConfig();
+        var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var overrides = new[]
+            { CreateOverride("config-1", Feb15At9, TaskState.InProgress, reminderDismissed: true) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, fromFeb15AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].State.Should().Be(TaskState.InProgress);
+        result[0].ReminderDismissed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ComputeInstances_OlderPastTerminalOverrideWithDismissed_ReminderDismissedTrue()
+    {
+        // Arrange — Feb 14 (older past) has a Completed override with dismissed reminder;
+        // Feb 15 is the active instance
+        var config = CreateConfig();
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var overrides = new[]
+            { CreateOverride("config-1", Feb14At9, TaskState.Completed, reminderDismissed: true) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
+
+        // Assert
+        var feb14 = result.Single(r => r.RecurrenceDateAndTime == Feb14At9);
+        feb14.State.Should().Be(TaskState.Completed);
+        feb14.ReminderDismissed.Should().BeTrue();
+
+        var feb15 = result.Single(r => r.RecurrenceDateAndTime == Feb15At9);
+        feb15.ReminderDismissed.Should().BeFalse("no override exists for the active occurrence");
+    }
+
+    [Fact]
+    public void ComputeInstances_OlderPastNonTerminalOverrideWithDismissed_MirrorsDismissedDespiteSkippedState()
+    {
+        // Arrange — Feb 14 (older past) has an anomalous InProgress override with dismissed=true.
+        // State resolution forces older past non-terminal occurrences to Skipped, but the
+        // dismissed flag must still mirror the stored override regardless of how state resolves.
+        var config = CreateConfig();
+        var toFeb16AtMidnight = new DateTime(2026, 2, 16, 0, 0, 0, DateTimeKind.Utc);
+        var overrides = new[]
+            { CreateOverride("config-1", Feb14At9, TaskState.InProgress, reminderDismissed: true) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, Feb14AtMidnight, toFeb16AtMidnight, Feb15AtNoon);
+
+        // Assert
+        var feb14 = result.Single(r => r.RecurrenceDateAndTime == Feb14At9);
+        feb14.State.Should().Be(TaskState.Skipped,
+            "older past non-terminal occurrences resolve to Skipped");
+        feb14.ReminderDismissed.Should().BeTrue(
+            "the dismissed flag mirrors the stored override regardless of state resolution");
+    }
+
+    [Fact]
+    public void ComputeInstances_FutureAnomalyOverrideWithDismissed_ReminderDismissedTrue()
+    {
+        // Arrange — Feb 16 9am is future (now Feb 15 noon); anomalous Completed override
+        // with dismissed=true is passed through defensively, including the dismissed flag
+        var config = CreateConfig();
+        var overrides = new[]
+            { CreateOverride("config-1", Feb16At9, TaskState.Completed, reminderDismissed: true) };
+        var service = CreateService();
+
+        // Act
+        var result = service.ComputeInstances(
+            new[] { config }, overrides, Feb15AtNoon, Feb17AtMidnight, Feb15AtNoon);
+
+        // Assert
+        var feb16 = result.Single(r => r.RecurrenceDateAndTime == Feb16At9);
+        feb16.ReminderDismissed.Should().BeTrue();
     }
 
     #endregion

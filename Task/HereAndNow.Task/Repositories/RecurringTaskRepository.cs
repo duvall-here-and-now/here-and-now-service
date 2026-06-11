@@ -298,6 +298,33 @@ public class RecurringTaskRepository : IRecurringTaskRepository
     }
 
     /// <inheritdoc />
+    public async Task<RecurringTaskStateOverrideDocument?> GetStateOverrideByIdAsync(string userId, string overrideId)
+    {
+        _logger.LogDebug("Getting state override {OverrideId} for user {UserId}", overrideId, userId);
+
+        try
+        {
+            var response = await _container.ReadItemAsync<RecurringTaskStateOverrideDocument>(
+                overrideId,
+                new PartitionKey(userId));
+
+            // Verify it's actually a RecurringTaskStateOverride document (not another type with same ID)
+            if (response.Resource.Type != "RecurringTaskStateOverride")
+            {
+                _logger.LogDebug("Document {OverrideId} is not a RecurringTaskStateOverride", overrideId);
+                return null;
+            }
+
+            return response.Resource;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogDebug("State override {OverrideId} not found for user {UserId}", overrideId, userId);
+            return null;
+        }
+    }
+
+    /// <inheritdoc />
     public async Task DeleteStateOverrideAsync(string userId, string overrideId)
     {
         _logger.LogDebug("Deleting state override {OverrideId} for user {UserId}", overrideId, userId);

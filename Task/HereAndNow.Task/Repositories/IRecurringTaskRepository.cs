@@ -61,6 +61,14 @@ public interface IRecurringTaskRepository
     Task<RecurringTaskStateOverrideDocument> UpsertStateOverrideAsync(RecurringTaskStateOverrideDocument stateOverride);
 
     /// <summary>
+    /// Gets a specific state override document by ID within the user partition (point read)
+    /// </summary>
+    /// <param name="userId">The user ID (partition key)</param>
+    /// <param name="overrideId">The state override composite ID</param>
+    /// <returns>The state override document or null if not found</returns>
+    Task<RecurringTaskStateOverrideDocument?> GetStateOverrideByIdAsync(string userId, string overrideId);
+
+    /// <summary>
     /// Deletes a specific state override document
     /// </summary>
     /// <param name="userId">The user ID (partition key)</param>
