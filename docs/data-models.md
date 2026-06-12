@@ -263,7 +263,7 @@ CRUD + list non-dismissed reminders.
 Config CRUD + bulk override operations.
 
 Key operations:
-- `GetConfigsAndOverridesAsync(string userId)` — returns both collections in 2 queries (NFR43)
-- `UpsertOverrideAsync(RecurringTaskStateOverrideDocument override)` — upsert single override
-- `DeleteOverrideAsync(string userId, string overrideId)` — delete single override
-- `DeleteConfigAndAllOverridesAsync(string userId, string configId)` — chunked bulk delete
+- `GetAllConfigsAsync(string userId)` + `GetStateOverridesForDateRangeAsync(string userId, DateTime from, DateTime to)` — the two queries behind the two-query pattern (NFR44)
+- `UpsertStateOverrideAsync(RecurringTaskStateOverrideDocument stateOverride)` — upsert single override
+- `DeleteStateOverrideAsync(string userId, string overrideId)` — delete single override
+- `DeleteConfigWithOverridesAsync(string userId, string configId)` — atomic cascade delete via transactional batch
