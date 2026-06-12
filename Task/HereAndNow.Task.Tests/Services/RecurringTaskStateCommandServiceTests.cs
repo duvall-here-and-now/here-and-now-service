@@ -6,7 +6,7 @@ using HereAndNowService.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
 
-namespace HereAndNow.Web.Tests.Services;
+namespace HereAndNowService.TaskTests.Services;
 
 /// <summary>
 /// Tests for RecurringTaskService state command methods (Story 9.4).
@@ -61,7 +61,7 @@ public class RecurringTaskStateCommandServiceTests
     }
 
     private RecurringTaskStateOverrideDocument CreateOverride(
-        string configId, DateTime recurrenceDateAndTime, string state)
+        string configId, DateTime recurrenceDateAndTime, string state, bool reminderDismissed = false)
     {
         return new RecurringTaskStateOverrideDocument
         {
@@ -70,8 +70,15 @@ public class RecurringTaskStateCommandServiceTests
             ConfigId = configId,
             RecurrenceDateAndTime = recurrenceDateAndTime,
             State = state,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            ReminderDismissed = reminderDismissed
         };
+    }
+
+    private void SetupOverrideDocRead(RecurringTaskStateOverrideDocument doc)
+    {
+        _mockRepo.Setup(r => r.GetStateOverrideByIdAsync(TestUserId, doc.Id))
+            .ReturnsAsync(doc);
     }
 
     private void SetupConfigExists(RecurringTaskConfigDocument? config = null)
@@ -297,6 +304,7 @@ public class RecurringTaskStateCommandServiceTests
         var act = () => _service.CompleteRecurringTaskAsync(TestUserId, _configId, OlderPastOccurrence);
         await act.Should().ThrowAsync<InvalidStateTransitionException>()
             .Where(ex => ex.AttemptedAction == "CompleteRecurringTask");
+        _mockRepo.Verify(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()), Times.Never);
     }
 
     [Fact]
@@ -401,6 +409,7 @@ public class RecurringTaskStateCommandServiceTests
         var act = () => _service.SkipRecurringTaskAsync(TestUserId, _configId, OlderPastOccurrence);
         await act.Should().ThrowAsync<InvalidStateTransitionException>()
             .Where(ex => ex.AttemptedAction == "SkipRecurringTask");
+        _mockRepo.Verify(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()), Times.Never);
     }
 
     [Fact]
@@ -426,7 +435,10 @@ public class RecurringTaskStateCommandServiceTests
         // Act
         await _service.SkipRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
 
-        // Assert — no upsert should be called (idempotent)
+        // Assert — idempotent no-op: no point read, no sibling fetch, no upsert
+        _mockRepo.Verify(r => r.GetStateOverrideByIdAsync(TestUserId, It.IsAny<string>()), Times.Never);
+        _mockRepo.Verify(r => r.GetStateOverridesForDateRangeAsync(
+            TestUserId, It.IsAny<DateTime>(), It.IsAny<DateTime>()), Times.Once);
         _mockRepo.Verify(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()), Times.Never);
     }
 
@@ -491,6 +503,201 @@ public class RecurringTaskStateCommandServiceTests
         var after = DateTime.UtcNow;
 
         captured!.UpdatedAt.Should().BeOnOrAfter(before).And.BeOnOrBefore(after);
+    }
+
+    #endregion
+
+    #region ReminderDismissed Preservation — RMW Write Path
+
+    [Fact]
+    public async Task StartRecurringTask_ExistingOverrideWithDismissedReminder_PreservesFlagOnUpsert()
+    {
+        // Arrange — OnDeck stored override (defensive pass-through state) with dismissed reminder.
+        // This is the post-11.6 shape: user dismissed the reminder while the task was OnDeck.
+        SetupConfigExists();
+        var existing = CreateOverride(_configId, PastOccurrence, TaskState.OnDeck, reminderDismissed: true);
+        SetupOverrides(existing);
+        SetupOverrideDocRead(existing);
+
+        RecurringTaskStateOverrideDocument? captured = null;
+        _mockRepo.Setup(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()))
+            .Callback<RecurringTaskStateOverrideDocument>(doc => captured = doc)
+            .ReturnsAsync((RecurringTaskStateOverrideDocument doc) => doc);
+
+        // Act
+        await _service.StartRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert — state transitioned, dismissed flag survived
+        captured.Should().NotBeNull();
+        captured!.State.Should().Be(TaskState.InProgress);
+        captured.ReminderDismissed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CompleteRecurringTask_InProgressOverrideWithDismissedReminder_PreservesFlagAndRefreshesUpdatedAt()
+    {
+        // Arrange
+        SetupConfigExists();
+        var existing = CreateOverride(_configId, PastOccurrence, TaskState.InProgress, reminderDismissed: true);
+        existing.UpdatedAt = DateTime.UtcNow.AddDays(-1); // stale, to prove the refresh
+        SetupOverrides(existing);
+        SetupOverrideDocRead(existing);
+
+        RecurringTaskStateOverrideDocument? captured = null;
+        _mockRepo.Setup(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()))
+            .Callback<RecurringTaskStateOverrideDocument>(doc => captured = doc)
+            .ReturnsAsync((RecurringTaskStateOverrideDocument doc) => doc);
+
+        // Act
+        var before = DateTime.UtcNow;
+        await _service.CompleteRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert
+        captured.Should().NotBeNull();
+        captured!.State.Should().Be(TaskState.Completed);
+        captured.ReminderDismissed.Should().BeTrue();
+        captured.UpdatedAt.Should().BeOnOrAfter(before, "RMW must refresh UpdatedAt on every transition");
+    }
+
+    [Fact]
+    public async Task SkipRecurringTask_InProgressOverrideWithDismissedReminder_PreservesFlagOnUpsert()
+    {
+        // Arrange
+        SetupConfigExists();
+        var existing = CreateOverride(_configId, PastOccurrence, TaskState.InProgress, reminderDismissed: true);
+        SetupOverrides(existing);
+        SetupOverrideDocRead(existing);
+
+        RecurringTaskStateOverrideDocument? captured = null;
+        _mockRepo.Setup(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()))
+            .Callback<RecurringTaskStateOverrideDocument>(doc => captured = doc)
+            .ReturnsAsync((RecurringTaskStateOverrideDocument doc) => doc);
+
+        // Act
+        await _service.SkipRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert
+        captured.Should().NotBeNull();
+        captured!.State.Should().Be(TaskState.Skipped);
+        captured.ReminderDismissed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CompleteRecurringTask_SkippedOverrideWithDismissedReminder_ResurrectionPreservesFlag()
+    {
+        // Arrange — resurrection path: Skipped target (most recent past, no newer active)
+        SetupConfigExists();
+        var existing = CreateOverride(_configId, PastOccurrence, TaskState.Skipped, reminderDismissed: true);
+        SetupOverrides(existing);
+        SetupOverrideDocRead(existing);
+
+        RecurringTaskStateOverrideDocument? captured = null;
+        _mockRepo.Setup(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()))
+            .Callback<RecurringTaskStateOverrideDocument>(doc => captured = doc)
+            .ReturnsAsync((RecurringTaskStateOverrideDocument doc) => doc);
+
+        // Act
+        await _service.CompleteRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert
+        captured.Should().NotBeNull();
+        captured!.State.Should().Be(TaskState.Completed);
+        captured.ReminderDismissed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CompleteRecurringTask_NoExistingOverride_UpsertsFreshDocWithReminderDismissedFalse()
+    {
+        // Arrange — OnDeck target (no override anywhere); point read finds nothing
+        SetupConfigExists();
+        SetupOverrides();
+        _mockRepo.Setup(r => r.GetStateOverrideByIdAsync(TestUserId, It.IsAny<string>()))
+            .ReturnsAsync((RecurringTaskStateOverrideDocument?)null);
+
+        RecurringTaskStateOverrideDocument? captured = null;
+        _mockRepo.Setup(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()))
+            .Callback<RecurringTaskStateOverrideDocument>(doc => captured = doc)
+            .ReturnsAsync((RecurringTaskStateOverrideDocument doc) => doc);
+
+        // Act
+        await _service.CompleteRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert — fresh document with defaults
+        captured.Should().NotBeNull();
+        captured!.State.Should().Be(TaskState.Completed);
+        captured.ReminderDismissed.Should().BeFalse();
+        captured.Id.Should().Be(RecurringTaskStateOverrideDocument.GenerateId(_configId, PastOccurrence));
+    }
+
+    #endregion
+
+    #region Lazy Sibling Fetch
+
+    [Fact]
+    public async Task CompleteRecurringTask_CommonPath_FetchesOverridesRangeExactlyOnce()
+    {
+        // Arrange — OnDeck target: the newer-active validation branch is never entered
+        SetupConfigExists();
+        SetupOverrides();
+
+        // Act
+        await _service.CompleteRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert
+        _mockRepo.Verify(r => r.GetStateOverridesForDateRangeAsync(
+            TestUserId, It.IsAny<DateTime>(), It.IsAny<DateTime>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompleteRecurringTask_ResurrectionPath_FetchesOverridesRangeTwice()
+    {
+        // Arrange — Skipped target triggers the newer-active validation, which lazily
+        // computes the sibling list (second range fetch by design)
+        SetupConfigExists();
+        var existing = CreateOverride(_configId, PastOccurrence, TaskState.Skipped);
+        SetupOverrides(existing);
+        SetupOverrideDocRead(existing);
+
+        // Act
+        await _service.CompleteRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert
+        _mockRepo.Verify(r => r.GetStateOverridesForDateRangeAsync(
+            TestUserId, It.IsAny<DateTime>(), It.IsAny<DateTime>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task SkipRecurringTask_ResurrectionPath_FetchesOverridesRangeTwice()
+    {
+        // Arrange — Completed target triggers the newer-active validation lazily
+        SetupConfigExists();
+        var existing = CreateOverride(_configId, PastOccurrence, TaskState.Completed);
+        SetupOverrides(existing);
+        SetupOverrideDocRead(existing);
+
+        // Act
+        await _service.SkipRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert
+        _mockRepo.Verify(r => r.GetStateOverridesForDateRangeAsync(
+            TestUserId, It.IsAny<DateTime>(), It.IsAny<DateTime>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task CompleteRecurringTask_AlreadyCompleted_NoPointReadNoSiblingFetchNoUpsert()
+    {
+        // Arrange — idempotent no-op returns before any write-path work
+        SetupConfigExists();
+        SetupOverrides(CreateOverride(_configId, PastOccurrence, TaskState.Completed));
+
+        // Act
+        await _service.CompleteRecurringTaskAsync(TestUserId, _configId, PastOccurrence);
+
+        // Assert
+        _mockRepo.Verify(r => r.GetStateOverrideByIdAsync(TestUserId, It.IsAny<string>()), Times.Never);
+        _mockRepo.Verify(r => r.GetStateOverridesForDateRangeAsync(
+            TestUserId, It.IsAny<DateTime>(), It.IsAny<DateTime>()), Times.Once);
+        _mockRepo.Verify(r => r.UpsertStateOverrideAsync(It.IsAny<RecurringTaskStateOverrideDocument>()), Times.Never);
     }
 
     #endregion

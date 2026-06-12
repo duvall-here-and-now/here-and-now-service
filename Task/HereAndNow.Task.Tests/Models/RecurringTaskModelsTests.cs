@@ -214,6 +214,83 @@ public class RecurringTaskModelsTests
 
     #endregion
 
+    #region RecurringTaskStateOverrideDocument v3 Schema Fields
+
+    [Fact]
+    public void ReminderDismissed_DefaultsToFalse_WhenDeserializedFromJsonWithoutField()
+    {
+        // Arrange
+        var json = """{"id":"cfg_2026-05-17T07:00:00Z","type":"RecurringTaskStateOverride","userId":"u","configId":"cfg","recurrenceDateAndTime":"2026-05-17T07:00:00Z","state":"OnDeck","updatedAt":"2026-05-17T07:00:00Z"}""";
+
+        // Act
+        var doc = System.Text.Json.JsonSerializer.Deserialize<RecurringTaskStateOverrideDocument>(json);
+
+        // Assert
+        doc!.ReminderDismissed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ReminderDismissed_DefaultsToFalse_OnNewCSharpInstance()
+    {
+        // Act
+        var doc = new RecurringTaskStateOverrideDocument();
+
+        // Assert
+        doc.ReminderDismissed.Should().BeFalse();
+    }
+
+    #endregion
+
+    #region RecurringTaskConfigDocument v3 Schema Fields
+
+    [Fact]
+    public void HasReminder_DefaultsToFalse_WhenDeserializedFromJsonWithoutField()
+    {
+        // Arrange
+        var json = """{"id":"x","type":"RecurringTaskConfig","userId":"u","text":"t","rrule":"","startDateAndTime":"2026-01-01T00:00:00Z","createdAt":"2026-01-01T00:00:00Z"}""";
+
+        // Act
+        var doc = System.Text.Json.JsonSerializer.Deserialize<RecurringTaskConfigDocument>(json);
+
+        // Assert
+        doc!.HasReminder.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasReminderEnabledAt_DefaultsToNull_WhenDeserializedFromJsonWithoutField()
+    {
+        // Arrange
+        var json = """{"id":"x","type":"RecurringTaskConfig","userId":"u","text":"t","rrule":"","startDateAndTime":"2026-01-01T00:00:00Z","createdAt":"2026-01-01T00:00:00Z"}""";
+
+        // Act
+        var doc = System.Text.Json.JsonSerializer.Deserialize<RecurringTaskConfigDocument>(json);
+
+        // Assert
+        doc!.HasReminderEnabledAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void HasReminder_DefaultsToFalse_OnNewCSharpInstance()
+    {
+        // Act
+        var doc = new RecurringTaskConfigDocument();
+
+        // Assert
+        doc.HasReminder.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasReminderEnabledAt_DefaultsToNull_OnNewCSharpInstance()
+    {
+        // Act
+        var doc = new RecurringTaskConfigDocument();
+
+        // Assert
+        doc.HasReminderEnabledAt.Should().BeNull();
+    }
+
+    #endregion
+
     #region TaskState Extended Constants Tests
 
     [Fact]

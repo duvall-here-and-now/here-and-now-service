@@ -2247,7 +2247,8 @@ public class CommandsControllerTests
             .Setup(s => s.UpdateConfigAsync(
                 TestUserId, configId, "Updated standup",
                 "FREQ=WEEKLY;BYDAY=MO,WE,FR",
-                It.IsAny<DateTime>()))
+                It.IsAny<DateTime>(),
+                It.IsAny<bool>()))
             .ReturnsAsync(document);
 
         // Act

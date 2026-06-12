@@ -127,10 +127,13 @@ public class RecurringTaskService : IRecurringTaskService
             var instance = pastNewestFirst[i];
             var key = $"{configId}_{instance.RecurrenceDateAndTime:O}";
 
-            if (overrideLookup.TryGetValue(key, out var stored) &&
-                (stored.State == TaskState.Completed || stored.State == TaskState.Skipped))
+            if (overrideLookup.TryGetValue(key, out var stored))
             {
-                instance.State = stored.State;
+                // Dismissed flag mirrors the stored override regardless of how state resolves
+                instance.ReminderDismissed = stored.ReminderDismissed;
+                instance.State = stored.State == TaskState.Completed || stored.State == TaskState.Skipped
+                    ? stored.State
+                    : TaskState.Skipped;
             }
             else
             {
@@ -156,9 +159,15 @@ public class RecurringTaskService : IRecurringTaskService
         if (active is null) return;
 
         var key = $"{configId}_{active.RecurrenceDateAndTime:O}";
-        active.State = overrideLookup.TryGetValue(key, out var stored)
-            ? stored.State
-            : TaskState.OnDeck;
+        if (overrideLookup.TryGetValue(key, out var stored))
+        {
+            active.State = stored.State;
+            active.ReminderDismissed = stored.ReminderDismissed;
+        }
+        else
+        {
+            active.State = TaskState.OnDeck;
+        }
     }
 
     /// <summary>
@@ -184,6 +193,7 @@ public class RecurringTaskService : IRecurringTaskService
                 "No overrides are expected for future occurrences. Passing through as-is.",
                 stored.State, key);
             instance.State = stored.State;
+            instance.ReminderDismissed = stored.ReminderDismissed;
         }
     }
 
@@ -218,7 +228,7 @@ public class RecurringTaskService : IRecurringTaskService
 
     /// <inheritdoc />
     public async Task<RecurringTaskConfigDocument> UpdateConfigAsync(
-        string userId, string id, string text, string rrule, DateTime startDateAndTime)
+        string userId, string id, string text, string rrule, DateTime startDateAndTime, bool hasReminder = false)
     {
         if (startDateAndTime.Kind != DateTimeKind.Utc)
             throw new ArgumentException("startDateAndTime must be UTC", nameof(startDateAndTime));
@@ -235,6 +245,10 @@ public class RecurringTaskService : IRecurringTaskService
         // Do NOT update CreatedAt — it's the original creation timestamp
         // Orphaned state overrides are accepted for MVP when RRULE changes
 
+        if (hasReminder && !existing.HasReminder)
+            existing.HasReminderEnabledAt = DateTime.UtcNow;
+        existing.HasReminder = hasReminder;
+
         return await _repository.UpdateConfigAsync(existing);
     }
 
@@ -250,7 +264,7 @@ public class RecurringTaskService : IRecurringTaskService
     public async Task StartRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime)
     {
         recurrenceDateAndTime = EnsureUtc(recurrenceDateAndTime);
-        var (instance, _) = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
+        var instance = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
 
         if (instance.State != TaskState.OnDeck)
         {
@@ -259,15 +273,14 @@ public class RecurringTaskService : IRecurringTaskService
                 $"Cannot start recurring task instance in state '{instance.State}'. Only OnDeck instances can be started.");
         }
 
-        var overrideDoc = CreateOverrideDocument(userId, configId, recurrenceDateAndTime, TaskState.InProgress);
-        await _repository.UpsertStateOverrideAsync(overrideDoc);
+        await UpsertTransitionAsync(userId, configId, recurrenceDateAndTime, TaskState.InProgress);
     }
 
     /// <inheritdoc />
     public async Task RevertRecurringTaskToOnDeckAsync(string userId, string configId, DateTime recurrenceDateAndTime)
     {
         recurrenceDateAndTime = EnsureUtc(recurrenceDateAndTime);
-        var (instance, _) = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
+        var instance = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
 
         if (instance.State != TaskState.InProgress)
         {
@@ -284,7 +297,7 @@ public class RecurringTaskService : IRecurringTaskService
     public async Task CompleteRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime)
     {
         recurrenceDateAndTime = EnsureUtc(recurrenceDateAndTime);
-        var (instance, allInstances) = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
+        var instance = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
 
         switch (instance.State)
         {
@@ -296,8 +309,9 @@ public class RecurringTaskService : IRecurringTaskService
                 // Idempotent — already completed, no-op
                 return;
             case TaskState.Skipped:
-                // Allowed only if no newer active instance
-                ValidateNoNewerActiveInstance(instance, allInstances, "CompleteRecurringTask");
+                // Allowed only if no newer active instance (sibling list fetched lazily —
+                // extra Cosmos reads on this rare path are accepted by design)
+                await ValidateNoNewerActiveInstanceAsync(userId, instance, "CompleteRecurringTask");
                 break;
             default:
                 throw new InvalidStateTransitionException(
@@ -305,15 +319,14 @@ public class RecurringTaskService : IRecurringTaskService
                     $"Cannot complete recurring task instance in state '{instance.State}'.");
         }
 
-        var overrideDoc = CreateOverrideDocument(userId, configId, recurrenceDateAndTime, TaskState.Completed);
-        await _repository.UpsertStateOverrideAsync(overrideDoc);
+        await UpsertTransitionAsync(userId, configId, recurrenceDateAndTime, TaskState.Completed);
     }
 
     /// <inheritdoc />
     public async Task SkipRecurringTaskAsync(string userId, string configId, DateTime recurrenceDateAndTime)
     {
         recurrenceDateAndTime = EnsureUtc(recurrenceDateAndTime);
-        var (instance, allInstances) = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
+        var instance = await GetTargetInstanceAsync(userId, configId, recurrenceDateAndTime);
 
         switch (instance.State)
         {
@@ -325,8 +338,9 @@ public class RecurringTaskService : IRecurringTaskService
                 // Idempotent — already skipped, no-op
                 return;
             case TaskState.Completed:
-                // Allowed only if no newer active instance
-                ValidateNoNewerActiveInstance(instance, allInstances, "SkipRecurringTask");
+                // Allowed only if no newer active instance (sibling list fetched lazily —
+                // extra Cosmos reads on this rare path are accepted by design)
+                await ValidateNoNewerActiveInstanceAsync(userId, instance, "SkipRecurringTask");
                 break;
             default:
                 throw new InvalidStateTransitionException(
@@ -334,37 +348,18 @@ public class RecurringTaskService : IRecurringTaskService
                     $"Cannot skip recurring task instance in state '{instance.State}'.");
         }
 
-        var overrideDoc = CreateOverrideDocument(userId, configId, recurrenceDateAndTime, TaskState.Skipped);
-        await _repository.UpsertStateOverrideAsync(overrideDoc);
+        await UpsertTransitionAsync(userId, configId, recurrenceDateAndTime, TaskState.Skipped);
     }
 
     /// <summary>
-    /// Fetches the target config and computes instances to find the specific instance's current state.
-    /// Returns both the target instance and all instances for the config (needed for newer-active checks).
+    /// Resolves the target instance's current state by computing instances around the target date.
+    /// Standalone — callers needing the sibling list use <see cref="ComputeInstancesForConfigAsync"/>.
     /// </summary>
-    private async Task<(RecurringTaskInstance instance, IReadOnlyList<RecurringTaskInstance> allInstances)>
-        GetTargetInstanceAsync(string userId, string configId, DateTime recurrenceDateAndTime)
+    private async Task<RecurringTaskInstance> GetTargetInstanceAsync(
+        string userId, string configId, DateTime recurrenceDateAndTime)
     {
-        // Verify config exists
-        var config = await _repository.GetConfigByIdAsync(userId, configId);
-        if (config == null)
-            throw new RecurringTaskConfigNotFoundException(configId);
+        var allInstances = await ComputeInstancesForConfigAsync(userId, configId, recurrenceDateAndTime);
 
-        // Compute instances for a wide range around the target date to capture nearby instances
-        // for the newer-active-instance check. Use ±365 days from the target date (max range).
-        var from = recurrenceDateAndTime.AddDays(-365);
-        var to = recurrenceDateAndTime.AddDays(365);
-
-        var overrides = (await _repository.GetStateOverridesForDateRangeAsync(userId, from, to)).ToList();
-
-        var allInstances = ComputeInstances(
-            new[] { config },
-            overrides,
-            from,
-            to,
-            DateTime.UtcNow);
-
-        // Find the specific target instance
         var targetInstance = allInstances
             .FirstOrDefault(i => i.RecurringTaskConfigId == configId &&
                                  i.RecurrenceDateAndTime == recurrenceDateAndTime);
@@ -379,7 +374,64 @@ public class RecurringTaskService : IRecurringTaskService
                 "The recurrenceDateAndTime may not match any occurrence in the RRULE pattern.");
         }
 
-        return (targetInstance, allInstances);
+        return targetInstance;
+    }
+
+    /// <summary>
+    /// Runs the full compute pipeline (config fetch → overrides fetch → ComputeInstances) for one
+    /// config over a ±365-day window around <paramref name="around"/> (max range).
+    /// </summary>
+    private async Task<IReadOnlyList<RecurringTaskInstance>> ComputeInstancesForConfigAsync(
+        string userId, string configId, DateTime around)
+    {
+        var config = await _repository.GetConfigByIdAsync(userId, configId);
+        if (config == null)
+            throw new RecurringTaskConfigNotFoundException(configId);
+
+        var from = around.AddDays(-365);
+        var to = around.AddDays(365);
+
+        var overrides = (await _repository.GetStateOverridesForDateRangeAsync(userId, from, to)).ToList();
+
+        return ComputeInstances(new[] { config }, overrides, from, to, DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Lazily computes the sibling list (a fresh snapshot — extra Cosmos reads by design) and
+    /// validates no newer active instance exists. Only called on the rare resurrection branches.
+    /// </summary>
+    private async Task ValidateNoNewerActiveInstanceAsync(
+        string userId, RecurringTaskInstance targetInstance, string attemptedAction)
+    {
+        var allInstances = await ComputeInstancesForConfigAsync(
+            userId, targetInstance.RecurringTaskConfigId, targetInstance.RecurrenceDateAndTime);
+        ValidateNoNewerActiveInstance(targetInstance, allInstances, attemptedAction);
+    }
+
+    /// <summary>
+    /// Persists a state transition via read-modify-write: the existing override document (if any)
+    /// is read and only the pertinent fields are changed, so unrelated fields like
+    /// <c>reminderDismissed</c> survive every upsert-based transition (Revert deletes the document
+    /// instead and does not flow through here). Creates a fresh document when none exists.
+    /// </summary>
+    private async Task UpsertTransitionAsync(
+        string userId, string configId, DateTime recurrenceDateAndTime, string newState)
+    {
+        var overrideId = RecurringTaskStateOverrideDocument.GenerateId(configId, recurrenceDateAndTime);
+        var existing = await _repository.GetStateOverrideByIdAsync(userId, overrideId);
+
+        if (existing != null)
+        {
+            existing.State = newState;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await _repository.UpsertStateOverrideAsync(existing);
+        }
+        else
+        {
+            var newOverrideDocument = CreateOverrideDocument(
+                userId, configId, recurrenceDateAndTime, newState);
+            await _repository.UpsertStateOverrideAsync(newOverrideDocument);
+        }
     }
 
     /// <summary>

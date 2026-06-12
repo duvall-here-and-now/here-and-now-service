@@ -51,6 +51,12 @@ public class RecurringTaskStateOverrideDocument
     public DateTime UpdatedAt { get; set; }
 
     /// <summary>
+    /// Whether the derived reminder for this instance has been dismissed by the user
+    /// </summary>
+    [JsonPropertyName("reminderDismissed")]
+    public bool ReminderDismissed { get; set; } = false;
+
+    /// <summary>
     /// Generates the composite ID for a state override document.
     /// Format: {configId}_{yyyy-MM-ddTHH:mm:ssZ}
     /// </summary>
