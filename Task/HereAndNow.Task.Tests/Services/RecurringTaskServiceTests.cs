@@ -715,10 +715,10 @@ public class RecurringTaskServiceTests
 
     #endregion
 
-    #region GetComputedInstancesAsync — DB Query Pattern (AC12, NFR43)
+    #region GetComputedInstancesForAllConfigsAsync — DB Query Pattern (AC12, NFR43)
 
     [Fact]
-    public async Task GetComputedInstancesAsync_ExactlyTwoRepositoryCallsMade()
+    public async Task GetComputedInstancesForAllConfigsAsync_ExactlyTwoRepositoryCallsMade()
     {
         // Arrange
         var mockRepo = new Mock<IRecurringTaskRepository>(MockBehavior.Strict);
@@ -731,7 +731,7 @@ public class RecurringTaskServiceTests
         var service = CreateService(mockRepo.Object);
 
         // Act
-        await service.GetComputedInstancesAsync(TestUserId, Feb14AtMidnight, Feb17AtMidnight);
+        await service.GetComputedInstancesForAllConfigsAsync(TestUserId, Feb14AtMidnight, Feb17AtMidnight);
 
         // Assert — exactly these two calls, no others (MockBehavior.Strict enforces this)
         mockRepo.Verify(r => r.GetAllConfigsAsync(TestUserId), Times.Once);
@@ -740,7 +740,7 @@ public class RecurringTaskServiceTests
     }
 
     [Fact]
-    public async Task GetComputedInstancesAsync_DateRangeExceeds365Days_ThrowsArgumentException()
+    public async Task GetComputedInstancesForAllConfigsAsync_DateRangeExceeds365Days_ThrowsArgumentException()
     {
         // Arrange
         var fromJan1AtMidnight = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -748,7 +748,7 @@ public class RecurringTaskServiceTests
         var service = CreateService();
 
         // Act
-        var act = () => service.GetComputedInstancesAsync(TestUserId, fromJan1AtMidnight, to);
+        var act = () => service.GetComputedInstancesForAllConfigsAsync(TestUserId, fromJan1AtMidnight, to);
 
         // Assert
         await act.Should().ThrowAsync<ArgumentException>()
@@ -756,14 +756,14 @@ public class RecurringTaskServiceTests
     }
 
     [Fact]
-    public async Task GetComputedInstancesAsync_NonUtcFromDate_ThrowsArgumentException()
+    public async Task GetComputedInstancesForAllConfigsAsync_NonUtcFromDate_ThrowsArgumentException()
     {
         // Arrange — from is Local kind
         var fromFeb14AtMidnightLocal = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Local);
         var service = CreateService();
 
         // Act
-        var act = () => service.GetComputedInstancesAsync(TestUserId, fromFeb14AtMidnightLocal, Feb17AtMidnight);
+        var act = () => service.GetComputedInstancesForAllConfigsAsync(TestUserId, fromFeb14AtMidnightLocal, Feb17AtMidnight);
 
         // Assert
         await act.Should().ThrowAsync<ArgumentException>()
@@ -771,14 +771,14 @@ public class RecurringTaskServiceTests
     }
 
     [Fact]
-    public async Task GetComputedInstancesAsync_NonUtcToDate_ThrowsArgumentException()
+    public async Task GetComputedInstancesForAllConfigsAsync_NonUtcToDate_ThrowsArgumentException()
     {
         // Arrange — to is Unspecified kind
         var toFeb17AtMidnightUnspecified = new DateTime(2026, 2, 17, 0, 0, 0, DateTimeKind.Unspecified);
         var service = CreateService();
 
         // Act
-        var act = () => service.GetComputedInstancesAsync(TestUserId, Feb14AtMidnight, toFeb17AtMidnightUnspecified);
+        var act = () => service.GetComputedInstancesForAllConfigsAsync(TestUserId, Feb14AtMidnight, toFeb17AtMidnightUnspecified);
 
         // Assert
         await act.Should().ThrowAsync<ArgumentException>()
@@ -786,7 +786,7 @@ public class RecurringTaskServiceTests
     }
 
     [Fact]
-    public async Task GetComputedInstancesAsync_ReturnsComputedInstances()
+    public async Task GetComputedInstancesForAllConfigsAsync_ReturnsComputedInstances()
     {
         // Arrange
         var fromFeb15AtMidnight = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
@@ -802,7 +802,7 @@ public class RecurringTaskServiceTests
         var service = CreateService(mockRepo.Object);
 
         // Act
-        var result = await service.GetComputedInstancesAsync(TestUserId, fromFeb15AtMidnight, toFeb16AtMidnight);
+        var result = await service.GetComputedInstancesForAllConfigsAsync(TestUserId, fromFeb15AtMidnight, toFeb16AtMidnight);
 
         // Assert — should return the computed Feb 15 instance
         result.Should().HaveCount(1);
@@ -812,7 +812,7 @@ public class RecurringTaskServiceTests
     }
 
     [Fact]
-    public async Task GetComputedInstancesAsync_Exactly365DayRange_DoesNotThrow()
+    public async Task GetComputedInstancesForAllConfigsAsync_Exactly365DayRange_DoesNotThrow()
     {
         // Arrange — boundary: exactly 365 days is allowed
         var fromJan1AtMidnight = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -827,7 +827,7 @@ public class RecurringTaskServiceTests
         var service = CreateService(mockRepo.Object);
 
         // Act
-        var act = () => service.GetComputedInstancesAsync(TestUserId, fromJan1AtMidnight, to);
+        var act = () => service.GetComputedInstancesForAllConfigsAsync(TestUserId, fromJan1AtMidnight, to);
 
         // Assert
         await act.Should().NotThrowAsync("exactly 365 days is within the allowed limit");

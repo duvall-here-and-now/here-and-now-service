@@ -285,7 +285,7 @@ Occurrences (sorted newest-first):
 
 `ComputeInstances` is called from two places:
 
-1. **`GetComputedInstancesAsync`** — The public API path. Fetches configs and overrides from Cosmos DB using the two-query pattern (NFR44), then delegates to `ComputeInstances` with `DateTime.UtcNow`.
+1. **`GetComputedInstancesForAllConfigsAsync`** — The public API path. Fetches configs and overrides from Cosmos DB using the two-query pattern (NFR44), then delegates to `ComputeInstances` with `DateTime.UtcNow`.
 
 2. **`GetTargetInstanceAsync`** — Internal helper used by state transition commands (Start, Complete, Skip, Revert). Computes instances for a wide range (+-365 days) around the target occurrence to find the specific instance's current computed state and to check for newer active instances.
 

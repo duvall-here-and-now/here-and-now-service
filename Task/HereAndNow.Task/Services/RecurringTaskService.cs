@@ -50,7 +50,7 @@ public class RecurringTaskService : IRecurringTaskService
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<RecurringTaskInstance>> GetComputedInstancesAsync(
+    public async Task<IReadOnlyList<RecurringTaskInstance>> GetComputedInstancesForAllConfigsAsync(
         string userId, DateTime from, DateTime to)
     {
         if (from.Kind != DateTimeKind.Utc || to.Kind != DateTimeKind.Utc)

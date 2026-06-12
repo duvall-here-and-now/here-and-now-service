@@ -41,7 +41,7 @@ public interface IRecurringTaskService
     /// Thrown if <paramref name="from"/> or <paramref name="to"/> are not UTC,
     /// or if the date range exceeds 365 days.
     /// </exception>
-    Task<IReadOnlyList<RecurringTaskInstance>> GetComputedInstancesAsync(
+    Task<IReadOnlyList<RecurringTaskInstance>> GetComputedInstancesForAllConfigsAsync(
         string userId, DateTime from, DateTime to);
 
     /// <summary>

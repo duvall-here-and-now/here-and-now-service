@@ -149,7 +149,7 @@ Recurring task **instances are never persisted** — they are computed on-demand
 ### Two-Query Pattern (NFR43)
 
 ```csharp
-// Exactly 2 Cosmos queries per GetComputedInstancesAsync call
+// Exactly 2 Cosmos queries per GetComputedInstancesForAllConfigsAsync call
 var configs = await _repository.GetAllConfigsAsync(userId);
 var overrides = await _repository.GetOverridesForConfigsAsync(userId, configIds);
 // Then compute in-memory

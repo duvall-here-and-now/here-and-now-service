@@ -79,7 +79,7 @@ public class RecurringTasksController : ControllerBase
 
         try
         {
-            var instances = await _recurringTaskService.GetComputedInstancesAsync(userId, fromUtc, toUtc);
+            var instances = await _recurringTaskService.GetComputedInstancesForAllConfigsAsync(userId, fromUtc, toUtc);
             return Ok(RecurringTaskMapper.ToDtoList(instances));
         }
         catch (ArgumentException ex)
