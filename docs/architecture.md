@@ -146,12 +146,12 @@ Recurring task **instances are never persisted** — they are computed on-demand
 1. `RecurringTaskConfigDocument` — the RRULE definition
 2. `RecurringTaskStateOverrideDocument` — sparse explicit state changes
 
-### Two-Query Pattern (NFR43)
+### Two-Query Pattern (NFR44)
 
 ```csharp
-// Exactly 2 Cosmos queries per GetComputedInstancesAsync call
+// Exactly 2 Cosmos queries per GetComputedInstancesForAllConfigsAsync call
 var configs = await _repository.GetAllConfigsAsync(userId);
-var overrides = await _repository.GetOverridesForConfigsAsync(userId, configIds);
+var overrides = await _repository.GetStateOverridesForDateRangeAsync(userId, from, to);
 // Then compute in-memory
 ```
 

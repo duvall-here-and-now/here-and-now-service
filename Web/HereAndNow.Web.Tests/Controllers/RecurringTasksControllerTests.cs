@@ -72,7 +72,7 @@ public class RecurringTasksControllerTests
         }.AsReadOnly();
 
         _mockRecurringTaskService
-            .Setup(s => s.GetComputedInstancesAsync(TestUserId, from, to))
+            .Setup(s => s.GetComputedInstancesForAllConfigsAsync(TestUserId, from, to))
             .ReturnsAsync(instances);
 
         // Act
@@ -129,7 +129,7 @@ public class RecurringTasksControllerTests
         var to = new DateTime(2027, 2, 1, 0, 0, 0, DateTimeKind.Utc); // > 365 days
 
         _mockRecurringTaskService
-            .Setup(s => s.GetComputedInstancesAsync(TestUserId, It.IsAny<DateTime>(), It.IsAny<DateTime>()))
+            .Setup(s => s.GetComputedInstancesForAllConfigsAsync(TestUserId, It.IsAny<DateTime>(), It.IsAny<DateTime>()))
             .ThrowsAsync(new ArgumentException("Date range cannot exceed 365 days (NFR43)"));
 
         // Act
@@ -184,7 +184,7 @@ public class RecurringTasksControllerTests
         var to = new DateTime(2026, 1, 31, 0, 0, 0, DateTimeKind.Utc);
 
         _mockRecurringTaskService
-            .Setup(s => s.GetComputedInstancesAsync(TestUserId, from, to))
+            .Setup(s => s.GetComputedInstancesForAllConfigsAsync(TestUserId, from, to))
             .ReturnsAsync(new List<RecurringTaskInstance>().AsReadOnly());
 
         // Act
@@ -216,7 +216,7 @@ public class RecurringTasksControllerTests
         var instance = new RecurringTaskInstance(config, occurrence, "Completed");
 
         _mockRecurringTaskService
-            .Setup(s => s.GetComputedInstancesAsync(TestUserId, from, to))
+            .Setup(s => s.GetComputedInstancesForAllConfigsAsync(TestUserId, from, to))
             .ReturnsAsync(new List<RecurringTaskInstance> { instance }.AsReadOnly());
 
         // Act
