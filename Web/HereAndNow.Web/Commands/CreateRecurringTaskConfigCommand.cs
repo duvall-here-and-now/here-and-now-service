@@ -36,4 +36,11 @@ public class CreateRecurringTaskConfigCommand
     [Required(ErrorMessage = "startDateAndTime is required")]
     [JsonPropertyName("startDateAndTime")]
     public DateTime StartDateAndTime { get; set; }
+
+    /// <summary>
+    /// Whether to enable Android reminder notifications for this config at creation time.
+    /// Omitted field defaults to false (backward-compatible with pre-v3 clients).
+    /// </summary>
+    [JsonPropertyName("hasReminder")]
+    public bool HasReminder { get; set; } = false;
 }
