@@ -951,4 +951,57 @@ public class RecurringTaskServiceTests
     }
 
     #endregion
+
+    #region CreateConfigAsync — hasReminder
+
+    [Fact]
+    public async Task CreateConfigAsync_WithHasReminderTrue_StampsHasReminderEnabledAt()
+    {
+        // Arrange
+        var capturedDoc = (RecurringTaskConfigDocument?)null;
+        var mockRepo = new Mock<IRecurringTaskRepository>();
+        mockRepo
+            .Setup(r => r.CreateConfigAsync(It.IsAny<RecurringTaskConfigDocument>()))
+            .Callback<RecurringTaskConfigDocument>(doc => capturedDoc = doc)
+            .ReturnsAsync((RecurringTaskConfigDocument d) => d);
+
+        var service = CreateService(mockRepo.Object);
+        var before = DateTime.UtcNow;
+
+        // Act
+        var result = await service.CreateConfigAsync(
+            TestUserId, "config-1", "Test Task", DailyAt9AmRrule,
+            new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc),
+            hasReminder: true);
+
+        // Assert
+        var after = DateTime.UtcNow;
+        result.HasReminder.Should().BeTrue();
+        result.HasReminderEnabledAt.Should().NotBeNull();
+        result.HasReminderEnabledAt!.Value.Should().BeOnOrAfter(before).And.BeOnOrBefore(after);
+    }
+
+    [Fact]
+    public async Task CreateConfigAsync_WithHasReminderFalse_LeavesHasReminderEnabledAtNull()
+    {
+        // Arrange
+        var mockRepo = new Mock<IRecurringTaskRepository>();
+        mockRepo
+            .Setup(r => r.CreateConfigAsync(It.IsAny<RecurringTaskConfigDocument>()))
+            .ReturnsAsync((RecurringTaskConfigDocument d) => d);
+
+        var service = CreateService(mockRepo.Object);
+
+        // Act
+        var result = await service.CreateConfigAsync(
+            TestUserId, "config-1", "Test Task", DailyAt9AmRrule,
+            new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc),
+            hasReminder: false);
+
+        // Assert
+        result.HasReminder.Should().BeFalse();
+        result.HasReminderEnabledAt.Should().BeNull();
+    }
+
+    #endregion
 }

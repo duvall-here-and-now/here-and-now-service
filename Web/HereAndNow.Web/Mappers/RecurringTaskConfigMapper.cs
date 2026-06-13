@@ -21,7 +21,8 @@ public static class RecurringTaskConfigMapper
             Text = document.Text,
             Rrule = document.Rrule,
             StartDateAndTime = document.StartDateAndTime,
-            CreatedAt = document.CreatedAt
+            CreatedAt = document.CreatedAt,
+            HasReminder = document.HasReminder
         };
     }
 

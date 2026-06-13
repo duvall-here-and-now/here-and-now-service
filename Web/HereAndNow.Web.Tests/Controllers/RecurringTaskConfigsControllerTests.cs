@@ -162,4 +162,67 @@ public class RecurringTaskConfigsControllerTests
     }
 
     #endregion
+
+    #region HasReminder DTO Tests
+
+    [Fact]
+    public async Task GetConfigs_ReturnsHasReminderTrue_WhenDocumentHasReminderTrue()
+    {
+        // Arrange
+        var configs = new List<RecurringTaskConfigDocument>
+        {
+            new RecurringTaskConfigDocument
+            {
+                Id = "config-reminder",
+                UserId = TestUserId,
+                Text = "Daily standup",
+                Rrule = "FREQ=DAILY;BYHOUR=9",
+                StartDateAndTime = new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc),
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                HasReminder = true
+            }
+        }.AsReadOnly();
+
+        _mockRecurringTaskService
+            .Setup(s => s.GetAllConfigsAsync(TestUserId))
+            .ReturnsAsync(configs);
+
+        // Act
+        var result = await _controller.GetConfigs();
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dtos = okResult.Value.Should().BeAssignableTo<IEnumerable<RecurringTaskConfigDto>>().Subject.ToList();
+        dtos[0].HasReminder.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetConfigById_ReturnsHasReminderFalse_WhenDocumentHasReminderFalse()
+    {
+        // Arrange
+        var config = new RecurringTaskConfigDocument
+        {
+            Id = "config-no-reminder",
+            UserId = TestUserId,
+            Text = "Weekly review",
+            Rrule = "FREQ=WEEKLY;BYDAY=FR",
+            StartDateAndTime = new DateTime(2026, 1, 3, 14, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+            HasReminder = false
+        };
+
+        _mockRecurringTaskService
+            .Setup(s => s.GetConfigByIdAsync(TestUserId, "config-no-reminder"))
+            .ReturnsAsync(config);
+
+        // Act
+        var result = await _controller.GetConfigById("config-no-reminder");
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<RecurringTaskConfigDto>().Subject;
+        dto.HasReminder.Should().BeFalse();
+    }
+
+    #endregion
 }

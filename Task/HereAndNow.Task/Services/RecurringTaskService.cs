@@ -199,7 +199,7 @@ public class RecurringTaskService : IRecurringTaskService
 
     /// <inheritdoc />
     public async Task<RecurringTaskConfigDocument> CreateConfigAsync(
-        string userId, string id, string text, string rrule, DateTime startDateAndTime)
+        string userId, string id, string text, string rrule, DateTime startDateAndTime, bool hasReminder = false)
     {
         if (startDateAndTime.Kind != DateTimeKind.Utc)
             throw new ArgumentException("startDateAndTime must be UTC", nameof(startDateAndTime));
@@ -215,6 +215,12 @@ public class RecurringTaskService : IRecurringTaskService
             StartDateAndTime = startDateAndTime,
             CreatedAt = DateTime.UtcNow
         };
+
+        if (hasReminder)
+        {
+            config.HasReminder = true;
+            config.HasReminderEnabledAt = DateTime.UtcNow;
+        }
 
         try
         {

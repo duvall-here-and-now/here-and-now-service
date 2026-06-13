@@ -82,7 +82,7 @@ public interface IRecurringTaskService
     /// Thrown if the RRULE is malformed or uses an unsupported frequency (Secondly, Minutely).
     /// </exception>
     Task<RecurringTaskConfigDocument> CreateConfigAsync(
-        string userId, string id, string text, string rrule, DateTime startDateAndTime);
+        string userId, string id, string text, string rrule, DateTime startDateAndTime, bool hasReminder = false);
 
     /// <summary>
     /// Updates an existing recurring task configuration after validating the RRULE.

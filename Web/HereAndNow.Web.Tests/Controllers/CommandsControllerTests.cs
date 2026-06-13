@@ -2160,7 +2160,8 @@ public class CommandsControllerTests
             .Setup(s => s.CreateConfigAsync(
                 TestUserId, configId, "Duplicate Config",
                 "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
-                It.IsAny<DateTime>()))
+                It.IsAny<DateTime>(),
+                It.IsAny<bool>()))
             .ThrowsAsync(new RecurringTaskConfigAlreadyExistsException(configId));
 
         // Act
@@ -2203,7 +2204,8 @@ public class CommandsControllerTests
             .Setup(s => s.CreateConfigAsync(
                 TestUserId, configId, "Daily standup",
                 "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
-                It.IsAny<DateTime>()))
+                It.IsAny<DateTime>(),
+                It.IsAny<bool>()))
             .ReturnsAsync(document);
 
         // Act
@@ -2216,6 +2218,96 @@ public class CommandsControllerTests
         dto.Id.Should().Be(configId);
         dto.Text.Should().Be("Daily standup");
         dto.Rrule.Should().Be("FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0");
+    }
+
+    [Fact]
+    public async Task HandleCreateRecurringTaskConfig_WithHasReminderTrue_ForwardsToService()
+    {
+        // Arrange
+        var configId = Guid.NewGuid().ToString();
+        var startDate = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Utc);
+        var request = CreateCommandRequest("CreateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Daily standup",
+            recurrenceRule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            startDateAndTime = startDate,
+            hasReminder = true
+        });
+
+        var document = new RecurringTaskConfigDocument
+        {
+            Id = configId,
+            UserId = TestUserId,
+            Text = "Daily standup",
+            Rrule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            StartDateAndTime = startDate,
+            CreatedAt = DateTime.UtcNow,
+            HasReminder = true
+        };
+
+        _mockRecurringTaskService
+            .Setup(s => s.CreateConfigAsync(
+                TestUserId, configId, "Daily standup",
+                "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+                It.IsAny<DateTime>(),
+                It.IsAny<bool>()))
+            .ReturnsAsync(document);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        _mockRecurringTaskService.Verify(s => s.CreateConfigAsync(
+            TestUserId, configId, "Daily standup",
+            "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            It.IsAny<DateTime>(),
+            true), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleCreateRecurringTaskConfig_WithoutHasReminderField_DefaultsToFalse()
+    {
+        // Arrange — payload omits hasReminder; backward compat: pre-v3 clients
+        var configId = Guid.NewGuid().ToString();
+        var startDate = new DateTime(2026, 3, 15, 9, 0, 0, DateTimeKind.Utc);
+        var request = CreateCommandRequest("CreateRecurringTaskConfig", new
+        {
+            id = configId,
+            text = "Daily standup",
+            recurrenceRule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            startDateAndTime = startDate
+            // hasReminder intentionally omitted
+        });
+
+        var document = new RecurringTaskConfigDocument
+        {
+            Id = configId,
+            UserId = TestUserId,
+            Text = "Daily standup",
+            Rrule = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            StartDateAndTime = startDate,
+            CreatedAt = DateTime.UtcNow,
+            HasReminder = false
+        };
+
+        _mockRecurringTaskService
+            .Setup(s => s.CreateConfigAsync(
+                TestUserId, configId, "Daily standup",
+                "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+                It.IsAny<DateTime>(),
+                It.IsAny<bool>()))
+            .ReturnsAsync(document);
+
+        // Act
+        var result = await _controller.ExecuteCommand(request);
+
+        // Assert
+        _mockRecurringTaskService.Verify(s => s.CreateConfigAsync(
+            TestUserId, configId, "Daily standup",
+            "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0",
+            It.IsAny<DateTime>(),
+            false), Times.Once);
     }
 
     [Fact]
